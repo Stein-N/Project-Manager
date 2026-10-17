@@ -68,9 +68,9 @@ import java.util.function.Consumer;
 public final class MainFrame extends JFrame {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
     /** Fixed window size; the layout is tuned to exactly this size. */
-    private static final Dimension WINDOW_SIZE = new Dimension(900, 560);
+    private static final Dimension WINDOW_SIZE = new Dimension(900, 680);
     private static final int LEFT_WIDTH = 290;
-    private static final int LOG_HEIGHT = 120;
+    private static final int LOG_HEIGHT = 240;
     private static final int MAX_LOG_CHARS = 400_000;
 
     private final Config config;
@@ -199,7 +199,7 @@ public final class MainFrame extends JFrame {
 
         // --- bottom: log
         logArea.setEditable(false);
-        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         JScrollPane logScroll = new JScrollPane(logArea);
         JPanel logPanel = new JPanel(new BorderLayout(0, 2));
         logPanel.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
