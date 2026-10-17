@@ -106,7 +106,7 @@ public final class Dependencies {
         };
     }
 
-    static Optional<String> wrapperVersion(Path project) {
+    public static Optional<String> wrapperVersion(Path project) {
         Path file = project.resolve("gradle/wrapper/gradle-wrapper.properties");
         if (!Files.isRegularFile(file)) return Optional.empty();
         Properties props = new Properties();

@@ -134,6 +134,8 @@ public final class MainFrame extends JFrame {
         toolbar.addSeparator();
         toolbar.add(toolButton("⟳ Refresh", "Rescan folders (F5)", this::refresh));
         toolbar.add(toolButton("⇣ Fetch all", "git fetch for all projects", this::fetchAll));
+        toolbar.add(toolButton("♻ Clean up", "Gradle caches and build output – find data no project uses",
+                () -> CleanupDialog.show(this, projects, gradle, this::logAsync)));
         toolbar.add(javax.swing.Box.createHorizontalGlue());
         toolbar.add(toolButton("⚙ Settings", "Master path, IntelliJ, Git", this::openSettings));
 
