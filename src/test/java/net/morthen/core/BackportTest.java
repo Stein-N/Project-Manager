@@ -169,6 +169,32 @@ class BackportTest {
     }
 
     @Test
+    void skipRestoresTheCheckpointBeforeTheCommit() throws IOException {
+        write(target, "src/A.java", "class A {\n    int a = 10;\n}\n");
+        commit(target, "target change");
+        write(main, "src/B.java", "class B {}\n");
+        commit(main, "feat: b");
+        String featB = sh(main, "rev-parse", "HEAD");
+        write(main, "src/A.java", "class A {\n    int a = 2;\n}\n");
+        write(main, "src/N.java", "class N {}\n");
+        commit(main, "fix: a with a new file");
+        String fixA = sh(main, "rev-parse", "HEAD");
+
+        Backport.prepare(git, target, work, "1.20.1", log::add);
+        Backport.pick(git, work, featB, log::add);
+        String beforeA = Backport.checkpoint(git, work);
+        assertEquals(Backport.PickState.CONFLICT, Backport.pick(git, work, fixA, log::add).state());
+        assertTrue(Files.exists(work.resolve("src/N.java")));
+
+        Backport.restore(git, work, beforeA);
+        assertEquals(List.of(), Backport.unmerged(git, work));
+        assertFalse(Files.exists(work.resolve("src/N.java")), "file of the skipped commit is gone");
+        assertEquals("class A {\n    int a = 10;\n}\n", read(work, "src/A.java"));
+        assertEquals(Set.of("src/B.java"),
+                Backport.changes(git, work).stream().map(Backport.FileChange::path).collect(Collectors.toSet()));
+    }
+
+    @Test
     void prepareReusesAndResetsTheWorkTree() throws IOException {
         Backport.prepare(git, target, work, "1.20.1", log::add);
         write(work, "junk.txt", "x");

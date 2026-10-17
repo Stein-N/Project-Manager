@@ -31,9 +31,17 @@ public final class ClaudeRunner {
      * @param available      built-in tools Claude can see at all ({@code --tools}); empty = none
      * @param allowed        rules that run without asking ({@code --allowedTools}, e.g. {@code Bash(git diff:*)})
      * @param disallowed     rules that are always denied ({@code --disallowedTools})
-     * @param permissionMode {@code --permission-mode} or null
+     * @param permissionMode {@code --permission-mode} or null; with {@code dontAsk} nobody is asked
+     *                       ({@code --permission-prompts none}): what is not allowed is denied
+     * @param restricted     {@code --restricted}: no user/project settings (hooks), file tools confined to the
+     *                       working folder, no writes to git and settings files
      */
-    public record Tools(List<String> available, List<String> allowed, List<String> disallowed, String permissionMode) {
+    public record Tools(List<String> available, List<String> allowed, List<String> disallowed, String permissionMode,
+                        boolean restricted) {
+        public Tools(List<String> available, List<String> allowed, List<String> disallowed, String permissionMode) {
+            this(available, allowed, disallowed, permissionMode, false);
+        }
+
         /** No tools at all: Claude can only answer with text. */
         public static Tools none() {
             return new Tools(List.of(), List.of(), List.of(), null);
@@ -64,9 +72,19 @@ public final class ClaudeRunner {
      * @param text           the final answer (SUCCESS) or the error message
      * @param apiErrorStatus HTTP status of a failed API call ({@code api_error_status}), 0 if none
      * @param apiError       error code of a failed API call (e.g. {@code authentication_failed}) or null
+     * @param denials        tool calls the permission rules refused ({@code permission_denials}), e.g. "Bash: git commit …"
      */
     public record Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens,
-                          int apiErrorStatus, String apiError) {
+                          int apiErrorStatus, String apiError, List<String> denials) {
+        public Outcome {
+            denials = denials == null ? List.of() : List.copyOf(denials);
+        }
+
+        public Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens,
+                       int apiErrorStatus, String apiError) {
+            this(status, text, costUsd, inputTokens, outputTokens, apiErrorStatus, apiError, List.of());
+        }
+
         public Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens) {
             this(status, text, costUsd, inputTokens, outputTokens, 0, null);
         }
@@ -80,11 +98,11 @@ public final class ClaudeRunner {
         }
 
         Outcome withApiError(String error) {
-            return new Outcome(status, text, costUsd, inputTokens, outputTokens, apiErrorStatus, error);
+            return new Outcome(status, text, costUsd, inputTokens, outputTokens, apiErrorStatus, error, denials);
         }
 
         Outcome withText(String newText) {
-            return new Outcome(status, newText, costUsd, inputTokens, outputTokens, apiErrorStatus, apiError);
+            return new Outcome(status, newText, costUsd, inputTokens, outputTokens, apiErrorStatus, apiError, denials);
         }
     }
 
@@ -134,6 +152,7 @@ public final class ClaudeRunner {
         if (bare) command.add("--bare");
         command.addAll(List.of("--strict-mcp-config", "--mcp-config", mcpConfig.toString()));
         Tools tools = request.tools() == null ? Tools.none() : request.tools();
+        if (tools.restricted()) command.add("--restricted");
         command.add("--tools");
         command.add(String.join(",", tools.available()));
         if (!tools.allowed().isEmpty()) {
@@ -146,6 +165,7 @@ public final class ClaudeRunner {
         }
         if (tools.permissionMode() != null) {
             command.addAll(List.of("--permission-mode", tools.permissionMode()));
+            if ("dontAsk".equals(tools.permissionMode())) command.addAll(List.of("--permission-prompts", "none"));
         }
         if (request.model() != null && !request.model().isBlank()) {
             command.addAll(List.of("--model", request.model().trim()));
@@ -442,7 +462,21 @@ public final class ClaudeRunner {
             out = number(usage, "output_tokens");
         }
         int apiStatus = (int) number(event, "api_error_status");
-        return new Outcome(error ? Status.ERROR : Status.SUCCESS, text == null ? "" : text, cost, in, out, apiStatus, null);
+        return new Outcome(error ? Status.ERROR : Status.SUCCESS, text == null ? "" : text, cost, in, out, apiStatus, null,
+                denials(event));
+    }
+
+    /** {@code permission_denials} of a result event as "Tool: command or path". */
+    static List<String> denials(JsonObject event) {
+        JsonElement list = event.get("permission_denials");
+        if (list == null || !list.isJsonArray()) return List.of();
+        List<String> result = new ArrayList<>();
+        for (JsonElement e : list.getAsJsonArray()) {
+            if (!e.isJsonObject()) continue;
+            JsonObject d = e.getAsJsonObject();
+            result.add(string(d, "tool_name") + toolSummary(d.get("tool_input")).replaceFirst("^ ", ": "));
+        }
+        return result;
     }
 
     private static List<JsonElement> content(JsonObject event) {

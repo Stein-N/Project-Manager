@@ -216,6 +216,19 @@ public final class Backport {
         return new PickResult(PickState.OK, List.of(), revertExcluded(git, workDir), r.output());
     }
 
+    /** The current state of the work worktree as a tree object (everything staged), taken before each commit. */
+    public static String checkpoint(Git git, Path workDir) throws IOException {
+        git.runOrThrow(workDir, null, "add", "-A");
+        return git.runOrThrow(workDir, null, "write-tree").output().strip();
+    }
+
+    /** Back to a checkpoint: drops everything after it, an unresolved conflict included (skips that commit). */
+    public static void restore(Git git, Path workDir, String tree) throws IOException {
+        git.run(workDir, "cherry-pick", "--quit");
+        git.runOrThrow(workDir, null, "read-tree", "--reset", "-u", tree);
+        git.runOrThrow(workDir, null, "clean", "-fdq"); // files that only came after the checkpoint
+    }
+
     /** Files with unresolved conflicts. */
     public static List<String> unmerged(Git git, Path workDir) throws IOException {
         String out = git.runOrThrow(workDir, null, "diff", "--name-only", "--diff-filter=U").output();
