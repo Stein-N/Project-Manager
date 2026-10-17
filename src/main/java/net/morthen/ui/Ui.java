@@ -54,14 +54,34 @@ final class Ui {
         JButton button = new JButton(text);
         Color bg = UIManager.getColor("Button.default.background");
         Color fg = UIManager.getColor("Button.default.foreground");
-        if (bg != null) button.setBackground(bg);
-        if (fg != null) button.setForeground(fg);
+        // plain Color copies: FlatLaf would replace UIResource colors with its defaults
+        if (bg != null) button.setBackground(new Color(bg.getRGB()));
+        if (fg != null) button.setForeground(new Color(fg.getRGB()));
         button.putClientProperty("FlatLaf.styleClass", "large");
         return button;
     }
 
     static String hex(Color color) {
         return color == null ? "#888888" : String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
+    }
+
+    private static final java.util.Map<String, javax.swing.Icon> ICONS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Mod icon scaled to {@code size} px (cached), or null if it cannot be read. */
+    static javax.swing.Icon modIcon(Path file, int size) {
+        if (file == null) return null;
+        String key = file + "@" + size;
+        javax.swing.Icon cached = ICONS.get(key);
+        if (cached != null) return cached;
+        try {
+            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(file.toFile());
+            if (image == null) return null;
+            javax.swing.Icon icon = new javax.swing.ImageIcon(image.getScaledInstance(size, size, java.awt.Image.SCALE_SMOOTH));
+            ICONS.put(key, icon);
+            return icon;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     static String html(String text) {

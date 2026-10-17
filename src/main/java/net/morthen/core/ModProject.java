@@ -7,6 +7,7 @@ import java.nio.file.Path;
  *
  * @param linkedWorktree {@code .git} is a file, i.e. the project is a linked worktree
  * @param commonDir      canonical path of the shared git directory (null without Git)
+ * @param metadata       mod metadata (fabric.mod.json, mods.toml, …) or null
  */
 public record ModProject(
         String name,
@@ -23,7 +24,8 @@ public record ModProject(
         String gradleMcVersion,
         String modVersion,
         boolean linkedWorktree,
-        Path commonDir
+        Path commonDir,
+        ModMetadata metadata
 ) {
     /** MC version from gradle.properties does not match the version folder. */
     public boolean versionMismatch() {

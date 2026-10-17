@@ -229,7 +229,7 @@ final class CloneDialog extends JDialog {
             targetLabel.setText("Target: –");
             okButton.setEnabled(false);
         } else if (Files.exists(target)) {
-            targetLabel.setText("<html>Target: " + Ui.html(target.toString()) + " <font color='#e57373'>(already exists)</font></html>");
+            targetLabel.setText("<html>Target: " + Ui.html(target.toString()) + " <font color='#d32f2f'>(already exists)</font></html>");
             okButton.setEnabled(false);
         } else {
             targetLabel.setText("Target: " + target);

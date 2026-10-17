@@ -4,6 +4,7 @@ import net.morthen.core.Config;
 import net.morthen.core.Git;
 import net.morthen.core.GitChanges;
 import net.morthen.core.GradleRunner;
+import net.morthen.core.ModMetadata;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
 import net.morthen.core.SystemActions;
@@ -373,8 +374,16 @@ public final class MainFrame extends JFrame {
         Ui.Stack stack = new Ui.Stack();
         stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
 
-        stack.push(Ui.heading(p.name(), "h2"), 2);
-        stack.push(Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")), 16);
+        ModMetadata meta = p.metadata();
+        JPanel header = new JPanel(new BorderLayout(12, 0));
+        javax.swing.Icon headerIcon = meta != null ? Ui.modIcon(meta.icon(), 40) : null;
+        if (headerIcon != null) header.add(new JLabel(headerIcon), BorderLayout.WEST);
+        JPanel titles = new JPanel(new GridLayout(2, 1, 0, 2));
+        titles.add(Ui.heading(p.name(), "h2"));
+        titles.add(Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")
+                + (meta != null && meta.id() != null ? "  ·  " + meta.id() : "")));
+        header.add(titles, BorderLayout.CENTER);
+        stack.push(header, 16);
 
         JButton openIde = Ui.primary("  Open in IntelliJ  ");
         openIde.addActionListener(e -> openInIntelliJ(p));
@@ -409,11 +418,38 @@ public final class MainFrame extends JFrame {
         if (p.gradleMcVersion() != null) {
             String text = p.gradleMcVersion();
             JLabel label = new JLabel(p.versionMismatch()
-                    ? "<html>" + Ui.html(text) + " <font color='#e57373'>⚠ does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
+                    ? "<html>" + Ui.html(text) + " <font color='#d32f2f'>⚠ does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
                     : text);
             info.add("MC (gradle)", label);
         }
         stack.push(info, 18);
+
+        if (meta != null) {
+            stack.push(Ui.heading("Mod", "h4"), 6);
+            Ui.Form mod = new Ui.Form();
+            if (meta.name() != null) mod.add("Name", Ui.copyable(meta.name()));
+            if (meta.id() != null) mod.add("Mod ID", Ui.copyable(meta.id()));
+            if (meta.version() != null) mod.add("Version", Ui.copyable(meta.version()));
+            if (!meta.authors().isEmpty()) mod.add("Authors", Ui.copyable(String.join(", ", meta.authors())));
+            if (meta.description() != null && !meta.description().isBlank()) {
+                String description = meta.description().strip().replaceAll("\\s+", " ");
+                if (description.length() > 160) description = description.substring(0, 157) + "…";
+                JLabel d = new JLabel("<html><body style='width:330px'>" + Ui.html(description) + "</body></html>");
+                d.setToolTipText(meta.description());
+                mod.add("Description", d);
+            }
+            if (!meta.dependencies().isEmpty()) {
+                StringBuilder deps = new StringBuilder("<html>");
+                String muted = Ui.hex(UIManager.getColor("Label.disabledForeground"));
+                for (ModMetadata.Dependency d : meta.dependencies()) {
+                    deps.append("<b>").append(Ui.html(d.modId())).append("</b> ").append(Ui.html(d.version()))
+                            .append(d.required() ? "" : " <font color='" + muted + "'>(optional)</font>").append("<br>");
+                }
+                mod.add("Depends on", new JLabel(deps.append("</html>").toString()));
+            }
+            mod.add("File", Ui.copyable(meta.file()));
+            stack.push(mod, 18);
+        }
 
         stack.push(Ui.heading("Actions", "h4"), 6);
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
@@ -435,7 +471,7 @@ public final class MainFrame extends JFrame {
         }
         actions.add(button("Move / rename…", () -> moveProject(p)));
         JButton delete = button("Remove…", () -> deleteProject(p));
-        delete.setForeground(new java.awt.Color(0xE57373));
+        delete.setForeground(new java.awt.Color(0xD32F2F));
         actions.add(delete);
         stack.push(actions, 18);
 
@@ -445,7 +481,7 @@ public final class MainFrame extends JFrame {
             String task = gradle.runningTask(p.path());
             if (task != null) {
                 JButton stop = button("■ Stop " + task, () -> stopGradle(p));
-                stop.setForeground(new java.awt.Color(0xE57373));
+                stop.setForeground(new java.awt.Color(0xD32F2F));
                 gradleActions.add(stop);
             } else {
                 gradleActions.add(button("Build", () -> runGradle(p, "build")));
@@ -511,10 +547,10 @@ public final class MainFrame extends JFrame {
 
     private static String statusHtml(ModProject p) {
         List<String> parts = new ArrayList<>();
-        parts.add(p.changes() == 0 ? "<font color='#4caf50'>✔ no local changes</font>"
-                : "<font color='#e0a030'>● " + p.changes() + " changed file(s)</font>");
-        if (p.ahead() > 0) parts.add("<font color='#4caf50'>↑ " + p.ahead() + " not pushed</font>");
-        if (p.behind() > 0) parts.add("<font color='#e57373'>↓ " + p.behind() + " behind remote</font>");
+        parts.add(p.changes() == 0 ? "<font color='#2e7d32'>✔ no local changes</font>"
+                : "<font color='#c77800'>● " + p.changes() + " changed file(s)</font>");
+        if (p.ahead() > 0) parts.add("<font color='#2e7d32'>↑ " + p.ahead() + " not pushed</font>");
+        if (p.behind() > 0) parts.add("<font color='#d32f2f'>↓ " + p.behind() + " behind remote</font>");
         return "<html>" + String.join("&nbsp;&nbsp;·&nbsp;&nbsp;", parts) + "</html>";
     }
 
@@ -593,7 +629,7 @@ public final class MainFrame extends JFrame {
         }
         for (ProjectScanner.SharedRepo r : repos) {
             JPanel row = new JPanel(new BorderLayout(12, 0));
-            String versionsText = r.worktrees().isEmpty() ? "<font color='#e0a030'>no worktrees</font>"
+            String versionsText = r.worktrees().isEmpty() ? "<font color='#c77800'>no worktrees</font>"
                     : Ui.html(String.join(", ", r.worktrees().stream().map(ModProject::mcVersion).toList()));
             row.add(new JLabel("<html><b>" + Ui.html(r.name()) + "</b>&nbsp;&nbsp;" + versionsText
                     + "<br><font color='" + Ui.hex(UIManager.getColor("Label.disabledForeground")) + "'>"
@@ -602,7 +638,7 @@ public final class MainFrame extends JFrame {
             buttons.add(button("Add version…", () -> addWorktree(r.path(), r.name(), null, null)));
             if (r.worktrees().isEmpty()) {
                 JButton del = button("Delete…", () -> deleteSharedRepo(r));
-                del.setForeground(new java.awt.Color(0xE57373));
+                del.setForeground(new java.awt.Color(0xD32F2F));
                 buttons.add(del);
             }
             row.add(buttons, BorderLayout.EAST);
@@ -781,7 +817,7 @@ public final class MainFrame extends JFrame {
     private void deleteSharedRepo(ProjectScanner.SharedRepo r) {
         background("Checking " + r.name() + "…", () -> Worktrees.unpushedCommits(git, r.path()), unpushed -> {
             String warning = unpushed > 0
-                    ? "<br><br><font color='#e57373'><b>Warning:</b> " + unpushed
+                    ? "<br><br><font color='#d32f2f'><b>Warning:</b> " + unpushed
                     + " commit(s) on local branches are not pushed and will be lost!</font>"
                     : "";
             if (JOptionPane.showConfirmDialog(this, "<html>Permanently delete the shared repository?<br><tt>"
@@ -928,7 +964,7 @@ public final class MainFrame extends JFrame {
         boolean atRisk = p.linkedWorktree() ? p.changes() > 0 : p.hasUnsavedWork();
         String warning = "";
         if (atRisk) {
-            warning = "<br><br><font color='#e57373'><b>Warning:</b> "
+            warning = "<br><br><font color='#d32f2f'><b>Warning:</b> "
                     + (p.changes() > 0 ? p.changes() + " uncommitted change(s). " : "")
                     + (!p.linkedWorktree() && p.ahead() > 0 ? p.ahead() + " commit(s) not pushed." : "")
                     + "<br>These will be lost!</font>";

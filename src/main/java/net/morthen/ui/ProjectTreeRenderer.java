@@ -20,33 +20,40 @@ final class ProjectTreeRenderer extends DefaultTreeCellRenderer {
                                                   boolean leaf, int row, boolean hasFocus) {
         super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus);
         Object obj = value instanceof DefaultMutableTreeNode node ? node.getUserObject() : value;
-        String muted = Ui.hex(UIManager.getColor("Label.disabledForeground"));
+        // On the blue (focused) selection everything is drawn in the selection text color
+        boolean onAccent = selected && tree.hasFocus();
+        String muted = onAccent ? "#dde8f5" : Ui.hex(UIManager.getColor("Label.disabledForeground"));
+        String branchColor = onAccent ? "#dde8f5" : "#3d7cc9";
+        String orange = onAccent ? "#ffffff" : "#c77800";
+        String green = onAccent ? "#ffffff" : "#2e7d32";
+        String red = onAccent ? "#ffffff" : "#d32f2f";
 
         if (obj instanceof ModProject p) {
             StringBuilder sb = new StringBuilder("<html>").append(Ui.html(p.name()));
             if (p.git()) {
-                sb.append("&nbsp;&nbsp;<font color='").append(selected ? "#d0e4ff" : "#5b9bd5").append("'>⎇ ")
+                sb.append("&nbsp;&nbsp;<font color='").append(branchColor).append("'>⎇ ")
                         .append(Ui.html(p.branch() == null ? "?" : p.branch())).append("</font>");
                 if (p.changes() > 0) {
-                    sb.append("&nbsp;<font color='#e0a030'>●").append(p.changes()).append("</font>");
+                    sb.append("&nbsp;<font color='" + orange + "'>●").append(p.changes()).append("</font>");
                 }
                 if (p.ahead() > 0) {
-                    sb.append("&nbsp;<font color='#4caf50'>↑").append(p.ahead()).append("</font>");
+                    sb.append("&nbsp;<font color='" + green + "'>↑").append(p.ahead()).append("</font>");
                 }
                 if (p.behind() > 0) {
-                    sb.append("&nbsp;<font color='#e57373'>↓").append(p.behind()).append("</font>");
+                    sb.append("&nbsp;<font color='" + red + "'>↓").append(p.behind()).append("</font>");
                 }
             } else {
                 sb.append("&nbsp;&nbsp;<font color='").append(muted).append("'>(no Git)</font>");
             }
             if (gradleRunning.test(p.path())) {
-                sb.append("&nbsp;<font color='#4caf50'>▶</font>");
+                sb.append("&nbsp;<font color='" + green + "'>▶</font>");
             }
             if (p.versionMismatch()) {
-                sb.append("&nbsp;<font color='#e57373'>⚠</font>");
+                sb.append("&nbsp;<font color='" + red + "'>⚠</font>");
             }
             setText(sb.append("</html>").toString());
-            setIcon(UIManager.getIcon("Tree.leafIcon"));
+            javax.swing.Icon modIcon = p.metadata() != null ? Ui.modIcon(p.metadata().icon(), 16) : null;
+            setIcon(modIcon != null ? modIcon : UIManager.getIcon("Tree.leafIcon"));
         } else if (obj instanceof VersionEntry v) {
             setText("<html><b>" + Ui.html(v.version()) + "</b>&nbsp;&nbsp;<font color='" + muted + "'>"
                     + v.count() + "</font></html>");

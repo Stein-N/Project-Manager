@@ -224,7 +224,7 @@ final class WorktreeDialog extends JDialog {
         }
         okButton.setEnabled(problem == null);
         if (problem != null && !problem.isEmpty()) {
-            infoLabel.setForeground(new java.awt.Color(0xE57373));
+            infoLabel.setForeground(new java.awt.Color(0xD32F2F));
             infoLabel.setText(problem);
         } else if (!branches.isEmpty()) {
             infoLabel.setForeground(UIManager.getColor("Label.disabledForeground"));

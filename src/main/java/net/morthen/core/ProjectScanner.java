@@ -97,7 +97,8 @@ public final class ProjectScanner {
         String modVersion = first(gradle, "mod_version", "modVersion", "version");
 
         return new ModProject(name, mcVersion, dir, isGit, branch, upstream, remote,
-                changes, ahead, behind, detectLoader(dir, gradle), gradleMc, modVersion, linked, commonDir);
+                changes, ahead, behind, detectLoader(dir, gradle), gradleMc, modVersion, linked, commonDir,
+                ModMetadata.read(dir, gradle).orElse(null));
     }
 
     static String detectLoader(Path dir, Properties gradle) {
