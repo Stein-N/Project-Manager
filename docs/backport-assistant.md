@@ -2,6 +2,9 @@
 
 > Status: **geplant, noch nicht begonnen.** Dieses Dokument ist der Startpunkt für eine neue Sitzung.
 > Vor dem Start die [offenen Fragen](#offene-fragen) klären.
+> Verwandtes Feature: [Changelog-Assistent](changelog-assistant.md) – beide nutzen einen gemeinsamen
+> `core/ClaudeRunner`; sinnvoll ist, den Changelog zuerst zu bauen (Claude ohne Werkzeuge) und den Backport darauf
+> aufzusetzen.
 
 ## Ziel
 
