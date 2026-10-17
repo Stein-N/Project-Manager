@@ -72,6 +72,27 @@ public final class Config {
         }
     }
 
+    /** Interval of the background fetch in minutes; 0 = off. */
+    public int autoFetchMinutes() {
+        try {
+            return Math.max(0, Integer.parseInt(props.getProperty("autoFetchMinutes", "10").trim()));
+        } catch (NumberFormatException e) {
+            return 10;
+        }
+    }
+
+    public void setAutoFetchMinutes(int minutes) {
+        props.setProperty("autoFetchMinutes", Integer.toString(Math.max(0, minutes)));
+    }
+
+    public boolean minimizeToTray() {
+        return Boolean.parseBoolean(props.getProperty("minimizeToTray", "true"));
+    }
+
+    public void setMinimizeToTray(boolean value) {
+        props.setProperty("minimizeToTray", Boolean.toString(value));
+    }
+
     private Optional<Path> path(String key) {
         String value = props.getProperty(key, "").trim();
         return value.isEmpty() ? Optional.empty() : Optional.of(Path.of(value));

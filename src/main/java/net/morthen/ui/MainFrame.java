@@ -85,6 +85,8 @@ public final class MainFrame extends JFrame {
     private final JLabel statusLabel = new JLabel();
     private final JProgressBar busyBar = new JProgressBar();
     private int runningTasks;
+    private javax.swing.Timer autoFetchTimer;
+    private boolean autoFetchRunning;
     private Object shownDetail;
 
     public MainFrame(Config config) {
@@ -104,6 +106,7 @@ public final class MainFrame extends JFrame {
         setLocationRelativeTo(null);
 
         buildUi();
+        scheduleAutoFetch();
         SwingUtilities.invokeLater(this::firstStart);
     }
 
@@ -1001,32 +1004,78 @@ public final class MainFrame extends JFrame {
         }
     }
 
-    private void fetchAll() {
-        // Worktrees share one repository → fetch each repository only once
-        Map<Path, Path> targets = new LinkedHashMap<>();
-        Map<Path, String> labels = new LinkedHashMap<>();
+    private record FetchTarget(Path dir, String label) {
+    }
+
+    /** Worktrees share one repository → each repository is fetched only once. */
+    private List<FetchTarget> fetchTargets() {
+        Map<Path, FetchTarget> targets = new LinkedHashMap<>();
         for (ModProject p : projects) {
             if (!p.git()) continue;
             Path key = p.commonDir() != null ? p.commonDir() : p.path();
-            if (targets.putIfAbsent(key, p.path()) == null) {
-                labels.put(key, p.linkedWorktree() ? p.name() : p.mcVersion() + "/" + p.name());
-            }
+            targets.putIfAbsent(key, new FetchTarget(p.path(), p.linkedWorktree() ? p.name() : p.mcVersion() + "/" + p.name()));
         }
         for (ProjectScanner.SharedRepo r : repos) {
-            if (targets.putIfAbsent(r.path(), r.path()) == null) labels.put(r.path(), r.name());
+            targets.putIfAbsent(r.path(), new FetchTarget(r.path(), r.name()));
         }
+        return new ArrayList<>(targets.values());
+    }
+
+    private void fetchAll() {
+        List<FetchTarget> targets = fetchTargets();
         if (targets.isEmpty()) return;
         background("Fetching " + targets.size() + " repositories…", () -> {
             int failed = 0;
-            for (var e : targets.entrySet()) {
-                logAsync("> fetch " + labels.get(e.getKey()));
-                if (!git.run(e.getValue(), this::logAsync, "fetch", "--all", "--prune").ok()) failed++;
+            for (FetchTarget t : targets) {
+                logAsync("> fetch " + t.label());
+                if (!git.run(t.dir(), this::logAsync, "fetch", "--all", "--prune").ok()) failed++;
             }
             return failed;
         }, failed -> {
             log(failed == 0 ? "✔ All repositories fetched" : "✖ " + failed + " fetch(es) failed");
             refresh();
         });
+    }
+
+    /** (Re)starts the background fetch timer according to the settings. */
+    private void scheduleAutoFetch() {
+        if (autoFetchTimer != null) autoFetchTimer.stop();
+        int minutes = config.autoFetchMinutes();
+        if (minutes <= 0) {
+            autoFetchTimer = null;
+            return;
+        }
+        autoFetchTimer = new javax.swing.Timer(minutes * 60_000, e -> autoFetch());
+        autoFetchTimer.start();
+    }
+
+    /** Quiet fetch: no busy indicator, no error dialogs – one summary line in the log. */
+    private void autoFetch() {
+        List<FetchTarget> targets = fetchTargets();
+        if (targets.isEmpty() || runningTasks > 0 || autoFetchRunning) return;
+        autoFetchRunning = true;
+        new SwingWorker<Integer, Void>() {
+            @Override
+            protected Integer doInBackground() {
+                int failed = 0;
+                for (FetchTarget t : targets) {
+                    if (!git.run(t.dir(), "fetch", "--all", "--prune", "--quiet").ok()) failed++;
+                }
+                return failed;
+            }
+
+            @Override
+            protected void done() {
+                autoFetchRunning = false;
+                try {
+                    int failed = get();
+                    log("Auto-fetch: " + targets.size() + " repositories" + (failed > 0 ? " (" + failed + " failed)" : ""));
+                } catch (Exception ignored) {
+                    // logged as nothing – next run will try again
+                }
+                if (runningTasks == 0) refresh();
+            }
+        }.execute();
     }
 
     private void gitTask(String label, Path dir, String... args) {
@@ -1177,11 +1226,19 @@ public final class MainFrame extends JFrame {
                 () -> JOptionPane.showMessageDialog(this, "No installation found.")));
 
         JTextField gitField = new JTextField(config.gitExecutable());
+        javax.swing.JSpinner fetchMinutes = new javax.swing.JSpinner(
+                new javax.swing.SpinnerNumberModel(config.autoFetchMinutes(), 0, 240, 5));
+        JPanel fetchRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        fetchRow.add(fetchMinutes);
+        fetchRow.add(Ui.muted("minutes (0 = off)"));
+        JCheckBox tray = new JCheckBox("Minimize to system tray", config.minimizeToTray());
 
         Ui.Form form = new Ui.Form()
                 .add("Master folder", master, masterBrowse)
                 .add("IntelliJ (idea64.exe)", idea, detect)
-                .add("Git executable", gitField);
+                .add("Git executable", gitField)
+                .add("Auto-fetch every", fetchRow)
+                .add("", tray);
 
         if (JOptionPane.showConfirmDialog(this, form, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
@@ -1196,7 +1253,10 @@ public final class MainFrame extends JFrame {
         }
         config.setGitExecutable(gitField.getText());
         git.setExecutable(config.gitExecutable());
+        config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
+        config.setMinimizeToTray(tray.isSelected());
         config.save();
+        scheduleAutoFetch();
         refresh();
     }
 
