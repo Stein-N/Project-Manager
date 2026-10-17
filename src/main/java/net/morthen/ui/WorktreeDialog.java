@@ -28,10 +28,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Dialog: weiteren Worktree (= weitere Minecraft-Version) für eine Mod anlegen.
+ * Dialog: create another worktree (= another Minecraft version) for a mod.
  */
 final class WorktreeDialog extends JDialog {
-    /** @param newBranch null = bestehende {@code branch} auschecken, sonst neue Branch auf Basis von {@code branch} */
+    /** @param newBranch null = check out existing {@code branch}, otherwise a new branch based on {@code branch} */
     record Request(String version, String name, String branch, String newBranch) {
     }
 
@@ -46,12 +46,12 @@ final class WorktreeDialog extends JDialog {
     {
         branchLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
     }
-    private final JCheckBox newBranchBox = new JCheckBox("Neue Branch erstellen:");
+    private final JCheckBox newBranchBox = new JCheckBox("Create new branch:");
     private final JTextField newBranchField = new JTextField(16);
     private final JTextField nameField;
     private final JLabel targetLabel = Ui.muted(" ");
-    private final JLabel infoLabel = Ui.muted("Aktualisiere Branches (fetch) …");
-    private final JButton okButton = Ui.primary("Worktree anlegen");
+    private final JLabel infoLabel = Ui.muted("Updating branches (fetch) …");
+    private final JButton okButton = Ui.primary("Create worktree");
 
     private List<String> branches = List.of();
     private Map<String, Path> busy = Map.of();
@@ -61,7 +61,7 @@ final class WorktreeDialog extends JDialog {
 
     private WorktreeDialog(Window owner, Git git, Path gitDir, Path master, String modName,
                            String currentBranch, List<String> versions, String presetVersion) {
-        super(owner, "Version hinzufügen – " + modName, ModalityType.APPLICATION_MODAL);
+        super(owner, "Add version – " + modName, ModalityType.APPLICATION_MODAL);
         this.master = master;
         this.baseBranch = currentBranch;
 
@@ -77,7 +77,7 @@ final class WorktreeDialog extends JDialog {
                                                           boolean selected, boolean focus) {
                 super.getListCellRendererComponent(list, value, index, selected, focus);
                 if (value != null && busy.containsKey(value.toString()) && !newBranchBox.isSelected()) {
-                    setText(value + "   — belegt: " + shortPath(busy.get(value.toString())));
+                    setText(value + "   — in use: " + shortPath(busy.get(value.toString())));
                     if (!selected) setForeground(UIManager.getColor("Label.disabledForeground"));
                 }
                 return this;
@@ -89,19 +89,19 @@ final class WorktreeDialog extends JDialog {
         newBranchRow.add(newBranchField, BorderLayout.CENTER);
 
         Ui.Form form = new Ui.Form()
-                .add("Minecraft-Version", versionBox)
+                .add("Minecraft version", versionBox)
                 .add("", newBranchRow)
                 .add(branchLabel, branchBox, null)
-                .add("Ordnername", nameField)
+                .add("Folder name", nameField)
                 .addFull(targetLabel)
                 .addFull(infoLabel);
         form.setBorder(BorderFactory.createEmptyBorder(16, 16, 8, 16));
 
-        JLabel hint = Ui.muted("<html>Ein Worktree nutzt das gleiche Repository – Commits und Branches sind sofort in allen Versionen "
-                + "sichtbar.<br>Jede Branch kann aber nur in einem Worktree gleichzeitig ausgecheckt sein.</html>");
+        JLabel hint = Ui.muted("<html>A worktree uses the same repository – commits and branches are visible in all versions "
+                + "right away.<br>Each branch can only be checked out in one worktree at a time.</html>");
         hint.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 16));
 
-        JButton cancel = new JButton("Abbrechen");
+        JButton cancel = new JButton("Cancel");
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttons.setBorder(BorderFactory.createEmptyBorder(12, 16, 16, 16));
         buttons.add(cancel);
@@ -125,7 +125,7 @@ final class WorktreeDialog extends JDialog {
         branchBox.addActionListener(e -> validateInput());
         newBranchBox.addActionListener(e -> {
             newBranchField.setEnabled(newBranchBox.isSelected());
-            branchLabel.setText(newBranchBox.isSelected() ? "Basis-Branch" : "Branch");
+            branchLabel.setText(newBranchBox.isSelected() ? "Base branch" : "Branch");
             validateInput();
         });
         Ui.onChange(newBranchField, () -> {
@@ -161,11 +161,11 @@ final class WorktreeDialog extends JDialog {
                     branches.forEach(branchBox::addItem);
                     branchBox.setEnabled(true);
                     infoLabel.setText(loaded.fetchError() == null
-                            ? branches.size() + " Branches · " + busy.size() + " davon ausgecheckt"
-                            : "Fetch fehlgeschlagen – zeige lokalen Stand");
+                            ? branches.size() + " branches · " + busy.size() + " checked out"
+                            : "Fetch failed – showing local state");
                     versionChanged();
                 } catch (Exception e) {
-                    infoLabel.setText("Fehler: " + e.getMessage());
+                    infoLabel.setText("Error: " + e.getMessage());
                 }
             }
         }.execute();
@@ -178,7 +178,7 @@ final class WorktreeDialog extends JDialog {
         return Optional.ofNullable(dialog.result);
     }
 
-    /** Passende Branch wählen – gibt es keine freie, wird eine neue Branch (Name = Version) vorgeschlagen. */
+    /** Pick a matching branch – if none is free, suggest a new branch (name = version). */
     private void versionChanged() {
         if (branches.isEmpty()) {
             validateInput();
@@ -196,7 +196,7 @@ final class WorktreeDialog extends JDialog {
             branchBox.setSelectedItem(baseBranch != null && branches.contains(baseBranch) ? baseBranch : branches.getFirst());
         }
         newBranchField.setEnabled(newBranchBox.isSelected());
-        branchLabel.setText(newBranchBox.isSelected() ? "Basis-Branch" : "Branch");
+        branchLabel.setText(newBranchBox.isSelected() ? "Base branch" : "Branch");
         updating = false;
         validateInput();
     }
@@ -209,18 +209,18 @@ final class WorktreeDialog extends JDialog {
         if (branches.isEmpty()) {
             problem = "";
         } else if (target == null) {
-            problem = "Version und Ordnername angeben.";
+            problem = "Enter version and folder name.";
         } else if (Files.exists(target)) {
-            problem = "Der Zielordner existiert bereits.";
+            problem = "The target folder already exists.";
         } else if (branch == null) {
-            problem = "Branch wählen.";
+            problem = "Select a branch.";
         } else if (newBranchBox.isSelected()) {
             String nb = newBranchField.getText().trim();
-            if (nb.isEmpty()) problem = "Namen für die neue Branch angeben.";
-            else if (branches.contains(nb)) problem = "Branch „" + nb + "“ existiert bereits – Haken entfernen und sie direkt wählen.";
+            if (nb.isEmpty()) problem = "Enter a name for the new branch.";
+            else if (branches.contains(nb)) problem = "Branch “" + nb + "” already exists – uncheck the box and select it directly.";
         } else if (busy.containsKey(branch.toString())) {
-            problem = "„" + branch + "“ ist bereits in " + shortPath(busy.get(branch.toString()))
-                    + " ausgecheckt – neue Branch erstellen oder andere wählen.";
+            problem = "“" + branch + "” is already checked out in " + shortPath(busy.get(branch.toString()))
+                    + " – create a new branch or pick another one.";
         }
         okButton.setEnabled(problem == null);
         if (problem != null && !problem.isEmpty()) {
@@ -229,14 +229,14 @@ final class WorktreeDialog extends JDialog {
         } else if (!branches.isEmpty()) {
             infoLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
             infoLabel.setText(newBranchBox.isSelected()
-                    ? "Neue Branch „" + newBranchField.getText().trim() + "“ wird von „" + branch + "“ abgezweigt (ohne Upstream – beim ersten Push setzen)."
-                    : "Branch „" + branch + "“ wird ausgecheckt.");
+                    ? "New branch “" + newBranchField.getText().trim() + "” will be created from “" + branch + "” (no upstream – set it on first push)."
+                    : "Branch “" + branch + "” will be checked out.");
         }
     }
 
     private void updateTargetLabel() {
         Path target = target();
-        targetLabel.setText("Ziel: " + (target == null ? "–" : target.toString()));
+        targetLabel.setText("Target: " + (target == null ? "–" : target.toString()));
     }
 
     private String version() {

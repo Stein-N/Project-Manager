@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * IntelliJ starten, Explorer/Terminal öffnen, Dateioperationen.
+ * Launch IntelliJ, open Explorer/terminal, file operations.
  */
 public final class SystemActions {
     private SystemActions() {
@@ -23,7 +23,7 @@ public final class SystemActions {
 
     // ---------------------------------------------------------------- IntelliJ
 
-    /** Sucht eine IntelliJ-Installation (Standard-Installer, Program Files, Toolbox). */
+    /** Looks for an IntelliJ installation (standard installer, Program Files, Toolbox). */
     public static Optional<Path> detectIntelliJ() {
         List<Path> candidates = new ArrayList<>();
         String localAppData = System.getenv("LOCALAPPDATA");
@@ -46,13 +46,13 @@ public final class SystemActions {
         }
         try (Stream<Path> stream = Files.list(parent)) {
             stream.filter(p -> p.getFileName().toString().startsWith("IntelliJ IDEA"))
-                    // "IntelliJ IDEA" (Ultimate) vor "IntelliJ IDEA Community Edition", neueste zuerst
+                    // "IntelliJ IDEA" (Ultimate) before "IntelliJ IDEA Community Edition", newest first
                     .sorted(Comparator.comparing((Path p) -> p.getFileName().toString().contains("Community"))
                             .thenComparing(Comparator.reverseOrder()))
                     .map(p -> p.resolve("bin").resolve("idea64.exe"))
                     .forEach(out::add);
         } catch (IOException ignored) {
-            // nicht lesbar -> überspringen
+            // not readable -> skip
         }
     }
 
@@ -86,9 +86,9 @@ public final class SystemActions {
         }
     }
 
-    // ---------------------------------------------------------------- Dateien
+    // ---------------------------------------------------------------- Files
 
-    /** Löscht rekursiv; entfernt vorher das Schreibschutz-Attribut (git-Objekte sind unter Windows read-only). */
+    /** Deletes recursively; clears the read-only attribute first (git objects are read-only on Windows). */
     public static void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
@@ -110,7 +110,7 @@ public final class SystemActions {
             copyRecursively(source, target);
             deleteRecursively(source);
         } catch (IOException e) {
-            // z.B. anderes Laufwerk
+            // e.g. a different drive
             if (Files.exists(target)) {
                 throw e;
             }

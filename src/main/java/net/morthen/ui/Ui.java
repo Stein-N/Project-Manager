@@ -22,7 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-/** Kleine Swing-Helfer. */
+/** Small Swing helpers. */
 final class Ui {
     private Ui() {
     }
@@ -39,7 +39,7 @@ final class Ui {
         return label;
     }
 
-    /** Read-only Textfeld ohne Rahmen – sieht aus wie ein Label, ist aber kopierbar. */
+    /** Borderless read-only text field – looks like a label but can be copied. */
     static JTextField copyable(String text) {
         JTextField field = new JTextField(text == null ? "" : text);
         field.setEditable(false);
@@ -102,7 +102,7 @@ final class Ui {
         });
     }
 
-    /** Formular mit Label-Spalte und Feld-Spalte. */
+    /** Form with a label column and a field column. */
     static final class Form extends JPanel {
         private int row;
 
@@ -140,7 +140,7 @@ final class Ui {
         }
     }
 
-    /** Vertikaler Stapel, Komponenten volle Breite, Rest leer. */
+    /** Vertical stack, components full width, remaining space empty. */
     static final class Stack extends JPanel implements Scrollable {
         private int row;
 
@@ -154,7 +154,7 @@ final class Ui {
             return this;
         }
 
-        // Breite folgt dem Viewport: lange Inhalte werden gekürzt statt horizontal zu scrollen
+        // Width follows the viewport: long content is truncated instead of scrolling horizontally
         @Override
         public Dimension getPreferredScrollableViewportSize() {
             return getPreferredSize();

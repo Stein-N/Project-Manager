@@ -31,7 +31,7 @@ final class ProjectTreeRenderer extends DefaultTreeCellRenderer {
                     sb.append("&nbsp;<font color='#e57373'>↓").append(p.behind()).append("</font>");
                 }
             } else {
-                sb.append("&nbsp;&nbsp;<font color='").append(muted).append("'>(kein Git)</font>");
+                sb.append("&nbsp;&nbsp;<font color='").append(muted).append("'>(no Git)</font>");
             }
             if (p.versionMismatch()) {
                 sb.append("&nbsp;<font color='#e57373'>⚠</font>");

@@ -63,7 +63,7 @@ import java.util.function.Consumer;
 
 public final class MainFrame extends JFrame {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
-    /** Feste Fenstergröße; das Layout ist genau darauf abgestimmt. */
+    /** Fixed window size; the layout is tuned to exactly this size. */
     private static final Dimension WINDOW_SIZE = new Dimension(900, 560);
     private static final int LEFT_WIDTH = 290;
     private static final int LOG_HEIGHT = 120;
@@ -100,23 +100,23 @@ public final class MainFrame extends JFrame {
         SwingUtilities.invokeLater(this::firstStart);
     }
 
-    // =====================================================================  Aufbau
+    // =====================================================================  Layout
 
     private void buildUi() {
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
         toolbar.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-        toolbar.add(toolButton("➕ Projekt klonen", "Git-Repository in eine Versions-Ordner klonen", () -> cloneDialog(null, null, selectedVersion())));
-        toolbar.add(toolButton("📥 Importieren", "Vorhandenen lokalen Projektordner übernehmen", () -> importProject(selectedVersion())));
-        toolbar.add(toolButton("📁 Neue Version", "Neuen Minecraft-Versionsordner anlegen", this::createVersion));
+        toolbar.add(toolButton("➕ Clone project", "Clone a Git repository into a version folder", () -> cloneDialog(null, null, selectedVersion())));
+        toolbar.add(toolButton("📥 Import", "Take over an existing local project folder", () -> importProject(selectedVersion())));
+        toolbar.add(toolButton("📁 New version", "Create a new Minecraft version folder", this::createVersion));
         toolbar.addSeparator();
-        toolbar.add(toolButton("⟳ Aktualisieren", "Ordner neu einlesen (F5)", this::refresh));
-        toolbar.add(toolButton("⇣ Alle fetchen", "git fetch für alle Projekte", this::fetchAll));
+        toolbar.add(toolButton("⟳ Refresh", "Rescan folders (F5)", this::refresh));
+        toolbar.add(toolButton("⇣ Fetch all", "git fetch for all projects", this::fetchAll));
         toolbar.add(javax.swing.Box.createHorizontalGlue());
-        toolbar.add(toolButton("⚙ Einstellungen", "Master-Pfad, IntelliJ, Git, Design", this::openSettings));
+        toolbar.add(toolButton("⚙ Settings", "Master path, IntelliJ, Git, theme", this::openSettings));
 
-        // --- linke Seite: Filter + Baum
-        filterField.putClientProperty("JTextField.placeholderText", "Projekte filtern…");
+        // --- left side: filter + tree
+        filterField.putClientProperty("JTextField.placeholderText", "Filter projects…");
         filterField.putClientProperty("JTextField.showClearButton", true);
         Ui.onChange(filterField, this::rebuildTree);
 
@@ -157,14 +157,14 @@ public final class MainFrame extends JFrame {
         left.add(new JScrollPane(tree, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_NEVER), BorderLayout.CENTER);
 
-        // --- rechte Seite: Details
+        // --- right side: details
         detailPanel.setBorder(BorderFactory.createEmptyBorder(8, 4, 8, 8));
 
         JPanel top = new JPanel(new BorderLayout());
         top.add(left, BorderLayout.WEST);
         top.add(detailPanel, BorderLayout.CENTER);
 
-        // --- unten: Log
+        // --- bottom: log
         logArea.setEditable(false);
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
         JScrollPane logScroll = new JScrollPane(logArea);
@@ -172,8 +172,8 @@ public final class MainFrame extends JFrame {
         logPanel.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
         logPanel.setPreferredSize(new Dimension(0, LOG_HEIGHT));
         JPanel logHeader = new JPanel(new BorderLayout());
-        logHeader.add(Ui.heading("Git-Log", "h4"), BorderLayout.WEST);
-        JButton clearLog = new JButton("Leeren");
+        logHeader.add(Ui.heading("Git log", "h4"), BorderLayout.WEST);
+        JButton clearLog = new JButton("Clear");
         clearLog.putClientProperty("JButton.buttonType", "toolBarButton");
         clearLog.addActionListener(e -> logArea.setText(""));
         logHeader.add(clearLog, BorderLayout.EAST);
@@ -184,7 +184,7 @@ public final class MainFrame extends JFrame {
         center.add(top, BorderLayout.CENTER);
         center.add(logPanel, BorderLayout.SOUTH);
 
-        // --- Statusleiste
+        // --- status bar
         busyBar.setIndeterminate(true);
         busyBar.setVisible(false);
         busyBar.setPreferredSize(new Dimension(120, 10));
@@ -206,16 +206,16 @@ public final class MainFrame extends JFrame {
     private void firstStart() {
         if (config.masterPath().filter(Files::isDirectory).isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "<html>Willkommen! Bitte wähle zuerst deinen <b>Master-Ordner</b>.<br><br>"
-                            + "Darin wird pro Minecraft-Version ein Unterordner angelegt,<br>"
-                            + "z.B. <tt>Master\\1.21.1\\MeinMod</tt>.</html>",
-                    "Master-Ordner festlegen", JOptionPane.INFORMATION_MESSAGE);
+                    "<html>Welcome! Please choose your <b>master folder</b> first.<br><br>"
+                            + "It will contain one subfolder per Minecraft version,<br>"
+                            + "e.g. <tt>Master\\1.21.1\\MyMod</tt>.</html>",
+                    "Choose master folder", JOptionPane.INFORMATION_MESSAGE);
             chooseMaster();
         }
         refresh();
     }
 
-    // =====================================================================  Daten & Baum
+    // =====================================================================  Data & tree
 
     private void refresh() {
         Optional<Path> master = config.masterPath();
@@ -229,7 +229,7 @@ public final class MainFrame extends JFrame {
             return;
         }
         Object keep = selectionKey();
-        background("Projekte werden eingelesen…", () -> ProjectScanner.scan(master.get(), git), result -> {
+        background("Scanning projects…", () -> ProjectScanner.scan(master.get(), git), result -> {
             apply(result);
             rebuildTree();
             reselect(keep);
@@ -243,7 +243,7 @@ public final class MainFrame extends JFrame {
         repos = result.repos();
     }
 
-    /** Andere Worktrees desselben Repositories. */
+    /** Other worktrees of the same repository. */
     private List<ModProject> siblings(ModProject p) {
         if (p.commonDir() == null) return List.of();
         return projects.stream().filter(o -> o != p && p.commonDir().equals(o.commonDir())).toList();
@@ -268,7 +268,7 @@ public final class MainFrame extends JFrame {
         }
 
         root.removeAllChildren();
-        root.setUserObject(master == null ? "Kein Master-Ordner gewählt"
+        root.setUserObject(master == null ? "No master folder selected"
                 : master.getFileName() == null ? master.toString() : master.getFileName().toString());
         tree.setToolTipText(master == null ? null : master.toString());
         byVersion.forEach((version, list) -> {
@@ -287,7 +287,7 @@ public final class MainFrame extends JFrame {
         reselect(keep);
     }
 
-    /** Merkt sich, was ausgewählt ist (Pfad des Projekts / Version), um es nach Neuaufbau wiederzufinden. */
+    /** Remembers the selection (project path / version) so it can be restored after a rebuild. */
     private Object selectionKey() {
         Object o = selectedObject();
         if (o instanceof ModProject p) return p.path();
@@ -331,13 +331,13 @@ public final class MainFrame extends JFrame {
     private void updateStatus() {
         String master = config.masterPath().map(Path::toString).orElse("–");
         long dirty = projects.stream().filter(ModProject::hasUnsavedWork).count();
-        // Zähler zuerst, damit bei langem Pfad nur der Pfad gekürzt wird
-        statusLabel.setText(versions.size() + " Versionen  ·  " + projects.size() + " Projekte"
-                + (dirty > 0 ? "  ·  " + dirty + " mit ungesicherten Änderungen" : "") + "  ·  Master: " + master);
+        // Counters first, so a long path only truncates the path
+        statusLabel.setText(versions.size() + " versions  ·  " + projects.size() + " projects"
+                + (dirty > 0 ? "  ·  " + dirty + " with unsaved work" : "") + "  ·  Master: " + master);
         statusLabel.setToolTipText(master);
     }
 
-    // =====================================================================  Detailansicht
+    // =====================================================================  Detail view
 
     private void showDetails(Object obj) {
         shownDetail = obj;
@@ -366,17 +366,17 @@ public final class MainFrame extends JFrame {
         stack.push(Ui.heading(p.name(), "h2"), 2);
         stack.push(Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")), 16);
 
-        JButton openIde = Ui.primary("  In IntelliJ öffnen  ");
+        JButton openIde = Ui.primary("  Open in IntelliJ  ");
         openIde.addActionListener(e -> openInIntelliJ(p));
         JPanel primaryRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         primaryRow.add(openIde);
         stack.push(primaryRow, 18);
 
         Ui.Form info = new Ui.Form();
-        info.add("Pfad", Ui.copyable(p.path().toString()));
+        info.add("Path", Ui.copyable(p.path().toString()));
         if (p.git()) {
             info.add("Branch", Ui.copyable(p.branch()));
-            info.add("Upstream", Ui.copyable(p.upstream() == null ? "– (kein Tracking-Branch)" : p.upstream()));
+            info.add("Upstream", Ui.copyable(p.upstream() == null ? "– (no tracking branch)" : p.upstream()));
             info.add("Status", new JLabel(statusHtml(p)));
             info.add("Remote", Ui.copyable(p.remoteUrl().isEmpty() ? "–" : p.remoteUrl()));
             info.add("Repository", new JLabel(repoDescription(p)));
@@ -390,42 +390,42 @@ public final class MainFrame extends JFrame {
                     link.addActionListener(e -> reselect(s.path()));
                     links.add(link);
                 }
-                info.add("Weitere Versionen", links);
+                info.add("Other versions", links);
             }
         } else {
-            info.add("Git", new JLabel("Kein Git-Repository"));
+            info.add("Git", new JLabel("Not a Git repository"));
         }
-        if (p.modVersion() != null) info.add("Mod-Version", Ui.copyable(p.modVersion()));
+        if (p.modVersion() != null) info.add("Mod version", Ui.copyable(p.modVersion()));
         if (p.gradleMcVersion() != null) {
             String text = p.gradleMcVersion();
             JLabel label = new JLabel(p.versionMismatch()
-                    ? "<html>" + Ui.html(text) + " <font color='#e57373'>⚠ passt nicht zum Ordner „" + Ui.html(p.mcVersion()) + "“</font></html>"
+                    ? "<html>" + Ui.html(text) + " <font color='#e57373'>⚠ does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
                     : text);
-            info.add("MC laut gradle", label);
+            info.add("MC (gradle)", label);
         }
         stack.push(info, 18);
 
-        stack.push(Ui.heading("Aktionen", "h4"), 6);
+        stack.push(Ui.heading("Actions", "h4"), 6);
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Im Explorer öffnen", () -> run(() -> SystemActions.openExplorer(p.path()))));
-        actions.add(button("Terminal öffnen", () -> run(() -> SystemActions.openTerminal(p.path()))));
+        actions.add(button("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
+        actions.add(button("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
         if (p.git()) {
             actions.add(button("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
             actions.add(button("Pull (fast-forward)", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
-            actions.add(button("Version hinzufügen (Worktree)…", () -> addWorktree(p)));
+            actions.add(button("Add version (worktree)…", () -> addWorktree(p)));
             if (p.standaloneClone()) {
-                actions.add(button("In gemeinsames Repo umwandeln…", () -> convertToShared(p)));
+                actions.add(button("Convert to shared repo…", () -> convertToShared(p)));
             }
         }
-        actions.add(button("Verschieben / Umbenennen…", () -> moveProject(p)));
-        JButton delete = button("Entfernen…", () -> deleteProject(p));
+        actions.add(button("Move / rename…", () -> moveProject(p)));
+        JButton delete = button("Remove…", () -> deleteProject(p));
         delete.setForeground(new java.awt.Color(0xE57373));
         actions.add(delete);
         stack.push(actions, 18);
 
         if (p.git()) {
-            stack.push(Ui.heading("Branch wechseln", "h4"), 6);
-            JComboBox<String> branches = new JComboBox<>(new String[]{"Lade…"});
+            stack.push(Ui.heading("Switch branch", "h4"), 6);
+            JComboBox<String> branches = new JComboBox<>(new String[]{"Loading…"});
             branches.setEnabled(false);
             JButton checkout = new JButton("Checkout");
             checkout.setEnabled(false);
@@ -433,8 +433,8 @@ public final class MainFrame extends JFrame {
                 Object b = branches.getSelectedItem();
                 if (b != null && !b.toString().equals(p.branch())) {
                     if (p.changes() > 0 && JOptionPane.showConfirmDialog(this,
-                            "Es gibt " + p.changes() + " ungespeicherte Änderungen. Trotzdem wechseln?",
-                            "Branch wechseln", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                            "There are " + p.changes() + " uncommitted change(s). Switch anyway?",
+                            "Switch branch", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
                         return;
                     }
                     gitTask("Checkout " + b, p.path(), "checkout", b.toString());
@@ -444,7 +444,7 @@ public final class MainFrame extends JFrame {
             row.add(branches, BorderLayout.CENTER);
             row.add(checkout, BorderLayout.EAST);
             stack.push(row, 4);
-            stack.push(Ui.muted("Tipp: Für parallele Versionen lieber „Für andere Version klonen…“ nutzen."), 0);
+            stack.push(Ui.muted("Tip: for parallel versions, use “Add version (worktree)…” instead."), 0);
 
             new SwingWorker<List<String>, Void>() {
                 @Override
@@ -472,10 +472,10 @@ public final class MainFrame extends JFrame {
 
     private static String statusHtml(ModProject p) {
         List<String> parts = new ArrayList<>();
-        parts.add(p.changes() == 0 ? "<font color='#4caf50'>✔ keine lokalen Änderungen</font>"
-                : "<font color='#e0a030'>● " + p.changes() + " geänderte Datei(en)</font>");
-        if (p.ahead() > 0) parts.add("<font color='#4caf50'>↑ " + p.ahead() + " nicht gepusht</font>");
-        if (p.behind() > 0) parts.add("<font color='#e57373'>↓ " + p.behind() + " hinter Remote</font>");
+        parts.add(p.changes() == 0 ? "<font color='#4caf50'>✔ no local changes</font>"
+                : "<font color='#e0a030'>● " + p.changes() + " changed file(s)</font>");
+        if (p.ahead() > 0) parts.add("<font color='#4caf50'>↑ " + p.ahead() + " not pushed</font>");
+        if (p.behind() > 0) parts.add("<font color='#e57373'>↓ " + p.behind() + " behind remote</font>");
         return "<html>" + String.join("&nbsp;&nbsp;·&nbsp;&nbsp;", parts) + "</html>";
     }
 
@@ -483,22 +483,22 @@ public final class MainFrame extends JFrame {
         Ui.Stack stack = new Ui.Stack();
         stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
         stack.push(Ui.heading("Minecraft " + v.version(), "h2"), 2);
-        stack.push(Ui.muted(v.count() + " Projekt(e)"), 16);
+        stack.push(Ui.muted(v.count() + " project(s)"), 16);
 
         Ui.Form info = new Ui.Form();
-        info.add("Ordner", Ui.copyable(v.path() == null ? "" : v.path().toString()));
+        info.add("Folder", Ui.copyable(v.path() == null ? "" : v.path().toString()));
         stack.push(info, 18);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Projekt in diese Version klonen…", () -> cloneDialog(null, null, v.version())));
-        actions.add(button("Lokales Projekt importieren…", () -> importProject(v.version())));
-        actions.add(button("Ordner öffnen", () -> run(() -> SystemActions.openExplorer(v.path()))));
-        actions.add(button("Versionsordner löschen (wenn leer)", () -> deleteVersion(v)));
+        actions.add(button("Clone project into this version…", () -> cloneDialog(null, null, v.version())));
+        actions.add(button("Import local project…", () -> importProject(v.version())));
+        actions.add(button("Open folder", () -> run(() -> SystemActions.openExplorer(v.path()))));
+        actions.add(button("Delete version folder (if empty)", () -> deleteVersion(v)));
         stack.push(actions, 18);
 
         List<ModProject> list = projects.stream().filter(p -> p.mcVersion().equals(v.version())).toList();
         if (!list.isEmpty()) {
-            stack.push(Ui.heading("Schnell öffnen", "h4"), 6);
+            stack.push(Ui.heading("Quick open", "h4"), 6);
             JPanel quick = new JPanel(new GridLayout(0, 2, 8, 8));
             for (ModProject p : list) {
                 quick.add(button(p.name() + (p.branch() != null ? "  ⎇ " + p.branch() : ""), () -> openInIntelliJ(p)));
@@ -514,9 +514,9 @@ public final class MainFrame extends JFrame {
         stack.push(Ui.heading("MC Mod Project Manager", "h2"), 4);
         Optional<Path> master = config.masterPath();
         if (master.isEmpty()) {
-            stack.push(new JLabel("Es ist noch kein Master-Ordner festgelegt."), 12);
+            stack.push(new JLabel("No master folder has been set yet."), 12);
             JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-            JButton choose = Ui.primary("Master-Ordner wählen…");
+            JButton choose = Ui.primary("Choose master folder…");
             choose.addActionListener(e -> {
                 chooseMaster();
                 refresh();
@@ -525,44 +525,44 @@ public final class MainFrame extends JFrame {
             stack.push(row, 0);
             return stack.finish();
         }
-        stack.push(Ui.muted("Struktur:  " + master.get() + "\\<MC-Version>\\<Projekt>"), 16);
+        stack.push(Ui.muted("Structure:  " + master.get() + "\\<MC version>\\<project>"), 16);
 
         Ui.Form info = new Ui.Form();
-        info.add("Master-Ordner", Ui.copyable(master.get().toString()));
-        info.add("Versionen", Ui.copyable(versions.isEmpty() ? "–" : String.join(",  ", versions)));
-        info.add("Projekte", new JLabel(String.valueOf(projects.size())));
+        info.add("Master folder", Ui.copyable(master.get().toString()));
+        info.add("Versions", Ui.copyable(versions.isEmpty() ? "–" : String.join(",  ", versions)));
+        info.add("Projects", new JLabel(String.valueOf(projects.size())));
         long dirty = projects.stream().filter(p -> p.changes() > 0).count();
         long unpushed = projects.stream().filter(p -> p.ahead() > 0).count();
         long behind = projects.stream().filter(p -> p.behind() > 0).count();
-        info.add("Mit Änderungen", new JLabel(String.valueOf(dirty)));
-        info.add("Nicht gepusht", new JLabel(String.valueOf(unpushed)));
-        info.add("Hinter Remote", new JLabel(String.valueOf(behind)));
-        info.add("IntelliJ", Ui.copyable(ideaPath().map(Path::toString).orElse("nicht gefunden – siehe Einstellungen")));
+        info.add("With changes", new JLabel(String.valueOf(dirty)));
+        info.add("Not pushed", new JLabel(String.valueOf(unpushed)));
+        info.add("Behind remote", new JLabel(String.valueOf(behind)));
+        info.add("IntelliJ", Ui.copyable(ideaPath().map(Path::toString).orElse("not found – see settings")));
         stack.push(info, 18);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Projekt klonen…", () -> cloneDialog(null, null, selectedVersion())));
-        actions.add(button("Lokales Projekt importieren…", () -> importProject(null)));
-        actions.add(button("Neue Minecraft-Version…", this::createVersion));
-        actions.add(button("Master-Ordner öffnen", () -> run(() -> SystemActions.openExplorer(master.get()))));
+        actions.add(button("Clone project…", () -> cloneDialog(null, null, selectedVersion())));
+        actions.add(button("Import local project…", () -> importProject(null)));
+        actions.add(button("New Minecraft version…", this::createVersion));
+        actions.add(button("Open master folder", () -> run(() -> SystemActions.openExplorer(master.get()))));
         stack.push(actions, 24);
 
-        stack.push(Ui.heading("Gemeinsame Repositories (" + Worktrees.REPOS_DIR + ")", "h3"), 4);
-        stack.push(Ui.muted("Jede Mod hat ein Repository; die Versionsordner sind Worktrees davon."), 10);
+        stack.push(Ui.heading("Shared repositories (" + Worktrees.REPOS_DIR + ")", "h3"), 4);
+        stack.push(Ui.muted("Each mod has one repository; the version folders are worktrees of it."), 10);
         if (repos.isEmpty()) {
-            stack.push(Ui.muted("Noch keine – beim Klonen „Als Worktree anlegen“ wählen oder bestehende Clones umwandeln."), 10);
+            stack.push(Ui.muted("None yet – pick “Create as worktree” when cloning, or convert existing clones."), 10);
         }
         for (ProjectScanner.SharedRepo r : repos) {
             JPanel row = new JPanel(new BorderLayout(12, 0));
-            String versionsText = r.worktrees().isEmpty() ? "<font color='#e0a030'>keine Worktrees</font>"
+            String versionsText = r.worktrees().isEmpty() ? "<font color='#e0a030'>no worktrees</font>"
                     : Ui.html(String.join(", ", r.worktrees().stream().map(ModProject::mcVersion).toList()));
             row.add(new JLabel("<html><b>" + Ui.html(r.name()) + "</b>&nbsp;&nbsp;" + versionsText
                     + "<br><font color='" + Ui.hex(UIManager.getColor("Label.disabledForeground")) + "'>"
-                    + Ui.html(r.url().isEmpty() ? "(kein Remote)" : r.url()) + "</font></html>"), BorderLayout.CENTER);
+                    + Ui.html(r.url().isEmpty() ? "(no remote)" : r.url()) + "</font></html>"), BorderLayout.CENTER);
             JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-            buttons.add(button("Version hinzufügen…", () -> addWorktree(r.path(), r.name(), null, null)));
+            buttons.add(button("Add version…", () -> addWorktree(r.path(), r.name(), null, null)));
             if (r.worktrees().isEmpty()) {
-                JButton del = button("Löschen…", () -> deleteSharedRepo(r));
+                JButton del = button("Delete…", () -> deleteSharedRepo(r));
                 del.setForeground(new java.awt.Color(0xE57373));
                 buttons.add(del);
             }
@@ -572,12 +572,12 @@ public final class MainFrame extends JFrame {
 
         long clones = projects.stream().filter(p -> p.standaloneClone() && !p.remoteUrl().isEmpty()).count();
         JPanel maintenance = new JPanel(new GridLayout(0, 2, 8, 8));
-        JButton convert = button("Alle Clones umwandeln (" + clones + ")…", this::convertAll);
+        JButton convert = button("Convert all clones (" + clones + ")…", this::convertAll);
         convert.setEnabled(clones > 0);
-        convert.setToolTipText("Eigenständige Clones in Worktrees gemeinsamer Repositories umwandeln");
+        convert.setToolTipText("Convert standalone clones into worktrees of shared repositories");
         maintenance.add(convert);
-        JButton prune = button("Verwaiste Worktree-Einträge aufräumen", this::pruneAll);
-        prune.setToolTipText("git worktree prune – entfernt Einträge von Worktrees, deren Ordner gelöscht wurde");
+        JButton prune = button("Clean up stale worktree entries", this::pruneAll);
+        prune.setToolTipText("git worktree prune – removes entries of worktrees whose folder was deleted");
         maintenance.add(prune);
         stack.push(maintenance, 0);
         return stack.finish();
@@ -587,29 +587,29 @@ public final class MainFrame extends JFrame {
         java.util.Set<Path> dirs = new java.util.LinkedHashSet<>();
         projects.stream().map(ModProject::commonDir).filter(java.util.Objects::nonNull).forEach(dirs::add);
         repos.forEach(r -> dirs.add(r.path()));
-        background("Räume auf…", () -> {
+        background("Cleaning up…", () -> {
             for (Path d : dirs) {
                 git.run(d, this::logAsync, "worktree", "prune", "--verbose");
             }
             return dirs.size();
         }, n -> {
-            log("✔ " + n + " Repositories aufgeräumt");
+            log("✔ " + n + " repositories cleaned up");
             refresh();
         });
     }
 
-    // =====================================================================  Aktionen
+    // =====================================================================  Actions
 
     private void openInIntelliJ(ModProject p) {
         Optional<Path> ide = ideaPath();
         if (ide.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "IntelliJ IDEA wurde nicht gefunden.\nBitte den Pfad zu idea64.exe in den Einstellungen festlegen.",
-                    "IntelliJ nicht gefunden", JOptionPane.WARNING_MESSAGE);
+                    "IntelliJ IDEA was not found.\nPlease set the path to idea64.exe in the settings.",
+                    "IntelliJ not found", JOptionPane.WARNING_MESSAGE);
             openSettings();
             return;
         }
-        log("Öffne " + p.name() + " in IntelliJ …");
+        log("Opening " + p.name() + " in IntelliJ …");
         run(() -> SystemActions.openInIntelliJ(ide.get(), p.path()));
     }
 
@@ -632,7 +632,7 @@ public final class MainFrame extends JFrame {
             Path target = versionDir.resolve(req.name());
             Path repo = Worktrees.sharedRepo(master.get(), req.name());
             log((req.worktree() ? "Worktree " : "Clone ") + req.url() + " [" + req.branch() + "]  →  " + target);
-            background("Klone " + req.name() + " (" + req.branch() + ")…", () -> {
+            background("Cloning " + req.name() + " (" + req.branch() + ")…", () -> {
                 Files.createDirectories(versionDir);
                 if (req.worktree()) {
                     Worktrees.ensureShared(git, repo, req.url(), this::logAsync);
@@ -641,16 +641,16 @@ public final class MainFrame extends JFrame {
                     git.runOrThrow(versionDir, this::logAsync, "clone", "--branch", req.branch(), req.url(), req.name());
                 }
                 return target;
-            }, t -> afterCreate(t, req.name() + " wurde geklont."));
+            }, t -> afterCreate(t, req.name() + " has been cloned."));
         });
     }
 
-    /** Neu eingelesen, Projekt auswählen und Öffnen in IntelliJ anbieten. */
+    /** Rescan, select the project and offer to open it in IntelliJ. */
     private void afterCreate(Path target, String message) {
         log("✔ " + message);
         reloadAndSelect(target, () -> {
-            if (JOptionPane.showConfirmDialog(this, message + " Jetzt in IntelliJ öffnen?",
-                    "Fertig", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (JOptionPane.showConfirmDialog(this, message + " Open it in IntelliJ now?",
+                    "Done", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 projects.stream().filter(p -> p.path().equals(target)).findFirst().ifPresent(this::openInIntelliJ);
             }
         });
@@ -660,19 +660,19 @@ public final class MainFrame extends JFrame {
         addWorktree(p.path(), p.name(), p.branch(), p.mcVersion());
     }
 
-    /** @param gitDir Worktree oder Repository, aus dem heraus der neue Worktree angelegt wird */
+    /** @param gitDir worktree or repository from which the new worktree is created */
     private void addWorktree(Path gitDir, String name, String currentBranch, String currentVersion) {
         Optional<Path> master = requireMaster();
         if (master.isEmpty()) return;
         String suggestion = versions.stream().filter(v -> !v.equals(currentVersion)).findFirst().orElse(null);
         WorktreeDialog.show(this, git, gitDir, master.get(), name, currentBranch, versions, suggestion).ifPresent(req -> {
             Path target = master.get().resolve(req.version()).resolve(req.name());
-            log("Worktree " + (req.newBranch() != null ? "neue Branch " + req.newBranch() + " (von " + req.branch() + ")" : req.branch())
+            log("Worktree " + (req.newBranch() != null ? "new branch " + req.newBranch() + " (from " + req.branch() + ")" : req.branch())
                     + "  →  " + target);
-            background("Lege Worktree an…", () -> {
+            background("Creating worktree…", () -> {
                 Worktrees.add(git, gitDir, target, req.branch(), req.newBranch(), this::logAsync);
                 return target;
-            }, t -> afterCreate(t, "Worktree für Minecraft " + req.version() + " wurde angelegt."));
+            }, t -> afterCreate(t, "Worktree for Minecraft " + req.version() + " has been created."));
         });
     }
 
@@ -681,21 +681,21 @@ public final class MainFrame extends JFrame {
         List<ModProject> sib = siblings(p);
         String text;
         if (Files.isDirectory(repo)) {
-            text = "Für „" + Ui.html(p.name()) + "“ gibt es bereits ein gemeinsames Repository.<br><br>"
-                    + "Die lokalen Branches dieses Clones werden dorthin übernommen und sein <tt>.git</tt>-Ordner "
-                    + "danach entfernt.<br>Lokale Git-Einstellungen und Hooks dieses Clones gehen dabei verloren.";
+            text = "A shared repository for “" + Ui.html(p.name()) + "” already exists.<br><br>"
+                    + "The local branches of this clone are transferred there and its <tt>.git</tt> folder "
+                    + "is removed afterwards.<br>Local Git settings and hooks of this clone will be lost.";
         } else {
-            text = "Der <tt>.git</tt>-Ordner wird nach<br><tt>" + Ui.html(repo.toString()) + "</tt><br>verschoben; "
-                    + "das Projekt wird zum ersten Worktree davon."
-                    + (sib.isEmpty() ? "" : "<br>Die " + sib.size() + " verknüpften Worktrees werden automatisch umgehängt.");
+            text = "The <tt>.git</tt> folder is moved to<br><tt>" + Ui.html(repo.toString()) + "</tt><br>"
+                    + "and the project becomes its first worktree."
+                    + (sib.isEmpty() ? "" : "<br>The " + sib.size() + " linked worktree(s) are relinked automatically.");
         }
-        text += "<br><br>Alle Dateien im Projektordner (auch <tt>run/</tt>, <tt>build/</tt> …) bleiben unverändert."
-                + "<br><b>Bitte das Projekt vorher in IntelliJ schließen.</b>";
-        if (JOptionPane.showConfirmDialog(this, "<html>" + text + "</html>", "In gemeinsames Repository umwandeln",
+        text += "<br><br>All files in the project folder (including <tt>run/</tt>, <tt>build/</tt> …) stay untouched."
+                + "<br><b>Please close the project in IntelliJ first.</b>";
+        if (JOptionPane.showConfirmDialog(this, "<html>" + text + "</html>", "Convert to shared repository",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
             return;
         }
-        background("Wandle " + p.name() + " um…", () -> {
+        background("Converting " + p.name() + "…", () -> {
             Worktrees.convertToShared(git, p.path(), repo, this::logAsync);
             return p.path();
         }, t -> reloadAndSelect(t, null));
@@ -708,16 +708,16 @@ public final class MainFrame extends JFrame {
                 .filter(p -> !p.remoteUrl().isEmpty())
                 .toList();
         if (clones.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Es gibt keine eigenständigen Clones mit Remote-URL.");
+            JOptionPane.showMessageDialog(this, "There are no standalone clones with a remote URL.");
             return;
         }
-        if (JOptionPane.showConfirmDialog(this, "<html>" + clones.size() + " Clone(s) in gemeinsame Repositories "
-                        + "(eins pro Mod-Name) umwandeln?<br>Arbeitsdateien bleiben unverändert.<br><br>"
-                        + "<b>Bitte alle betroffenen Projekte vorher in IntelliJ schließen.</b></html>",
-                "Alle umwandeln", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
+        if (JOptionPane.showConfirmDialog(this, "<html>Convert " + clones.size() + " clone(s) into shared repositories "
+                        + "(one per mod name)?<br>Working files stay untouched.<br><br>"
+                        + "<b>Please close all affected projects in IntelliJ first.</b></html>",
+                "Convert all", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
             return;
         }
-        background("Wandle " + clones.size() + " Clone(s) um…", () -> {
+        background("Converting " + clones.size() + " clone(s)…", () -> {
             List<String> failed = new ArrayList<>();
             for (ModProject p : clones) {
                 logAsync("> " + p.mcVersion() + "/" + p.name());
@@ -731,30 +731,30 @@ public final class MainFrame extends JFrame {
             return failed;
         }, failed -> {
             if (failed.isEmpty()) {
-                log("✔ Alle Clones umgewandelt");
+                log("✔ All clones converted");
             } else {
-                error("Nicht alle umgewandelt", String.join("\n\n", failed) + "\n\nDetails im Git-Log.");
+                error("Not all converted", String.join("\n\n", failed) + "\n\nSee the Git log for details.");
             }
             refresh();
         });
     }
 
     private void deleteSharedRepo(ProjectScanner.SharedRepo r) {
-        background("Prüfe " + r.name() + "…", () -> Worktrees.unpushedCommits(git, r.path()), unpushed -> {
+        background("Checking " + r.name() + "…", () -> Worktrees.unpushedCommits(git, r.path()), unpushed -> {
             String warning = unpushed > 0
-                    ? "<br><br><font color='#e57373'><b>Achtung:</b> " + unpushed
-                    + " Commit(s) auf lokalen Branches sind nicht gepusht und gehen verloren!</font>"
+                    ? "<br><br><font color='#e57373'><b>Warning:</b> " + unpushed
+                    + " commit(s) on local branches are not pushed and will be lost!</font>"
                     : "";
-            if (JOptionPane.showConfirmDialog(this, "<html>Gemeinsames Repository endgültig löschen?<br><tt>"
+            if (JOptionPane.showConfirmDialog(this, "<html>Permanently delete the shared repository?<br><tt>"
                             + Ui.html(r.path().toString()) + "</tt>" + warning + "</html>",
-                    "Repository löschen", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                    "Delete repository", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
                 return;
             }
-            background("Lösche " + r.name() + "…", () -> {
+            background("Deleting " + r.name() + "…", () -> {
                 SystemActions.deleteRecursively(r.path());
                 return null;
             }, x -> {
-                log("✔ Repository " + r.name() + " gelöscht");
+                log("✔ Repository " + r.name() + " deleted");
                 refresh();
             });
         });
@@ -764,12 +764,12 @@ public final class MainFrame extends JFrame {
         int others = siblings(p).size();
         if (p.linkedWorktree()) {
             if (isShared(p)) {
-                return "<html>Worktree &nbsp;·&nbsp; gemeinsames Repo <tt>" + Ui.html(Worktrees.REPOS_DIR + "/" + p.commonDir().getFileName()) + "</tt></html>";
+                return "<html>Worktree &nbsp;·&nbsp; shared repo <tt>" + Ui.html(Worktrees.REPOS_DIR + "/" + p.commonDir().getFileName()) + "</tt></html>";
             }
             Path main = p.commonDir() == null ? null : p.commonDir().getParent();
-            return "<html>Worktree von <tt>" + Ui.html(String.valueOf(main)) + "</tt></html>";
+            return "<html>Worktree of <tt>" + Ui.html(String.valueOf(main)) + "</tt></html>";
         }
-        return others > 0 ? "Eigenständiger Clone · Haupt-Repository für " + others + " Worktree(s)" : "Eigenständiger Clone";
+        return others > 0 ? "Standalone clone · main repository for " + others + " worktree(s)" : "Standalone clone";
     }
 
     private void importProject(String presetVersion) {
@@ -782,8 +782,8 @@ public final class MainFrame extends JFrame {
         version.setEditable(true);
         if (presetVersion != null) version.setSelectedItem(presetVersion);
         JTextField name = new JTextField();
-        JRadioButton move = new JRadioButton("Verschieben", true);
-        JRadioButton copy = new JRadioButton("Kopieren");
+        JRadioButton move = new JRadioButton("Move", true);
+        JRadioButton copy = new JRadioButton("Copy");
         ButtonGroup group = new ButtonGroup();
         group.add(move);
         group.add(copy);
@@ -792,18 +792,18 @@ public final class MainFrame extends JFrame {
         mode.add(javax.swing.Box.createHorizontalStrut(12));
         mode.add(copy);
 
-        browse.addActionListener(e -> Ui.chooseDirectory(this, "Projektordner wählen", null).ifPresent(dir -> {
+        browse.addActionListener(e -> Ui.chooseDirectory(this, "Choose project folder", null).ifPresent(dir -> {
             source.setText(dir.toString());
             if (name.getText().isBlank()) name.setText(dir.getFileName().toString());
         }));
 
         Ui.Form form = new Ui.Form()
-                .add("Projektordner", source, browse)
-                .add("Minecraft-Version", version)
+                .add("Project folder", source, browse)
+                .add("Minecraft version", version)
                 .add("Name", name)
-                .add("Modus", mode);
+                .add("Mode", mode);
 
-        if (JOptionPane.showConfirmDialog(this, form, "Lokales Projekt importieren",
+        if (JOptionPane.showConfirmDialog(this, form, "Import local project",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
             return;
         }
@@ -813,31 +813,31 @@ public final class MainFrame extends JFrame {
         try {
             src = Path.of(source.getText().trim());
         } catch (InvalidPathException e) {
-            error("Ungültiger Pfad", e.getMessage());
+            error("Invalid path", e.getMessage());
             return;
         }
         if (!Files.isDirectory(src) || v.isEmpty() || n.isEmpty()) {
-            error("Import nicht möglich", "Bitte Projektordner, Version und Name angeben.");
+            error("Import not possible", "Please specify project folder, version and name.");
             return;
         }
         Path target = master.get().resolve(v).resolve(n);
         if (Files.exists(target)) {
-            error("Import nicht möglich", "Ziel existiert bereits:\n" + target);
+            error("Import not possible", "Target already exists:\n" + target);
             return;
         }
         if (target.startsWith(src)) {
-            error("Import nicht möglich", "Das Ziel liegt innerhalb des Quellordners.");
+            error("Import not possible", "The target is inside the source folder.");
             return;
         }
         boolean doMove = move.isSelected();
-        log((doMove ? "Verschiebe " : "Kopiere ") + src + "  →  " + target);
-        background("Importiere " + n + "…", () -> {
+        log((doMove ? "Moving " : "Copying ") + src + "  →  " + target);
+        background("Importing " + n + "…", () -> {
             Files.createDirectories(target.getParent());
             if (doMove) SystemActions.move(src, target);
             else SystemActions.copyRecursively(src, target);
             return target;
         }, t -> {
-            log("✔ Import abgeschlossen");
+            log("✔ Import finished");
             reloadAndSelect(t, null);
         });
     }
@@ -847,8 +847,8 @@ public final class MainFrame extends JFrame {
         version.setEditable(true);
         version.setSelectedItem(p.mcVersion());
         JTextField name = new JTextField(p.name(), 24);
-        Ui.Form form = new Ui.Form().add("Minecraft-Version", version).add("Name", name);
-        if (JOptionPane.showConfirmDialog(this, form, "Projekt verschieben / umbenennen",
+        Ui.Form form = new Ui.Form().add("Minecraft version", version).add("Name", name);
+        if (JOptionPane.showConfirmDialog(this, form, "Move / rename project",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
             return;
         }
@@ -857,12 +857,12 @@ public final class MainFrame extends JFrame {
         Path target = config.masterPath().orElseThrow().resolve(v).resolve(n);
         if (v.isEmpty() || n.isEmpty() || target.equals(p.path())) return;
         if (Files.exists(target)) {
-            error("Nicht möglich", "Ziel existiert bereits:\n" + target);
+            error("Not possible", "Target already exists:\n" + target);
             return;
         }
         boolean repairLinks = p.standaloneClone() && !siblings(p).isEmpty();
-        log("Verschiebe " + p.path() + "  →  " + target);
-        background("Verschiebe " + p.name() + "…", () -> {
+        log("Moving " + p.path() + "  →  " + target);
+        background("Moving " + p.name() + "…", () -> {
             Files.createDirectories(target.getParent());
             if (p.linkedWorktree()) {
                 Worktrees.move(git, p.commonDir(), p.path(), target, this::logAsync);
@@ -879,35 +879,35 @@ public final class MainFrame extends JFrame {
     private void deleteProject(ModProject p) {
         List<ModProject> sib = siblings(p);
         if (p.standaloneClone() && !sib.isEmpty()) {
-            error("Löschen nicht möglich", "Dieser Clone enthält das Repository für " + sib.size() + " weitere(n) Worktree(s):\n  "
+            error("Cannot delete", "This clone contains the repository for " + sib.size() + " other worktree(s):\n  "
                     + String.join("\n  ", sib.stream().map(s -> s.mcVersion() + "/" + s.name()).toList())
-                    + "\n\nWandle ihn zuerst in ein gemeinsames Repository um („In gemeinsames Repo umwandeln…“)"
-                    + "\noder entferne zuerst die anderen Worktrees.");
+                    + "\n\nConvert it to a shared repository first (“Convert to shared repo…”)"
+                    + "\nor remove the other worktrees first.");
             return;
         }
-        // Bei Worktrees bleiben Commits im Repository – verloren gehen nur nicht committete Änderungen
+        // For worktrees, commits stay in the repository – only uncommitted changes are lost
         boolean atRisk = p.linkedWorktree() ? p.changes() > 0 : p.hasUnsavedWork();
         String warning = "";
         if (atRisk) {
-            warning = "<br><br><font color='#e57373'><b>Achtung:</b> "
-                    + (p.changes() > 0 ? p.changes() + " nicht committete Änderung(en). " : "")
-                    + (!p.linkedWorktree() && p.ahead() > 0 ? p.ahead() + " Commit(s) nicht gepusht." : "")
-                    + "<br>Diese gehen verloren!</font>";
+            warning = "<br><br><font color='#e57373'><b>Warning:</b> "
+                    + (p.changes() > 0 ? p.changes() + " uncommitted change(s). " : "")
+                    + (!p.linkedWorktree() && p.ahead() > 0 ? p.ahead() + " commit(s) not pushed." : "")
+                    + "<br>These will be lost!</font>";
         }
-        String note = p.linkedWorktree() ? "<br><br>Die Branch „" + Ui.html(p.branch()) + "“ und alle Commits bleiben im Repository erhalten." : "";
+        String note = p.linkedWorktree() ? "<br><br>The branch “" + Ui.html(p.branch()) + "” and all commits stay in the repository." : "";
         int answer = JOptionPane.showConfirmDialog(this,
-                "<html>Projektordner wirklich <b>endgültig löschen</b>?<br><tt>" + Ui.html(p.path().toString()) + "</tt>"
+                "<html>Really <b>permanently delete</b> the project folder?<br><tt>" + Ui.html(p.path().toString()) + "</tt>"
                         + note + warning + "</html>",
-                "Projekt entfernen", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                "Remove project", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (answer != JOptionPane.YES_OPTION) return;
         if (atRisk) {
-            String typed = JOptionPane.showInputDialog(this, "Zur Bestätigung den Projektnamen eintippen:",
-                    "Löschen bestätigen", JOptionPane.WARNING_MESSAGE);
+            String typed = JOptionPane.showInputDialog(this, "Type the project name to confirm:",
+                    "Confirm deletion", JOptionPane.WARNING_MESSAGE);
             if (typed == null || !typed.trim().equals(p.name())) return;
         }
         boolean lastOfShared = p.linkedWorktree() && isShared(p) && sib.isEmpty();
-        log("Lösche " + p.path());
-        background("Lösche " + p.name() + "…", () -> {
+        log("Deleting " + p.path());
+        background("Deleting " + p.name() + "…", () -> {
             if (p.linkedWorktree()) {
                 Worktrees.remove(git, p.commonDir(), p.path(), this::logAsync);
             } else {
@@ -915,13 +915,13 @@ public final class MainFrame extends JFrame {
             }
             return null;
         }, x -> {
-            log("✔ gelöscht");
+            log("✔ deleted");
             refresh();
             if (lastOfShared) {
                 repos.stream().filter(r -> r.path().equals(p.commonDir())).findFirst().ifPresent(r -> {
-                    if (JOptionPane.showConfirmDialog(this, "<html>Das war der letzte Worktree von <b>" + Ui.html(r.name())
-                                    + "</b>.<br>Soll das gemeinsame Repository auch gelöscht werden?</html>",
-                            "Repository behalten?", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                    if (JOptionPane.showConfirmDialog(this, "<html>That was the last worktree of <b>" + Ui.html(r.name())
+                                    + "</b>.<br>Delete the shared repository as well?</html>",
+                            "Keep repository?", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                         deleteSharedRepo(r);
                     }
                 });
@@ -932,18 +932,18 @@ public final class MainFrame extends JFrame {
     private void createVersion() {
         Optional<Path> master = requireMaster();
         if (master.isEmpty()) return;
-        String version = JOptionPane.showInputDialog(this, "Minecraft-Version (z.B. 1.21.1):",
-                "Neue Version", JOptionPane.PLAIN_MESSAGE);
+        String version = JOptionPane.showInputDialog(this, "Minecraft version (e.g. 1.21.1):",
+                "New version", JOptionPane.PLAIN_MESSAGE);
         if (version == null || version.isBlank()) return;
         version = version.trim();
         if (!version.matches("[\\w.\\-+]+")) {
-            error("Ungültiger Name", "Erlaubt sind Buchstaben, Ziffern, Punkt, Minus, Plus und Unterstrich.");
+            error("Invalid name", "Allowed are letters, digits, dot, minus, plus and underscore.");
             return;
         }
         Path dir = master.get().resolve(version);
         String key = "v:" + version;
         run(() -> Files.createDirectories(dir));
-        background("Lese ein…", () -> ProjectScanner.scan(master.get(), git), result -> {
+        background("Scanning…", () -> ProjectScanner.scan(master.get(), git), result -> {
             apply(result);
             rebuildTree();
             reselect(key);
@@ -954,19 +954,19 @@ public final class MainFrame extends JFrame {
     private void deleteVersion(VersionEntry v) {
         try {
             if (!SystemActions.isEmptyDirectory(v.path())) {
-                error("Nicht leer", "Der Ordner enthält noch Projekte oder Dateien.");
+                error("Not empty", "The folder still contains projects or files.");
                 return;
             }
             Files.delete(v.path());
-            log("Versionsordner " + v.version() + " gelöscht");
+            log("Version folder " + v.version() + " deleted");
             refresh();
         } catch (Exception e) {
-            error("Fehler", e.getMessage());
+            error("Error", e.getMessage());
         }
     }
 
     private void fetchAll() {
-        // Worktrees teilen sich ein Repository → pro Repository nur einmal fetchen
+        // Worktrees share one repository → fetch each repository only once
         Map<Path, Path> targets = new LinkedHashMap<>();
         Map<Path, String> labels = new LinkedHashMap<>();
         for (ModProject p : projects) {
@@ -980,7 +980,7 @@ public final class MainFrame extends JFrame {
             if (targets.putIfAbsent(r.path(), r.path()) == null) labels.put(r.path(), r.name());
         }
         if (targets.isEmpty()) return;
-        background("Fetche " + targets.size() + " Repositories…", () -> {
+        background("Fetching " + targets.size() + " repositories…", () -> {
             int failed = 0;
             for (var e : targets.entrySet()) {
                 logAsync("> fetch " + labels.get(e.getKey()));
@@ -988,7 +988,7 @@ public final class MainFrame extends JFrame {
             }
             return failed;
         }, failed -> {
-            log(failed == 0 ? "✔ Alle Repositories gefetcht" : "✖ " + failed + " Fetch(es) fehlgeschlagen");
+            log(failed == 0 ? "✔ All repositories fetched" : "✖ " + failed + " fetch(es) failed");
             refresh();
         });
     }
@@ -996,16 +996,16 @@ public final class MainFrame extends JFrame {
     private void gitTask(String label, Path dir, String... args) {
         log("> git " + String.join(" ", args) + "    (" + dir + ")");
         background(label + "…", () -> git.run(dir, this::logAsync, args), result -> {
-            log(result.ok() ? "✔ " + label + " fertig" : "✖ " + label + " fehlgeschlagen (Exit-Code " + result.exitCode() + ")");
-            if (!result.ok()) error(label + " fehlgeschlagen", result.output());
+            log(result.ok() ? "✔ " + label + " done" : "✖ " + label + " failed (exit code " + result.exitCode() + ")");
+            if (!result.ok()) error(label + " failed", result.output());
             refresh();
         });
     }
 
-    // =====================================================================  Einstellungen
+    // =====================================================================  Settings
 
     private void chooseMaster() {
-        Ui.chooseDirectory(this, "Master-Ordner wählen", config.masterPath().orElse(null)).ifPresent(dir -> {
+        Ui.chooseDirectory(this, "Choose master folder", config.masterPath().orElse(null)).ifPresent(dir -> {
             config.setMasterPath(dir);
             config.save();
         });
@@ -1023,25 +1023,25 @@ public final class MainFrame extends JFrame {
     private void openSettings() {
         JTextField master = new JTextField(config.masterPath().map(Path::toString).orElse(""), 36);
         JButton masterBrowse = new JButton("…");
-        masterBrowse.addActionListener(e -> Ui.chooseDirectory(this, "Master-Ordner wählen", null)
+        masterBrowse.addActionListener(e -> Ui.chooseDirectory(this, "Choose master folder", null)
                 .ifPresent(d -> master.setText(d.toString())));
 
         JTextField idea = new JTextField(config.ideaPath().map(Path::toString).orElse(""));
-        JButton detect = new JButton("Suchen");
+        JButton detect = new JButton("Detect");
         detect.addActionListener(e -> SystemActions.detectIntelliJ().ifPresentOrElse(
                 d -> idea.setText(d.toString()),
-                () -> JOptionPane.showMessageDialog(this, "Keine Installation gefunden.")));
+                () -> JOptionPane.showMessageDialog(this, "No installation found.")));
 
         JTextField gitField = new JTextField(config.gitExecutable());
-        JCheckBox dark = new JCheckBox("Dunkles Design", config.isDarkMode());
+        JCheckBox dark = new JCheckBox("Dark theme", config.isDarkMode());
 
         Ui.Form form = new Ui.Form()
-                .add("Master-Ordner", master, masterBrowse)
+                .add("Master folder", master, masterBrowse)
                 .add("IntelliJ (idea64.exe)", idea, detect)
-                .add("Git-Programm", gitField)
+                .add("Git executable", gitField)
                 .add("", dark);
 
-        if (JOptionPane.showConfirmDialog(this, form, "Einstellungen",
+        if (JOptionPane.showConfirmDialog(this, form, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
             return;
         }
@@ -1049,7 +1049,7 @@ public final class MainFrame extends JFrame {
             config.setMasterPath(master.getText().isBlank() ? null : Path.of(master.getText().trim()));
             config.setIdeaPath(idea.getText().isBlank() ? null : Path.of(idea.getText().trim()));
         } catch (InvalidPathException e) {
-            error("Ungültiger Pfad", e.getMessage());
+            error("Invalid path", e.getMessage());
             return;
         }
         config.setGitExecutable(gitField.getText());
@@ -1066,7 +1066,7 @@ public final class MainFrame extends JFrame {
         refresh();
     }
 
-    // =====================================================================  Hilfen
+    // =====================================================================  Helpers
 
     private void maybePopup(MouseEvent e) {
         if (!e.isPopupTrigger()) return;
@@ -1076,24 +1076,24 @@ public final class MainFrame extends JFrame {
         Object o = selectedObject();
         JPopupMenu menu = new JPopupMenu();
         if (o instanceof ModProject p) {
-            menu.add(menuItem("In IntelliJ öffnen", () -> openInIntelliJ(p)));
-            menu.add(menuItem("Im Explorer öffnen", () -> run(() -> SystemActions.openExplorer(p.path()))));
-            menu.add(menuItem("Terminal öffnen", () -> run(() -> SystemActions.openTerminal(p.path()))));
+            menu.add(menuItem("Open in IntelliJ", () -> openInIntelliJ(p)));
+            menu.add(menuItem("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
+            menu.add(menuItem("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
             if (p.git()) {
                 menu.addSeparator();
                 menu.add(menuItem("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
                 menu.add(menuItem("Pull", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
-                menu.add(menuItem("Version hinzufügen (Worktree)…", () -> addWorktree(p)));
+                menu.add(menuItem("Add version (worktree)…", () -> addWorktree(p)));
             }
             menu.addSeparator();
-            menu.add(menuItem("Entfernen…", () -> deleteProject(p)));
+            menu.add(menuItem("Remove…", () -> deleteProject(p)));
         } else if (o instanceof VersionEntry v) {
-            menu.add(menuItem("Projekt hierhin klonen…", () -> cloneDialog(null, null, v.version())));
-            menu.add(menuItem("Projekt importieren…", () -> importProject(v.version())));
-            menu.add(menuItem("Ordner öffnen", () -> run(() -> SystemActions.openExplorer(v.path()))));
+            menu.add(menuItem("Clone project here…", () -> cloneDialog(null, null, v.version())));
+            menu.add(menuItem("Import project…", () -> importProject(v.version())));
+            menu.add(menuItem("Open folder", () -> run(() -> SystemActions.openExplorer(v.path()))));
         } else {
-            menu.add(menuItem("Neue Version…", this::createVersion));
-            menu.add(menuItem("Master-Ordner ändern…", () -> {
+            menu.add(menuItem("New version…", this::createVersion));
+            menu.add(menuItem("Change master folder…", () -> {
                 chooseMaster();
                 refresh();
             }));
@@ -1101,10 +1101,10 @@ public final class MainFrame extends JFrame {
         menu.show(tree, e.getX(), e.getY());
     }
 
-    /** Projekte neu einlesen, danach {@code select} auswählen und optional {@code then} ausführen. */
+    /** Rescan projects, then select {@code select} and optionally run {@code then}. */
     private void reloadAndSelect(Path select, Runnable then) {
         Path master = config.masterPath().orElseThrow();
-        background("Projekte werden eingelesen…", () -> ProjectScanner.scan(master, git), result -> {
+        background("Scanning projects…", () -> ProjectScanner.scan(master, git), result -> {
             apply(result);
             rebuildTree();
             reselect(select);
@@ -1133,8 +1133,8 @@ public final class MainFrame extends JFrame {
                     onDone.accept(get());
                 } catch (java.util.concurrent.ExecutionException e) {
                     Throwable cause = e.getCause();
-                    log("✖ Fehler: " + cause);
-                    error("Fehler", String.valueOf(cause.getMessage()));
+                    log("✖ Error: " + cause);
+                    error("Error", String.valueOf(cause.getMessage()));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -1151,7 +1151,7 @@ public final class MainFrame extends JFrame {
             action.run();
         } catch (Exception e) {
             log("✖ " + e.getMessage());
-            error("Fehler", e.getMessage());
+            error("Error", e.getMessage());
         }
     }
 
@@ -1165,7 +1165,7 @@ public final class MainFrame extends JFrame {
     }
 
     private void error(String title, String message) {
-        String text = message == null || message.isBlank() ? "Unbekannter Fehler" : message;
+        String text = message == null || message.isBlank() ? "Unknown error" : message;
         if (text.length() > 1200) text = text.substring(text.length() - 1200);
         JTextArea area = new JTextArea(text, Math.min(12, (int) text.lines().count() + 1), 60);
         area.setEditable(false);

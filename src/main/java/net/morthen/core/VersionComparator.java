@@ -3,7 +3,7 @@ package net.morthen.core;
 import java.util.Comparator;
 
 /**
- * Vergleicht Versionsstrings wie "1.20.1", "1.21" oder "1.8.9" numerisch (aufsteigend).
+ * Compares version strings like "1.20.1", "1.21" or "1.8.9" numerically (ascending).
  */
 public final class VersionComparator implements Comparator<String> {
     public static final VersionComparator INSTANCE = new VersionComparator();
@@ -31,7 +31,7 @@ public final class VersionComparator implements Comparator<String> {
             return Long.compare(Long.parseLong(a), Long.parseLong(b));
         }
         if (na != nb) {
-            return na ? 1 : -1; // Zahlen vor Text (z.B. "1.21" > "1.x")
+            return na ? 1 : -1; // numbers before text (e.g. "1.21" > "1.x")
         }
         return a.compareToIgnoreCase(b);
     }

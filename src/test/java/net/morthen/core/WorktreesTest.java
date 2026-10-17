@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Integrationstests gegen echtes git (muss im PATH sein). */
+/** Integration tests against real git (must be on the PATH). */
 class WorktreesTest {
     private final Git git = new Git("git");
     private final List<String> log = new java.util.ArrayList<>();
@@ -50,7 +50,7 @@ class WorktreesTest {
 
         assertEquals("origin/1.21.1", git.status(wt1).orElseThrow().upstream());
         assertEquals("1.21.4", git.status(wt2).orElseThrow().branch());
-        assertEquals(null, git.status(wt2).orElseThrow().upstream(), "neue Branch darf nicht 1.21.1 tracken");
+        assertEquals(null, git.status(wt2).orElseThrow().upstream(), "new branch must not track 1.21.1");
 
         ProjectScanner.ScanResult scan = ProjectScanner.scan(master, git);
         assertEquals(List.of("1.21.4", "1.21.1"), scan.versions());
@@ -58,10 +58,10 @@ class WorktreesTest {
         assertEquals(1, scan.repos().size());
         assertEquals(2, scan.repos().getFirst().worktrees().size());
 
-        // gleiche Branch zweimal geht nicht
+        // the same branch cannot be checked out twice
         assertThrows(IOException.class, () -> Worktrees.add(git, repo, master.resolve("x/Mod"), "1.21.1", null, log::add));
 
-        // Verschieben + Entfernen
+        // move + remove
         Path moved = master.resolve("1.21.5/Mod");
         Worktrees.move(git, repo, wt2, moved, log::add);
         assertTrue(git.status(moved).isPresent());
@@ -69,7 +69,7 @@ class WorktreesTest {
         Worktrees.remove(git, repo, moved, log::add);
         assertFalse(Files.exists(moved));
         assertEquals(2, Worktrees.list(git, repo).size()); // bare + wt1
-        assertTrue(Worktrees.hasRef(git, repo, "refs/heads/1.21.4"), "Branch bleibt erhalten");
+        assertTrue(Worktrees.hasRef(git, repo, "refs/heads/1.21.4"), "branch is kept");
     }
 
     @Test
@@ -85,9 +85,9 @@ class WorktreesTest {
         sh(tmp, "clone", "-q", "-b", "1.21.1", origin.toString(), clone.toString());
         Path linked = master.resolve("1.20.1/Mod");
         sh(clone, "worktree", "add", "-q", linked.toString(), "1.20.1");
-        // Zustand, der erhalten bleiben muss
+        // state that must be preserved
         Files.createDirectories(clone.resolve("run"));
-        Files.writeString(clone.resolve("run/world.dat"), "welt");
+        Files.writeString(clone.resolve("run/world.dat"), "world");
         Files.writeString(clone.resolve("staged.txt"), "s");
         sh(clone, "add", "staged.txt");
         Files.writeString(clone.resolve("gradle.properties"), "minecraft_version=1.21.1\nchanged=1\n");
@@ -98,12 +98,12 @@ class WorktreesTest {
 
         assertTrue(Files.isRegularFile(clone.resolve(".git")));
         assertEquals(statusBefore, sh(clone, "status", "--porcelain"));
-        assertEquals("welt", Files.readString(clone.resolve("run/world.dat")));
+        assertEquals("world", Files.readString(clone.resolve("run/world.dat")));
         assertTrue(Worktrees.samePath(repo, Worktrees.commonDir(git, clone).orElseThrow()));
-        assertTrue(Worktrees.samePath(repo, Worktrees.commonDir(git, linked).orElseThrow()), "verknüpfter Worktree umgehängt");
+        assertTrue(Worktrees.samePath(repo, Worktrees.commonDir(git, linked).orElseThrow()), "linked worktree relinked");
         assertEquals("1.20.1", git.status(linked).orElseThrow().branch());
         assertEquals("origin/1.21.1", git.status(clone).orElseThrow().upstream());
-        // fetch funktioniert weiterhin
+        // fetch still works
         assertTrue(git.run(clone, "fetch", "origin").ok());
     }
 
@@ -116,11 +116,11 @@ class WorktreesTest {
 
         Path second = master.resolve("1.20.1/Mod");
         sh(tmp, "clone", "-q", "-b", "1.20.1", origin.toString(), second.toString());
-        Files.writeString(second.resolve("feature.txt"), "neu");
-        commit(second, "lokaler commit");
+        Files.writeString(second.resolve("feature.txt"), "new");
+        commit(second, "local commit");
         sh(second, "branch", "experiment");
         Files.createDirectories(second.resolve("run"));
-        Files.writeString(second.resolve("run/world.dat"), "welt");
+        Files.writeString(second.resolve("run/world.dat"), "world");
         Files.writeString(second.resolve("wip.txt"), "wip");
         String head = sh(second, "rev-parse", "HEAD").trim();
 
@@ -128,7 +128,7 @@ class WorktreesTest {
 
         assertEquals(head, sh(second, "rev-parse", "HEAD").trim());
         assertEquals("?? wip.txt", sh(second, "status", "--porcelain").trim());
-        assertEquals("welt", Files.readString(second.resolve("run/world.dat")));
+        assertEquals("world", Files.readString(second.resolve("run/world.dat")));
         assertFalse(Files.exists(second.resolve(".git-pm-backup")));
         assertTrue(Worktrees.hasRef(git, repo, "refs/heads/experiment"));
         assertEquals("origin/1.20.1", git.status(second).orElseThrow().upstream());
@@ -146,7 +146,7 @@ class WorktreesTest {
         Path dup = master.resolve("dup/Mod");
         sh(tmp, "clone", "-q", "-b", "1.21.1", origin.toString(), dup.toString());
         assertThrows(IOException.class, () -> Worktrees.convertToShared(git, dup, repo, log::add));
-        assertTrue(Files.isDirectory(dup.resolve(".git")), "Original bleibt unverändert");
+        assertTrue(Files.isDirectory(dup.resolve(".git")), "original stays unchanged");
         assertTrue(git.run(dup, "status").ok());
     }
 
@@ -157,14 +157,14 @@ class WorktreesTest {
         sh(tmp, "clone", "-q", "-b", "1.21.1", origin.toString(), first.toString());
         sh(first, "branch", "1.20.1", "origin/1.20.1");
         Worktrees.convertToShared(git, first, repo, log::add);
-        // im gemeinsamen Repo 1.20.1 weiterentwickeln
+        // advance 1.20.1 in the shared repo
         Path wt = master.resolve("1.20.1/Mod");
         Worktrees.add(git, repo, wt, "1.20.1", null, log::add);
         Files.writeString(wt.resolve("a.txt"), "a");
         commit(wt, "a");
         sh(repo, "worktree", "remove", wt.toString());
 
-        // separater Clone mit abweichendem Commit auf 1.20.1
+        // separate clone with a diverging commit on 1.20.1
         Path other = master.resolve("old/Mod");
         sh(tmp, "clone", "-q", "-b", "1.20.1", origin.toString(), other.toString());
         Files.writeString(other.resolve("b.txt"), "b");

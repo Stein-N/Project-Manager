@@ -3,12 +3,12 @@ package net.morthen.core;
 import java.util.Collection;
 import java.util.Optional;
 
-/** Findet die Branch, die am besten zu einer Minecraft-Version passt. */
+/** Finds the branch that best matches a Minecraft version. */
 public final class BranchMatcher {
     private BranchMatcher() {
     }
 
-    /** Priorität: exakt ("1.21.1", "mc1.21.1") &gt; beginnt mit ("1.21.1-fabric") &gt; enthält. */
+    /** Priority: exact ("1.21.1", "mc1.21.1") &gt; starts with ("1.21.1-fabric") &gt; contains. */
     public static Optional<String> bestMatch(Collection<String> branches, String version) {
         if (version == null || version.isBlank()) {
             return Optional.empty();
@@ -27,7 +27,7 @@ public final class BranchMatcher {
         return Optional.ofNullable(exact != null ? exact : starts != null ? starts : contains);
     }
 
-    /** "1.21" soll nicht in "1.21.1" gefunden werden. */
+    /** "1.21" must not be found inside "1.21.1". */
     private static boolean containsVersion(String branch, String version) {
         int i = branch.indexOf(version);
         while (i >= 0) {

@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.Properties;
 
 /**
- * Persistente Einstellungen unter ~/.mc-project-manager/config.properties.
+ * Persistent settings in ~/.mc-project-manager/config.properties.
  */
 public final class Config {
     private static final Path DIR = Path.of(System.getProperty("user.home"), ".mc-project-manager");
@@ -26,7 +26,7 @@ public final class Config {
             try (Reader reader = Files.newBufferedReader(FILE)) {
                 config.props.load(reader);
             } catch (IOException e) {
-                System.err.println("Konfiguration konnte nicht geladen werden: " + e.getMessage());
+                System.err.println("Could not load configuration: " + e.getMessage());
             }
         }
         return config;
@@ -39,7 +39,7 @@ public final class Config {
                 props.store(writer, "MC Mod Project Manager");
             }
         } catch (IOException e) {
-            System.err.println("Konfiguration konnte nicht gespeichert werden: " + e.getMessage());
+            System.err.println("Could not save configuration: " + e.getMessage());
         }
     }
 

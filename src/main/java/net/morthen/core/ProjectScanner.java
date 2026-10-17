@@ -12,13 +12,13 @@ import java.util.Properties;
 import java.util.stream.Stream;
 
 /**
- * Liest die Ordnerstruktur {@code <master>/<mcVersion>/<projekt>} ein.
+ * Scans the folder structure {@code <master>/<mcVersion>/<project>}.
  */
 public final class ProjectScanner {
     public record ScanResult(List<String> versions, List<ModProject> projects, List<SharedRepo> repos) {
     }
 
-    /** Gemeinsames Repository unter <master>/.repos mit seinen Worktrees im Master-Ordner. */
+    /** Shared repository in <master>/.repos with its worktrees in the master folder. */
     public record SharedRepo(String name, Path path, String url, List<ModProject> worktrees) {
     }
 
@@ -59,7 +59,7 @@ public final class ProjectScanner {
         return repos;
     }
 
-    /** Versionsordner, neueste zuerst. */
+    /** Version folders, newest first. */
     public static List<String> versions(Path master) throws IOException {
         return subdirectories(master).stream()
                 .map(p -> p.getFileName().toString())
@@ -150,7 +150,7 @@ public final class ProjectScanner {
             try (Reader reader = Files.newBufferedReader(file)) {
                 props.load(reader);
             } catch (IOException | IllegalArgumentException ignored) {
-                // unlesbare Datei -> keine Infos
+                // unreadable file -> no info
             }
         }
         return props;

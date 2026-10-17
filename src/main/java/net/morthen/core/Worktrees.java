@@ -11,11 +11,11 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * git-worktree-Verwaltung.
+ * git worktree management.
  * <p>
- * Modell: pro Mod ein gemeinsames Bare-Repository unter {@code <master>/.repos/<name>.git};
- * jeder Versionsordner {@code <master>/<version>/<name>} ist ein Worktree davon.
- * Normale Clones (mit eigenem .git-Ordner) können ebenfalls Worktrees haben bzw. umgewandelt werden.
+ * Model: one shared bare repository per mod at {@code <master>/.repos/<name>.git};
+ * every version folder {@code <master>/<version>/<name>} is a worktree of it.
+ * Regular clones (with their own .git folder) can have worktrees too, or be converted.
  */
 public final class Worktrees {
     public static final String REPOS_DIR = ".repos";
@@ -30,9 +30,9 @@ public final class Worktrees {
         return master.resolve(REPOS_DIR).resolve(name + ".git");
     }
 
-    // ---------------------------------------------------------------- Abfragen
+    // ---------------------------------------------------------------- Queries
 
-    /** Alle Worktrees eines Repositories (inkl. Haupt-Worktree bzw. Bare-Eintrag). */
+    /** All worktrees of a repository (including the main worktree or bare entry). */
     public static List<Worktree> list(Git git, Path anyDir) {
         Git.Result r = git.run(anyDir, "worktree", "list", "--porcelain");
         List<Worktree> result = new ArrayList<>();
@@ -59,7 +59,7 @@ public final class Worktrees {
         return result;
     }
 
-    /** Branch → Worktree-Pfad für alle aktuell ausgecheckten Branches. */
+    /** Branch → worktree path for all currently checked-out branches. */
     public static Map<String, Path> checkedOutBranches(Git git, Path anyDir) {
         Map<String, Path> map = new LinkedHashMap<>();
         for (Worktree wt : list(git, anyDir)) {
@@ -70,13 +70,13 @@ public final class Worktrees {
         return map;
     }
 
-    /** Absoluter, kanonischer Pfad des gemeinsamen git-Verzeichnisses. */
+    /** Absolute, canonical path of the shared git directory. */
     public static Optional<Path> commonDir(Git git, Path dir) {
         Git.Result r = git.run(dir, "rev-parse", "--path-format=absolute", "--git-common-dir");
         return r.ok() ? Optional.of(real(Path.of(r.output().trim()))) : Optional.empty();
     }
 
-    /** Commits auf lokalen Branches, die auf keinem Remote liegen. */
+    /** Commits on local branches that are not on any remote. */
     public static int unpushedCommits(Git git, Path anyDir) {
         Git.Result r = git.run(anyDir, "log", "--branches", "--not", "--remotes", "--oneline");
         return r.ok() && !r.output().isBlank() ? (int) r.output().lines().count() : 0;
@@ -86,18 +86,18 @@ public final class Worktrees {
         return git.run(dir, "show-ref", "--verify", "--quiet", ref).ok();
     }
 
-    // ---------------------------------------------------------------- Anlegen / Entfernen
+    // ---------------------------------------------------------------- Create / remove
 
-    /** Legt das gemeinsame Bare-Repo an (oder fetcht es, falls schon vorhanden). */
+    /** Creates the shared bare repo (or fetches it if it already exists). */
     public static void ensureShared(Git git, Path repo, String url, Consumer<String> log) throws IOException {
         if (Files.isDirectory(repo)) {
             String existing = git.run(repo, "config", "--get", "remote.origin.url").output().trim();
             if (!sameUrl(existing, url)) {
-                throw new IOException("Das Repository " + repo.getFileName() + " existiert bereits,\n"
-                        + "gehört aber zu einer anderen URL:\n" + existing
-                        + "\n\nBitte einen anderen Projektnamen wählen.");
+                throw new IOException("The repository " + repo.getFileName() + " already exists,\n"
+                        + "but belongs to a different URL:\n" + existing
+                        + "\n\nPlease choose a different project name.");
             }
-            log.accept("Gemeinsames Repository existiert bereits – fetche …");
+            log.accept("Shared repository already exists – fetching …");
             git.runOrThrow(repo, log, "fetch", "origin", "--prune");
             return;
         }
@@ -117,10 +117,10 @@ public final class Worktrees {
     }
 
     /**
-     * Neuer Worktree unter {@code target}.
+     * New worktree at {@code target}.
      *
-     * @param branch    auszucheckende Branch (lokal oder origin/…); bei {@code newBranch != null} die Basis
-     * @param newBranch Name einer neu zu erstellenden Branch oder {@code null}
+     * @param branch    branch to check out (local or origin/…); the base if {@code newBranch != null}
+     * @param newBranch name of a branch to create, or {@code null}
      */
     public static void add(Git git, Path from, Path target, String branch, String newBranch, Consumer<String> log)
             throws IOException {
@@ -136,15 +136,15 @@ public final class Worktrees {
         } else if (remote) {
             git.runOrThrow(from, log, "worktree", "add", "--track", "-b", branch, t, "origin/" + branch);
         } else {
-            throw new IOException("Branch „" + branch + "“ wurde weder lokal noch auf origin gefunden.");
+            throw new IOException("Branch “" + branch + "” was found neither locally nor on origin.");
         }
     }
 
-    /** Entfernt einen verknüpften Worktree (inkl. aller Dateien darin). */
+    /** Removes a linked worktree (including all files in it). */
     public static void remove(Git git, Path commonDir, Path worktree, Consumer<String> log) throws IOException {
         Git.Result r = git.run(commonDir, log, "worktree", "remove", "--force", worktree.toString());
         if (!r.ok()) {
-            // z.B. wenn Dateien gesperrt waren und git aufgegeben hat
+            // e.g. when files were locked and git gave up
             SystemActions.deleteRecursively(worktree);
             git.run(commonDir, log, "worktree", "prune");
         }
@@ -155,28 +155,28 @@ public final class Worktrees {
         git.runOrThrow(commonDir, log, "worktree", "move", from.toString(), to.toString());
     }
 
-    // ---------------------------------------------------------------- Umwandlung
+    // ---------------------------------------------------------------- Conversion
 
     /**
-     * Wandelt einen normalen Clone (eigener .git-Ordner) in einen Worktree des gemeinsamen Repos {@code repo} um.
-     * Die Arbeitsdateien (inkl. ignorierter wie run/ oder build/) bleiben unangetastet.
+     * Converts a regular clone (own .git folder) into a worktree of the shared repo {@code repo}.
+     * Working files (including ignored ones like run/ or build/) stay untouched.
      * <ul>
-     *     <li>Existiert {@code repo} noch nicht, wird der .git-Ordner dorthin verschoben (alles bleibt erhalten,
-     *     vorhandene Worktrees werden repariert).</li>
-     *     <li>Existiert {@code repo} schon (gleiche Mod, andere Version), werden die lokalen Branches in das
-     *     gemeinsame Repo übernommen und der .git-Ordner danach entfernt.</li>
+     *     <li>If {@code repo} does not exist yet, the .git folder is moved there (everything is kept,
+     *     existing worktrees are repaired).</li>
+     *     <li>If {@code repo} already exists (same mod, other version), the local branches are transferred
+     *     into the shared repo and the .git folder is removed afterwards.</li>
      * </ul>
      */
     public static void convertToShared(Git git, Path project, Path repo, Consumer<String> log) throws IOException {
         Path dotGit = project.resolve(".git");
         if (!Files.isDirectory(dotGit)) {
-            throw new IOException("Das Projekt ist kein eigenständiger Clone.");
+            throw new IOException("The project is not a standalone clone.");
         }
         for (String marker : List.of("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG",
                 "rebase-merge", "rebase-apply")) {
             if (Files.exists(dotGit.resolve(marker))) {
-                throw new IOException("Im Projekt läuft gerade eine Git-Operation (" + marker + ").\n"
-                        + "Bitte erst abschließen oder abbrechen.");
+                throw new IOException("A Git operation is in progress in the project (" + marker + ").\n"
+                        + "Please finish or abort it first.");
             }
         }
         String headBefore = git.runOrThrow(project, null, "rev-parse", "HEAD").output().trim();
@@ -188,7 +188,7 @@ public final class Worktrees {
         } else {
             convertIntoExisting(git, project, dotGit, repo, headRef, headBefore, id, log);
         }
-        log.accept("✔ " + project.getFileName() + " ist jetzt ein Worktree von " + repo.getFileName());
+        log.accept("✔ " + project.getFileName() + " is now a worktree of " + repo.getFileName());
     }
 
     private static void convertByMove(Git git, Path project, Path dotGit, Path repo, String headRef,
@@ -198,7 +198,7 @@ public final class Worktrees {
                 .filter(p -> !samePath(p, project))
                 .toList();
         Files.createDirectories(repo.getParent());
-        log.accept("Verschiebe .git nach " + repo);
+        log.accept("Moving .git to " + repo);
         SystemActions.move(dotGit, repo);
         Path admin = repo.resolve("worktrees").resolve(id);
         try {
@@ -221,7 +221,7 @@ public final class Worktrees {
             }
             verify(git, project, repo, headBefore);
         } catch (IOException | RuntimeException e) {
-            log.accept("✖ Umwandlung fehlgeschlagen – stelle Originalzustand wieder her …");
+            log.accept("✖ Conversion failed – restoring original state …");
             if (Files.isRegularFile(dotGit)) Files.delete(dotGit);
             if (Files.exists(admin.resolve("index"))) Files.move(admin.resolve("index"), repo.resolve("index"));
             Path reflog = admin.resolve("logs").resolve("HEAD");
@@ -241,28 +241,28 @@ public final class Worktrees {
     private static void convertIntoExisting(Git git, Path project, Path dotGit, Path repo, String headRef,
                                             String headBefore, String id, Consumer<String> log) throws IOException {
         if (list(git, project).size() > 1) {
-            throw new IOException("Dieser Clone hat eigene Worktrees und es gibt bereits ein gemeinsames Repository.\n"
-                    + "Bitte die Worktrees dieses Clones zuerst entfernen.");
+            throw new IOException("This clone has its own worktrees and a shared repository already exists.\n"
+                    + "Please remove this clone's worktrees first.");
         }
         if (hasRef(git, project, "refs/stash")) {
-            throw new IOException("Im Projekt gibt es Stash-Einträge (git stash).\n"
-                    + "Bitte erst anwenden oder löschen – sie würden sonst verloren gehen.");
+            throw new IOException("The project has stash entries (git stash).\n"
+                    + "Please apply or drop them first – they would be lost otherwise.");
         }
         String ownUrl = git.run(project, "config", "--get", "remote.origin.url").output().trim();
         String repoUrl = git.run(repo, "config", "--get", "remote.origin.url").output().trim();
         if (!sameUrl(ownUrl, repoUrl)) {
-            throw new IOException("Das gemeinsame Repository gehört zu einer anderen URL:\n" + repoUrl
-                    + "\nDieses Projekt: " + (ownUrl.isEmpty() ? "(kein origin)" : ownUrl));
+            throw new IOException("The shared repository belongs to a different URL:\n" + repoUrl
+                    + "\nThis project: " + (ownUrl.isEmpty() ? "(no origin)" : ownUrl));
         }
         String currentBranch = headRef.startsWith("ref: refs/heads/") ? headRef.substring("ref: refs/heads/".length()) : null;
         Map<String, Path> busy = checkedOutBranches(git, repo);
         if (currentBranch != null && busy.containsKey(currentBranch)) {
-            throw new IOException("Die Branch „" + currentBranch + "“ ist im gemeinsamen Repository bereits ausgecheckt:\n"
+            throw new IOException("The branch “" + currentBranch + "” is already checked out in the shared repository:\n"
                     + busy.get(currentBranch));
         }
 
-        // Alle lokalen Branches + HEAD in einen temporären Namensraum holen und dann abgleichen
-        log.accept("Übernehme lokale Branches in " + repo.getFileName() + " …");
+        // Fetch all local branches + HEAD into a temporary namespace, then reconcile
+        log.accept("Transferring local branches into " + repo.getFileName() + " …");
         git.runOrThrow(repo, log, "fetch", "--no-tags", slash(dotGit),
                 "+refs/heads/*:refs/pm-import/heads/*", "+HEAD:refs/pm-import/HEAD");
         try {
@@ -286,20 +286,20 @@ public final class Worktrees {
                 if (fastForward && !busy.containsKey(name)) {
                     updates.put(name, sha);
                 } else if (repoAhead && !name.equals(currentBranch)) {
-                    // gemeinsames Repo ist schon weiter – nichts verloren
+                    // shared repo is already ahead – nothing lost
                 } else {
-                    conflicts.add(name + (busy.containsKey(name) ? " (ausgecheckt in " + busy.get(name) + ")" : " (abweichende Commits)"));
+                    conflicts.add(name + (busy.containsKey(name) ? " (checked out in " + busy.get(name) + ")" : " (diverged commits)"));
                 }
             }
             if (!conflicts.isEmpty()) {
-                throw new IOException("Folgende Branches lassen sich nicht automatisch übernehmen:\n  "
+                throw new IOException("The following branches cannot be transferred automatically:\n  "
                         + String.join("\n  ", conflicts)
-                        + "\n\nBitte erst pushen/pullen, damit beide Seiten gleich sind.");
+                        + "\n\nPlease push/pull first so both sides match.");
             }
             for (var u : updates.entrySet()) {
                 git.runOrThrow(repo, log, "update-ref", "refs/heads/" + u.getKey(), u.getValue());
             }
-            // Upstream-Einstellungen (branch.<x>.remote/merge) übernehmen, falls im gemeinsamen Repo nicht gesetzt
+            // Copy upstream settings (branch.<x>.remote/merge) unless already set in the shared repo
             Git.Result cfg = git.run(project, "config", "--local", "--get-regexp", "^branch\\.");
             for (String line : cfg.output().split("\n")) {
                 int sp = line.indexOf(' ');
@@ -326,13 +326,13 @@ public final class Worktrees {
             Files.writeString(dotGit, "gitdir: " + slash(admin) + "\n");
             verify(git, project, repo, headBefore);
         } catch (IOException | RuntimeException e) {
-            log.accept("✖ Umwandlung fehlgeschlagen – stelle Originalzustand wieder her …");
+            log.accept("✖ Conversion failed – restoring original state …");
             if (Files.isRegularFile(dotGit)) Files.delete(dotGit);
             if (Files.isDirectory(backup)) SystemActions.move(backup, dotGit);
             SystemActions.deleteRecursively(admin);
             throw e;
         }
-        log.accept("Entferne alten .git-Ordner …");
+        log.accept("Removing old .git folder …");
         SystemActions.deleteRecursively(backup);
     }
 
@@ -345,11 +345,11 @@ public final class Worktrees {
     private static void verify(Git git, Path project, Path repo, String headBefore) throws IOException {
         String head = git.runOrThrow(project, null, "rev-parse", "HEAD").output().trim();
         if (!head.equals(headBefore)) {
-            throw new IOException("Prüfung fehlgeschlagen: HEAD ist " + head + " statt " + headBefore);
+            throw new IOException("Verification failed: HEAD is " + head + " instead of " + headBefore);
         }
-        Path common = commonDir(git, project).orElseThrow(() -> new IOException("Prüfung fehlgeschlagen: kein Git-Verzeichnis"));
+        Path common = commonDir(git, project).orElseThrow(() -> new IOException("Verification failed: no Git directory"));
         if (!samePath(common, repo)) {
-            throw new IOException("Prüfung fehlgeschlagen: Git-Verzeichnis ist " + common);
+            throw new IOException("Verification failed: Git directory is " + common);
         }
         git.runOrThrow(project, null, "status", "--porcelain");
     }
@@ -364,7 +364,7 @@ public final class Worktrees {
         return id;
     }
 
-    // ---------------------------------------------------------------- Pfade / URLs
+    // ---------------------------------------------------------------- Paths / URLs
 
     public static Path real(Path path) {
         try {

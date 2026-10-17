@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Dialog: Git-Repository in {@code <master>/<version>/<name>} mit gewählter Branch klonen.
+ * Dialog: clone a Git repository into {@code <master>/<version>/<name>} with the chosen branch.
  */
 final class CloneDialog extends JDialog {
     record Request(String url, String branch, String version, String name, boolean worktree) {
@@ -34,14 +34,14 @@ final class CloneDialog extends JDialog {
     private final Git git;
     private final Path master;
     private final JTextField urlField = new JTextField(36);
-    private final JButton loadButton = new JButton("Branches laden");
+    private final JButton loadButton = new JButton("Load branches");
     private final JComboBox<String> branchBox = new JComboBox<>();
     private final JComboBox<String> versionBox;
     private final JTextField nameField = new JTextField();
     private final JLabel targetLabel = Ui.muted(" ");
     private final JLabel infoLabel = Ui.muted(" ");
-    private final JButton okButton = Ui.primary("Klonen");
-    private final JCheckBox worktreeBox = new JCheckBox("Als Worktree anlegen (ein gemeinsames Repository pro Mod unter .repos)", true);
+    private final JButton okButton = Ui.primary("Clone");
+    private final JCheckBox worktreeBox = new JCheckBox("Create as worktree (one shared repository per mod in .repos)", true);
     private final JLabel repoLabel = Ui.muted(" ");
 
     private boolean nameEdited;
@@ -51,7 +51,7 @@ final class CloneDialog extends JDialog {
 
     private CloneDialog(Window owner, Git git, Path master, List<String> versions,
                         String presetUrl, String presetName, String presetVersion) {
-        super(owner, "Projekt klonen", ModalityType.APPLICATION_MODAL);
+        super(owner, "Clone project", ModalityType.APPLICATION_MODAL);
         this.git = git;
         this.master = master;
 
@@ -59,7 +59,7 @@ final class CloneDialog extends JDialog {
         versionBox.setEditable(true);
         branchBox.setEditable(true);
         urlField.putClientProperty("JTextField.placeholderText", "https://github.com/user/mod.git");
-        versionBox.setToolTipText("Bestehender Versionsordner oder neue Version eintippen");
+        versionBox.setToolTipText("Existing version folder or type a new version");
 
         if (presetVersion != null) {
             versionBox.setSelectedItem(presetVersion);
@@ -74,16 +74,16 @@ final class CloneDialog extends JDialog {
 
         Ui.Form form = new Ui.Form()
                 .add("Git-URL", urlField, loadButton)
-                .add("Minecraft-Version", versionBox)
+                .add("Minecraft version", versionBox)
                 .add("Branch", branchBox)
-                .add("Projektname", nameField)
+                .add("Project name", nameField)
                 .add("", worktreeBox)
                 .add("", repoLabel)
                 .addFull(targetLabel)
                 .addFull(infoLabel);
         form.setBorder(BorderFactory.createEmptyBorder(16, 16, 8, 16));
 
-        JButton cancel = new JButton("Abbrechen");
+        JButton cancel = new JButton("Cancel");
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttons.setBorder(BorderFactory.createEmptyBorder(8, 16, 16, 16));
         buttons.add(cancel);
@@ -98,7 +98,7 @@ final class CloneDialog extends JDialog {
         cancel.addActionListener(e -> dispose());
         okButton.addActionListener(e -> submit());
         worktreeBox.addActionListener(e -> updateTarget());
-        worktreeBox.setToolTipText("Alle Versionen einer Mod teilen sich Git-Objekte und Branches – Commits in einer Version sind sofort in allen sichtbar.");
+        worktreeBox.setToolTipText("All versions of a mod share Git objects and branches – commits in one version are visible in all of them right away.");
         Ui.onChange(urlField, this::urlChanged);
         Ui.onChange(nameField, () -> {
             if (!settingName) nameEdited = true;
@@ -150,7 +150,7 @@ final class CloneDialog extends JDialog {
         }
         loadButton.setEnabled(false);
         infoLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
-        infoLabel.setText("Lade Branches…");
+        infoLabel.setText("Loading branches…");
         new SwingWorker<Git.RemoteBranches, Void>() {
             @Override
             protected Git.RemoteBranches doInBackground() throws Exception {
@@ -166,8 +166,8 @@ final class CloneDialog extends JDialog {
                     branchBox.removeAllItems();
                     branches.branches().forEach(branchBox::addItem);
                     defaultBranch = branches.defaultBranch();
-                    infoLabel.setText(branches.branches().size() + " Branches gefunden"
-                            + (defaultBranch != null ? " · Standard: " + defaultBranch : ""));
+                    infoLabel.setText(branches.branches().size() + " branches found"
+                            + (defaultBranch != null ? " · default: " + defaultBranch : ""));
                     if (current != null && branches.branches().contains(current.toString())) {
                         branchBox.setSelectedItem(current);
                     }
@@ -175,14 +175,14 @@ final class CloneDialog extends JDialog {
                 } catch (Exception e) {
                     String msg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
                     infoLabel.setForeground(UIManager.getColor("Component.error.focusedBorderColor"));
-                    infoLabel.setText("<html>Fehler: " + Ui.html(lastLine(msg)) + "</html>");
+                    infoLabel.setText("<html>Error: " + Ui.html(lastLine(msg)) + "</html>");
                 }
                 pack();
             }
         }.execute();
     }
 
-    /** Wählt die Branch, die am besten zur Minecraft-Version passt (exakt > beginnt mit > enthält). */
+    /** Selects the branch that best matches the Minecraft version (exact > starts with > contains). */
     private void suggestBranch() {
         String version = selectedVersion();
         if (version.isEmpty() || branchBox.getItemCount() == 0) {
@@ -222,17 +222,17 @@ final class CloneDialog extends JDialog {
         } else {
             Path repo = Worktrees.sharedRepo(master, name);
             repoLabel.setText(Files.isDirectory(repo)
-                    ? "Repository " + repo.getFileName() + " existiert bereits – es wird nur ein neuer Worktree angelegt."
-                    : "Neues gemeinsames Repository: " + repo);
+                    ? "Repository " + repo.getFileName() + " already exists – only a new worktree will be created."
+                    : "New shared repository: " + repo);
         }
         if (target == null) {
-            targetLabel.setText("Ziel: –");
+            targetLabel.setText("Target: –");
             okButton.setEnabled(false);
         } else if (Files.exists(target)) {
-            targetLabel.setText("<html>Ziel: " + Ui.html(target.toString()) + " <font color='#e57373'>(existiert bereits)</font></html>");
+            targetLabel.setText("<html>Target: " + Ui.html(target.toString()) + " <font color='#e57373'>(already exists)</font></html>");
             okButton.setEnabled(false);
         } else {
-            targetLabel.setText("Ziel: " + target);
+            targetLabel.setText("Target: " + target);
             okButton.setEnabled(true);
         }
     }
@@ -245,8 +245,8 @@ final class CloneDialog extends JDialog {
             return;
         }
         if (branchName.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Bitte eine Branch wählen bzw. eintragen.",
-                    "Branch fehlt", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select or enter a branch.",
+                    "Branch missing", JOptionPane.WARNING_MESSAGE);
             return;
         }
         result = new Request(url, branchName, selectedVersion(), nameField.getText().trim(), worktreeBox.isSelected());
@@ -254,7 +254,7 @@ final class CloneDialog extends JDialog {
     }
 
     private static String lastLine(String text) {
-        if (text == null) return "unbekannt";
+        if (text == null) return "unknown";
         String[] lines = text.strip().split("\n");
         return lines[lines.length - 1];
     }

@@ -13,7 +13,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * Dünner Wrapper um die git-Kommandozeile.
+ * Thin wrapper around the git command line.
  */
 public final class Git {
     public record Result(int exitCode, String output) {
@@ -43,7 +43,7 @@ public final class Git {
     }
 
     /**
-     * Führt git aus; jede Ausgabezeile wird zusätzlich an {@code lines} gereicht (falls nicht null).
+     * Runs git; every output line is also passed to {@code lines} (if not null).
      */
     public Result run(Path dir, Consumer<String> lines, String... args) {
         List<String> command = new ArrayList<>();
@@ -53,7 +53,7 @@ public final class Git {
         if (dir != null) {
             pb.directory(dir.toFile());
         }
-        // Nie auf eine Passwortabfrage im (nicht vorhandenen) Terminal warten
+        // Never wait for a password prompt in the (non-existent) terminal
         pb.environment().put("GIT_TERMINAL_PROMPT", "0");
         try {
             Process process = pb.start();
@@ -71,18 +71,18 @@ public final class Git {
             }
             return new Result(process.waitFor(), out.toString().strip());
         } catch (IOException e) {
-            return new Result(-1, "git konnte nicht gestartet werden: " + e.getMessage());
+            return new Result(-1, "could not start git: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Result(-1, "abgebrochen");
+            return new Result(-1, "interrupted");
         }
     }
 
-    /** Wie {@link #run}, wirft aber bei Exit-Code != 0 eine IOException mit der git-Ausgabe. */
+    /** Like {@link #run}, but throws an IOException with the git output on a non-zero exit code. */
     public Result runOrThrow(Path dir, Consumer<String> lines, String... args) throws IOException {
         Result result = run(dir, lines, args);
         if (!result.ok()) {
-            throw new IOException("git " + String.join(" ", args) + " fehlgeschlagen:\n" + result.output());
+            throw new IOException("git " + String.join(" ", args) + " failed:\n" + result.output());
         }
         return result;
     }
@@ -122,7 +122,7 @@ public final class Git {
     }
 
     /**
-     * Alle lokalen und Remote-Branches eines Repos (Remote-Präfix entfernt, ohne Duplikate).
+     * All local and remote branches of a repo (remote prefix stripped, no duplicates).
      */
     public List<String> branches(Path repo) {
         Result result = run(repo, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes");
@@ -147,7 +147,7 @@ public final class Git {
     }
 
     /**
-     * Branches eines Remote-Repositories, ohne es zu klonen.
+     * Branches of a remote repository, without cloning it.
      */
     public RemoteBranches remoteBranches(String url) throws IOException {
         Result result = run(null, "ls-remote", "--symref", url);

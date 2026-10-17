@@ -23,7 +23,7 @@ application {
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
-// Fat-Jar: per Doppelklick bzw. "javaw -jar" startbar
+// Fat jar: runnable via double-click or "javaw -jar"
 tasks.jar {
     manifest {
         attributes["Main-Class"] = "net.morthen.Main"

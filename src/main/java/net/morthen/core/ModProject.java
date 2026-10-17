@@ -3,10 +3,10 @@ package net.morthen.core;
 import java.nio.file.Path;
 
 /**
- * Ein Mod-Projekt unter {@code <master>/<mcVersion>/<name>}.
+ * A mod project at {@code <master>/<mcVersion>/<name>}.
  *
- * @param linkedWorktree {@code .git} ist eine Datei, d.h. das Projekt ist ein verknüpfter Worktree
- * @param commonDir      kanonischer Pfad des gemeinsamen git-Verzeichnisses (null ohne Git)
+ * @param linkedWorktree {@code .git} is a file, i.e. the project is a linked worktree
+ * @param commonDir      canonical path of the shared git directory (null without Git)
  */
 public record ModProject(
         String name,
@@ -25,7 +25,7 @@ public record ModProject(
         boolean linkedWorktree,
         Path commonDir
 ) {
-    /** MC-Version aus gradle.properties passt nicht zum Versionsordner. */
+    /** MC version from gradle.properties does not match the version folder. */
     public boolean versionMismatch() {
         return gradleMcVersion != null && !gradleMcVersion.isBlank() && !gradleMcVersion.equals(mcVersion);
     }
@@ -34,7 +34,7 @@ public record ModProject(
         return changes > 0 || ahead > 0;
     }
 
-    /** Eigenständiger Clone mit eigenem .git-Ordner. */
+    /** Standalone clone with its own .git folder. */
     public boolean standaloneClone() {
         return git && !linkedWorktree;
     }
