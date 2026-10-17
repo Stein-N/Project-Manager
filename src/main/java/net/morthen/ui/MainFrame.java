@@ -72,7 +72,6 @@ public final class MainFrame extends JFrame {
     /** Fixed window size; the layout is tuned to exactly this size. */
     private static final Dimension WINDOW_SIZE = new Dimension(900, 680);
     private static final int LEFT_WIDTH = 290;
-    private static final int LOG_HEIGHT = 240;
     private static final int MAX_LOG_CHARS = 400_000;
 
     private final Config config;
@@ -125,6 +124,8 @@ public final class MainFrame extends JFrame {
     private final JTextField filterField = new JTextField();
     private final JPanel detailPanel = new JPanel(new BorderLayout());
     private final JTextArea logArea = new JTextArea();
+    private final JButton logButton = toolButton("Log", Icons.LOG, "Output of git, Gradle and Claude (separate window)", this::openLog);
+    private LogWindow logWindow;
     private final JLabel statusLabel = new JLabel();
     private final JProgressBar busyBar = new JProgressBar();
     private int runningTasks;
@@ -188,6 +189,8 @@ public final class MainFrame extends JFrame {
         toolbar.add(toolButton("Fetch all", Icons.FETCH, "git fetch for all projects", this::fetchAll));
         toolbar.add(toolButton("Clean up", Icons.CLEANUP, "Gradle caches and build output – find data no project uses",
                 () -> CleanupDialog.show(this, projects, gradle, this::logAsync)));
+        toolbar.addSeparator();
+        toolbar.add(logButton);
         toolbar.add(javax.swing.Box.createHorizontalGlue());
         toolbar.add(toolButton("Settings", Icons.SETTINGS, "Master path, IntelliJ, Git", this::openSettings));
 
@@ -236,29 +239,13 @@ public final class MainFrame extends JFrame {
         // --- right side: details
         detailPanel.setBorder(BorderFactory.createEmptyBorder(8, 4, 8, 8));
 
-        JPanel top = new JPanel(new BorderLayout());
-        top.add(left, BorderLayout.WEST);
-        top.add(detailPanel, BorderLayout.CENTER);
+        JPanel center = new JPanel(new BorderLayout());
+        center.add(left, BorderLayout.WEST);
+        center.add(detailPanel, BorderLayout.CENTER);
 
-        // --- bottom: log
+        // --- log: own window, opened from the toolbar
         logArea.setEditable(false);
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        JScrollPane logScroll = new JScrollPane(logArea);
-        JPanel logPanel = new JPanel(new BorderLayout(0, 2));
-        logPanel.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
-        logPanel.setPreferredSize(new Dimension(0, LOG_HEIGHT));
-        JPanel logHeader = new JPanel(new BorderLayout());
-        logHeader.add(Ui.heading("Git log", "h4"), BorderLayout.WEST);
-        JButton clearLog = new JButton("Clear", Icons.get(Icons.CLEANUP));
-        clearLog.putClientProperty("JButton.buttonType", "toolBarButton");
-        clearLog.addActionListener(e -> logArea.setText(""));
-        logHeader.add(clearLog, BorderLayout.EAST);
-        logPanel.add(logHeader, BorderLayout.NORTH);
-        logPanel.add(logScroll, BorderLayout.CENTER);
-
-        JPanel center = new JPanel(new BorderLayout());
-        center.add(top, BorderLayout.CENTER);
-        center.add(logPanel, BorderLayout.SOUTH);
 
         // --- status bar
         busyBar.setIndeterminate(true);
@@ -697,7 +684,7 @@ public final class MainFrame extends JFrame {
                 runningForm.add("Running", row);
             }
             stack.push(runningForm, 4);
-            stack.push(Ui.muted("Output in the log below. Up to " + GradleRunner.MAX_PER_LOADER + " tasks per loader can run at the same time."), 12);
+            stack.push(Ui.muted("Output in the log window (toolbar → Log). Up to " + GradleRunner.MAX_PER_LOADER + " tasks per loader can run at the same time."), 12);
         }
         // --- General (build, publish) and the game tests per loader
         Optional<GradleTasks.Cached> cached = GradleTasks.cached(p.path());
@@ -728,7 +715,7 @@ public final class MainFrame extends JFrame {
         }
         if (cached.isEmpty()) {
             stack.push(Ui.muted(detecting
-                    ? "<html>Asking Gradle for the available tasks… (output in the log)</html>"
+                    ? "<html>Asking Gradle for the available tasks… (output in the log window)</html>"
                     : "<html>Publish and game test tasks are read from Gradle – click “Refresh Gradle tasks”. "
                     + "The first run of a fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
         } else if (groups.size() == 1) {
@@ -1843,6 +1830,15 @@ public final class MainFrame extends JFrame {
         }
         logArea.append("[" + LocalTime.now().format(TIME) + "] " + line + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
+        if (logWindow == null || !logWindow.isVisible()) {
+            logButton.setText("Log ●"); // unread lines
+        }
+    }
+
+    private void openLog() {
+        if (logWindow == null) logWindow = new LogWindow(this, logArea);
+        logWindow.open();
+        logButton.setText("Log");
     }
 
     private void logAsync(String line) {

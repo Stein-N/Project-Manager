@@ -334,7 +334,7 @@ final class ChangelogTab extends JPanel {
             host.error("Could not start Claude", e.getMessage());
             return;
         }
-        statusLabel.setText("Claude is writing the changelog… (output in the log)");
+        statusLabel.setText("Claude is writing the changelog… (output in the log window)");
         updateGenerateButtons();
     }
 

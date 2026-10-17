@@ -38,6 +38,7 @@ final class Icons {
     static final String WARNING = "warning";
     static final String UPGRADE = "upgrade";
     static final String BRANCH = "branch";
+    static final String LOG = "log";
 
     private static final Map<String, Icon> CACHE = new ConcurrentHashMap<>();
 
