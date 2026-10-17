@@ -102,6 +102,18 @@ public final class EnvFile {
             if (written.add(e.getKey())) out.add(e.getKey() + "=" + format(e.getValue()));
         }
         Files.write(file, out);
+        restrictToOwner(file);
+    }
+
+    /** On Linux/macOS the file usually holds tokens – make it readable for the owner only (rw-------). */
+    private static void restrictToOwner(Path file) {
+        try {
+            if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                Files.setPosixFilePermissions(file, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            }
+        } catch (IOException | UnsupportedOperationException ignored) {
+            // best effort
+        }
     }
 
     /** Quotes values that would otherwise not survive a round trip. */

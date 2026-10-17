@@ -117,6 +117,7 @@ public final class GradleRunner {
         Path wrapper = wrapper(project).orElseThrow(() -> new IOException("No Gradle wrapper (gradlew) found in " + project));
         List<String> command = new ArrayList<>();
         if (SystemActions.isWindows()) command.addAll(List.of("cmd.exe", "/c"));
+        else if (!Files.isExecutable(wrapper)) command.add("sh"); // gradlew without the executable bit (copied folders)
         command.add(wrapper.toAbsolutePath().toString());
         command.addAll(List.of(task.trim().split("\\s+"))); // e.g. "tasks --all"
         command.add("--console=plain");

@@ -774,7 +774,8 @@ public final class MainFrame extends JFrame {
             stack.push(row, 0);
             return stack.finish();
         }
-        stack.push(Ui.muted("Structure:  " + master.get() + "\\<MC version>\\<project>"), 16);
+        String sep = java.io.File.separator;
+        stack.push(Ui.muted("Structure:  " + master.get() + sep + "<MC version>" + sep + "<project>"), 16);
 
         Ui.Form info = new Ui.Form();
         info.add("Master folder", Ui.copyable(master.get().toString()));
@@ -854,7 +855,8 @@ public final class MainFrame extends JFrame {
         Optional<Path> ide = ideaPath();
         if (ide.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "IntelliJ IDEA was not found.\nPlease set the path to idea64.exe in the settings.",
+                    "IntelliJ IDEA was not found.\nPlease set the IntelliJ launcher in the settings\n"
+                            + "(idea64.exe, idea.sh or the Toolbox \"idea\" script).",
                     "IntelliJ not found", JOptionPane.WARNING_MESSAGE);
             openSettings();
             return;
@@ -1574,7 +1576,7 @@ public final class MainFrame extends JFrame {
 
         Ui.Form form = new Ui.Form()
                 .add("Master folder", master, masterBrowse)
-                .add("IntelliJ (idea64.exe)", idea, detect)
+                .add("IntelliJ launcher", idea, detect)
                 .add("Git executable", gitField)
                 .add("Auto-fetch every", fetchRow)
                 .add("", tray);

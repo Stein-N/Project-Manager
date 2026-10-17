@@ -7,14 +7,15 @@ import javafx.scene.paint.Color;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import net.morthen.core.Readme;
+import net.morthen.core.SystemActions;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
-import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +31,8 @@ final class ReadmeView {
     private static Path shownFile;
     private static long shownModified;
     private static Path pageFile;
+    /** Set when JavaFX could not be started; the preview is not offered again. */
+    private static String browserError;
     private static Consumer<String> errorHandler = msg -> { };
 
     private ReadmeView() {
@@ -37,8 +40,22 @@ final class ReadmeView {
 
     static JComponent create(Path readme, Consumer<String> onError) {
         errorHandler = onError;
-        ensureBrowser();
-        load(readme);
+        JComponent browser;
+        try {
+            ensureBrowser();
+            load(readme);
+            browser = fxPanel;
+        } catch (Throwable t) { // e.g. missing native JavaFX libraries (GTK on Linux)
+            browserError = t.toString();
+            browser = null;
+        }
+        if (browser == null) {
+            JLabel unavailable = new JLabel("<html><body style='width:420px'>README preview is not available on this system:<br>"
+                    + Ui.html(String.valueOf(browserError)) + "</body></html>");
+            unavailable.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            unavailable.setVerticalAlignment(javax.swing.SwingConstants.TOP);
+            browser = unavailable;
+        }
 
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBorder(BorderFactory.createEmptyBorder(4, 12, 4, 8));
@@ -47,7 +64,7 @@ final class ReadmeView {
         open.putClientProperty("JButton.buttonType", "toolBarButton");
         open.addActionListener(e -> {
             try {
-                Desktop.getDesktop().open(readme.toFile());
+                SystemActions.openFile(readme);
             } catch (Exception ex) {
                 onError.accept("Could not open " + readme);
             }
@@ -56,12 +73,13 @@ final class ReadmeView {
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(bar, BorderLayout.NORTH);
-        panel.add(fxPanel, BorderLayout.CENTER); // moves the shared panel into this tab
+        panel.add(browser, BorderLayout.CENTER); // moves the shared panel into this tab
         return panel;
     }
 
     private static void ensureBrowser() {
         if (fxPanel != null) return;
+        if (browserError != null) throw new IllegalStateException(browserError);
         fxPanel = new JFXPanel(); // starts the JavaFX runtime
         // details are rebuilt often – the runtime must survive when the panel is temporarily detached
         Platform.setImplicitExit(false);
@@ -116,9 +134,7 @@ final class ReadmeView {
     private static void openLink(String href) {
         SwingUtilities.invokeLater(() -> {
             try {
-                URI uri = URI.create(href);
-                if ("file".equals(uri.getScheme())) Desktop.getDesktop().open(Path.of(uri).toFile());
-                else Desktop.getDesktop().browse(uri);
+                SystemActions.openUri(URI.create(href));
             } catch (Exception e) {
                 errorHandler.accept("Could not open link: " + href);
             }

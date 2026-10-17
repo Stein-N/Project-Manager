@@ -13,15 +13,10 @@ repositories {
 val commonmarkVersion = "0.30.1"
 val javafxVersion = "27"
 
-// JavaFX ships native code per platform
-val javafxPlatform = System.getProperty("os.name").lowercase().let { os ->
-    val arm = System.getProperty("os.arch").lowercase().contains("aarch64")
-    when {
-        os.contains("win") -> "win"
-        os.contains("mac") -> if (arm) "mac-aarch64" else "mac"
-        else -> if (arm) "linux-aarch64" else "linux"
-    }
-}
+// JavaFX ships native code per platform. The jar bundles several platforms so one file runs everywhere
+// (JavaFX picks the right native libraries at runtime). Override with e.g. -PjavafxPlatforms=win,linux,mac-aarch64
+val javafxPlatforms = (findProperty("javafxPlatforms") as String? ?: "win,linux")
+    .split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
 dependencies {
     implementation("com.formdev:flatlaf:3.6.1")
@@ -34,8 +29,10 @@ dependencies {
     }
 
     // JavaFX WebView (embedded into Swing via JFXPanel) renders the README
-    for (module in listOf("base", "graphics", "controls", "media", "web", "swing")) {
-        implementation("org.openjfx:javafx-$module:$javafxVersion:$javafxPlatform")
+    for (platform in javafxPlatforms) {
+        for (module in listOf("base", "graphics", "controls", "media", "web", "swing")) {
+            implementation("org.openjfx:javafx-$module:$javafxVersion:$platform")
+        }
     }
 
     testImplementation(platform("org.junit:junit-bom:6.0.0"))
