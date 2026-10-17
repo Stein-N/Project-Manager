@@ -25,7 +25,6 @@ import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
@@ -64,6 +63,10 @@ import java.util.function.Consumer;
 
 public final class MainFrame extends JFrame {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
+    /** Feste Fenstergröße; das Layout ist genau darauf abgestimmt. */
+    private static final Dimension WINDOW_SIZE = new Dimension(900, 560);
+    private static final int LEFT_WIDTH = 290;
+    private static final int LOG_HEIGHT = 120;
 
     private final Config config;
     private final Git git;
@@ -89,8 +92,8 @@ public final class MainFrame extends JFrame {
         this.git = new Git(config.gitExecutable());
 
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(1280, 820);
-        setMinimumSize(new Dimension(900, 560));
+        setSize(WINDOW_SIZE);
+        setResizable(false);
         setLocationRelativeTo(null);
 
         buildUi();
@@ -149,23 +152,25 @@ public final class MainFrame extends JFrame {
 
         JPanel left = new JPanel(new BorderLayout(0, 6));
         left.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 4));
+        left.setPreferredSize(new Dimension(LEFT_WIDTH, 0));
         left.add(filterField, BorderLayout.NORTH);
-        left.add(new JScrollPane(tree), BorderLayout.CENTER);
+        left.add(new JScrollPane(tree, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER), BorderLayout.CENTER);
 
         // --- rechte Seite: Details
         detailPanel.setBorder(BorderFactory.createEmptyBorder(8, 4, 8, 8));
 
-        JSplitPane horizontal = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, detailPanel);
-        horizontal.setDividerLocation(430);
-        horizontal.setResizeWeight(0.35);
-        horizontal.setBorder(null);
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(left, BorderLayout.WEST);
+        top.add(detailPanel, BorderLayout.CENTER);
 
         // --- unten: Log
         logArea.setEditable(false);
-        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
         JScrollPane logScroll = new JScrollPane(logArea);
-        JPanel logPanel = new JPanel(new BorderLayout(0, 4));
+        JPanel logPanel = new JPanel(new BorderLayout(0, 2));
         logPanel.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+        logPanel.setPreferredSize(new Dimension(0, LOG_HEIGHT));
         JPanel logHeader = new JPanel(new BorderLayout());
         logHeader.add(Ui.heading("Git-Log", "h4"), BorderLayout.WEST);
         JButton clearLog = new JButton("Leeren");
@@ -175,10 +180,9 @@ public final class MainFrame extends JFrame {
         logPanel.add(logHeader, BorderLayout.NORTH);
         logPanel.add(logScroll, BorderLayout.CENTER);
 
-        JSplitPane vertical = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontal, logPanel);
-        vertical.setResizeWeight(0.78);
-        vertical.setDividerLocation(590);
-        vertical.setBorder(null);
+        JPanel center = new JPanel(new BorderLayout());
+        center.add(top, BorderLayout.CENTER);
+        center.add(logPanel, BorderLayout.SOUTH);
 
         // --- Statusleiste
         busyBar.setIndeterminate(true);
@@ -191,7 +195,7 @@ public final class MainFrame extends JFrame {
 
         getContentPane().setLayout(new BorderLayout());
         getContentPane().add(toolbar, BorderLayout.NORTH);
-        getContentPane().add(vertical, BorderLayout.CENTER);
+        getContentPane().add(center, BorderLayout.CENTER);
         getContentPane().add(status, BorderLayout.SOUTH);
 
         getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
@@ -264,7 +268,9 @@ public final class MainFrame extends JFrame {
         }
 
         root.removeAllChildren();
-        root.setUserObject(master == null ? "Kein Master-Ordner gewählt" : master.toString());
+        root.setUserObject(master == null ? "Kein Master-Ordner gewählt"
+                : master.getFileName() == null ? master.toString() : master.getFileName().toString());
+        tree.setToolTipText(master == null ? null : master.toString());
         byVersion.forEach((version, list) -> {
             if (!filter.isEmpty() && list.isEmpty() && !version.toLowerCase(Locale.ROOT).contains(filter)) {
                 return;
@@ -325,8 +331,10 @@ public final class MainFrame extends JFrame {
     private void updateStatus() {
         String master = config.masterPath().map(Path::toString).orElse("–");
         long dirty = projects.stream().filter(ModProject::hasUnsavedWork).count();
-        statusLabel.setText("Master: " + master + "    ·    " + versions.size() + " Versionen    ·    "
-                + projects.size() + " Projekte" + (dirty > 0 ? "    ·    " + dirty + " mit ungesicherten Änderungen" : ""));
+        // Zähler zuerst, damit bei langem Pfad nur der Pfad gekürzt wird
+        statusLabel.setText(versions.size() + " Versionen  ·  " + projects.size() + " Projekte"
+                + (dirty > 0 ? "  ·  " + dirty + " mit ungesicherten Änderungen" : "") + "  ·  Master: " + master);
+        statusLabel.setToolTipText(master);
     }
 
     // =====================================================================  Detailansicht
@@ -342,7 +350,8 @@ public final class MainFrame extends JFrame {
         } else {
             content = overview();
         }
-        JScrollPane scroll = new JScrollPane(content);
+        JScrollPane scroll = new JScrollPane(content, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         detailPanel.add(scroll, BorderLayout.CENTER);
@@ -352,9 +361,9 @@ public final class MainFrame extends JFrame {
 
     private JComponent projectDetails(ModProject p) {
         Ui.Stack stack = new Ui.Stack();
-        stack.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
 
-        stack.push(Ui.heading(p.name(), "h1"), 2);
+        stack.push(Ui.heading(p.name(), "h2"), 2);
         stack.push(Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")), 16);
 
         JButton openIde = Ui.primary("  In IntelliJ öffnen  ");
@@ -397,7 +406,7 @@ public final class MainFrame extends JFrame {
         stack.push(info, 18);
 
         stack.push(Ui.heading("Aktionen", "h4"), 6);
-        JPanel actions = new JPanel(new GridLayout(0, 3, 8, 8));
+        JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
         actions.add(button("Im Explorer öffnen", () -> run(() -> SystemActions.openExplorer(p.path()))));
         actions.add(button("Terminal öffnen", () -> run(() -> SystemActions.openTerminal(p.path()))));
         if (p.git()) {
@@ -472,8 +481,8 @@ public final class MainFrame extends JFrame {
 
     private JComponent versionDetails(VersionEntry v) {
         Ui.Stack stack = new Ui.Stack();
-        stack.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
-        stack.push(Ui.heading("Minecraft " + v.version(), "h1"), 2);
+        stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
+        stack.push(Ui.heading("Minecraft " + v.version(), "h2"), 2);
         stack.push(Ui.muted(v.count() + " Projekt(e)"), 16);
 
         Ui.Form info = new Ui.Form();
@@ -501,8 +510,8 @@ public final class MainFrame extends JFrame {
 
     private JComponent overview() {
         Ui.Stack stack = new Ui.Stack();
-        stack.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
-        stack.push(Ui.heading("MC Mod Project Manager", "h1"), 4);
+        stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
+        stack.push(Ui.heading("MC Mod Project Manager", "h2"), 4);
         Optional<Path> master = config.masterPath();
         if (master.isEmpty()) {
             stack.push(new JLabel("Es ist noch kein Master-Ordner festgelegt."), 12);
@@ -520,7 +529,7 @@ public final class MainFrame extends JFrame {
 
         Ui.Form info = new Ui.Form();
         info.add("Master-Ordner", Ui.copyable(master.get().toString()));
-        info.add("Versionen", new JLabel(versions.isEmpty() ? "–" : String.join(",  ", versions)));
+        info.add("Versionen", Ui.copyable(versions.isEmpty() ? "–" : String.join(",  ", versions)));
         info.add("Projekte", new JLabel(String.valueOf(projects.size())));
         long dirty = projects.stream().filter(p -> p.changes() > 0).count();
         long unpushed = projects.stream().filter(p -> p.ahead() > 0).count();

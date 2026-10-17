@@ -6,12 +6,15 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.Scrollable;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.JTextComponent;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Rectangle;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -43,6 +46,7 @@ final class Ui {
         field.setBorder(null);
         field.setOpaque(false);
         field.setCaretPosition(0);
+        field.setToolTipText(text == null || text.isEmpty() ? null : text);
         return field;
     }
 
@@ -137,7 +141,7 @@ final class Ui {
     }
 
     /** Vertikaler Stapel, Komponenten volle Breite, Rest leer. */
-    static final class Stack extends JPanel {
+    static final class Stack extends JPanel implements Scrollable {
         private int row;
 
         Stack() {
@@ -148,6 +152,32 @@ final class Ui {
             add(component, new GridBagConstraints(0, row++, 1, 1, 1, 0, GridBagConstraints.NORTHWEST,
                     GridBagConstraints.HORIZONTAL, new Insets(0, 0, gapBelow, 0), 0, 0));
             return this;
+        }
+
+        // Breite folgt dem Viewport: lange Inhalte werden gekürzt statt horizontal zu scrollen
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+            return visible.height - 32;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
         }
 
         Stack finish() {
