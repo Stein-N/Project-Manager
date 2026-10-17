@@ -81,6 +81,8 @@ public final class MainFrame extends JFrame {
     private final TrayManager tray = new TrayManager(this, this::openInIntelliJ, this::exitApplication);
     /** Changelog tabs keep their draft (and a running Claude call) while the details are rebuilt. */
     private final Map<Path, ChangelogTab> changelogTabs = new java.util.HashMap<>();
+    /** Main branch per repo (common git dir), "" = none; see {@link Git#defaultBranch}. */
+    private final Map<Path, String> mainBranches = new java.util.HashMap<>();
     private final ChangelogTab.Host changelogHost = new ChangelogTab.Host() {
         @Override
         public Git git() {
@@ -472,7 +474,10 @@ public final class MainFrame extends JFrame {
             int runningCount = gradle.runningTasks(p.path()).size();
             tabs.addTab(runningCount > 1 ? "Gradle (" + runningCount + ")" : "Gradle", runningCount > 0 ? Icons.get(Icons.RUN) : null, scrollTab(gradleTab(p)));
         }
-        if (p.git()) {
+        String mainBranch = p.git() ? mainBranch(p) : null;
+        if (p.git() && mainBranch != null && !mainBranch.equals(p.branch())) {
+            tabs.addTab("Changelog", scrollTab(changelogElsewhereTab(p, mainBranch)));
+        } else if (p.git()) {
             ChangelogTab changelog = changelogTabs.get(p.path());
             if (changelog == null) {
                 changelog = new ChangelogTab(changelogHost, p);
@@ -498,6 +503,43 @@ public final class MainFrame extends JFrame {
         panel.add(header, BorderLayout.NORTH);
         panel.add(tabs, BorderLayout.CENTER);
         return panel;
+    }
+
+    /** Main branch of the project's repo (cached per repo); null if there is none. */
+    private String mainBranch(ModProject p) {
+        Path key = p.commonDir() != null ? p.commonDir() : p.path();
+        String branch = mainBranches.computeIfAbsent(key, k -> {
+            String b = git.defaultBranch(p.path());
+            return b == null ? "" : b;
+        });
+        return branch.isEmpty() ? null : branch;
+    }
+
+    /** Changelogs are only written on the main branch; the backport takes them over into the other versions. */
+    private Ui.Stack changelogElsewhereTab(ModProject p, String mainBranch) {
+        Ui.Stack stack = new Ui.Stack();
+        Optional<ModProject> main = siblings(p).stream().filter(s -> mainBranch.equals(s.branch())).findFirst();
+        stack.push(new JLabel("<html><body style='width:420px'>The changelog is only written on the main branch <b>"
+                + Ui.html(mainBranch) + "</b>" + main.map(m -> " (" + Ui.html(m.mcVersion()) + ")").orElse("")
+                + ". The backport takes it over into this version together with the changes.</body></html>"), 10);
+        String here;
+        try {
+            Path file = p.path().resolve(Changelog.FILE);
+            here = Files.isRegularFile(file)
+                    ? Changelog.detectVersion(Files.readString(file)).map(v -> "v" + v).orElse("no version heading")
+                    : "none";
+        } catch (Exception e) {
+            here = "could not be read";
+        }
+        Ui.Form info = new Ui.Form();
+        info.add("CHANGELOG.md here", Ui.copyable(here));
+        stack.push(info, 10);
+        main.ifPresent(m -> {
+            JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+            row.add(button("Go to " + m.mcVersion() + "/" + m.name(), Icons.BRANCH, () -> reselect(m.path())));
+            stack.push(row, 0);
+        });
+        return stack;
     }
 
     private static JScrollPane scrollTab(Ui.Stack content) {

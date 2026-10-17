@@ -157,7 +157,10 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
 5. **Überschrift** `#### v<Mod-Version>` ohne Minecraft-Version und Datum (geändert, siehe [Format](#format)).
 6. **Kopf von `CHANGELOG_FULL.md`:** nur `# Changelog`.
 7. **Gleiche Version erneut generieren:** vorher nachfragen, dann überschreiben.
-8. **Mehrere MC-Versionen:** Changelog pro Worktree einzeln.
+8. **Nur auf dem Main-Branch** (geändert am 17.10.2026): Der Changelog wird nur auf dem Main-Branch erzeugt
+   (`origin/HEAD`, sonst lokales `main`/`master`; bei den Mods `main` im neuesten MC-Ordner). Die anderen Versionen
+   bekommen ihn über den Backport, da die Änderungen dieselben sind. Auf anderen Branches zeigt der Tab nur einen
+   Hinweis, die Version der dortigen `CHANGELOG.md` und einen Sprung zur Main-Version.
 9. **Publish:** Warnung vor `publishMods`, wenn die Version in `CHANGELOG.md` nicht zur `mod_version` passt.
 10. **Commit danach:** „Save“ und „Save & open commit dialog“ (Nachricht `docs: changelog for <version>`).
 

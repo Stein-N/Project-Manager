@@ -147,6 +147,21 @@ public final class Git {
     }
 
     /**
+     * The main branch of a repo: the default branch of {@code origin} ({@code origin/HEAD}), otherwise a local
+     * {@code main} or {@code master}; null if none of them exists.
+     */
+    public String defaultBranch(Path repo) {
+        Result head = run(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD");
+        if (head.ok() && head.output().startsWith("origin/")) {
+            return head.output().substring("origin/".length()).strip();
+        }
+        for (String name : List.of("main", "master")) {
+            if (run(repo, "show-ref", "--verify", "--quiet", "refs/heads/" + name).ok()) return name;
+        }
+        return null;
+    }
+
+    /**
      * Branches of a remote repository, without cloning it.
      */
     public RemoteBranches remoteBranches(String url) throws IOException {

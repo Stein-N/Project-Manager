@@ -181,11 +181,12 @@ Folgen für den Backport:
 - Der **Mod-Teil** der Version wird gezielt angeglichen: in `gradle.properties` des Ziels nur der Mod-Teil ersetzen,
   das MC-Präfix/-Suffix des Ziels bleibt (`1.20.1-2.1.6` → `1.20.1-2.1.7`). Erkennung des Mod-Teils wie
   `Changelog.displayVersion`.
-- `CHANGELOG.md` der Quelle (gleiche Mod-Version) ins Ziel übernehmen, ältere Version dabei wie gewohnt nach
-  `CHANGELOG_FULL.md` verschieben (`Changelog.save`).
+- `CHANGELOG.md` kommt **nur von `main`**: Der Changelog wird ausschließlich dort erzeugt (siehe
+  [Changelog-Assistent](changelog-assistant.md#entscheidungen-geklärt-am-17102026), Punkt 8) und beim Backport ins
+  Ziel übernommen; eine ältere Version im Ziel wandert dabei wie gewohnt nach `CHANGELOG_FULL.md` (`Changelog.save`).
 - Beides als uncommittete Änderung zusammen mit dem Backport, im Ergebnis sichtbar.
-- **Vor Stufe 1 klären:** automatisch bei jedem Backport (Checkbox, standardmäßig an) oder als eigener Button
-  „Sync version + changelog“, auch ohne Commits?
+- **Entschieden:** Übernahme von Changelog und Mod-Version passiert **automatisch** als Teil jedes Backports aus
+  `main` (Checkbox, standardmäßig an); kein eigener Changelog-Generator auf den anderen Branches.
 
 ## Einstieg für die neue Sitzung
 
