@@ -70,7 +70,7 @@ public final class Readme {
                 + "</body></html>";
     }
 
-    static String markdownToHtml(String markdown) {
+    public static String markdownToHtml(String markdown) {
         return RENDERER.render(PARSER.parse(markdown));
     }
 

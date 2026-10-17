@@ -1,5 +1,6 @@
 package net.morthen.ui;
 
+import net.morthen.core.Changelog;
 import net.morthen.core.ClaudeRunner;
 import net.morthen.core.Config;
 import net.morthen.core.Dependencies;
@@ -78,6 +79,39 @@ public final class MainFrame extends JFrame {
     private final Git git;
     private final GradleRunner gradle = new GradleRunner();
     private final TrayManager tray = new TrayManager(this, this::openInIntelliJ, this::exitApplication);
+    /** Changelog tabs keep their draft (and a running Claude call) while the details are rebuilt. */
+    private final Map<Path, ChangelogTab> changelogTabs = new java.util.HashMap<>();
+    private final ChangelogTab.Host changelogHost = new ChangelogTab.Host() {
+        @Override
+        public Git git() {
+            return git;
+        }
+
+        @Override
+        public Config config() {
+            return config;
+        }
+
+        @Override
+        public void log(String line) {
+            MainFrame.this.log(line);
+        }
+
+        @Override
+        public void error(String title, String message) {
+            MainFrame.this.error(title, message);
+        }
+
+        @Override
+        public void filesChanged(ModProject project) {
+            refresh();
+        }
+
+        @Override
+        public void openCommitDialog(ModProject project, String message) {
+            commitDialog(project, message);
+        }
+    };
 
     private List<String> versions = List.of();
     private List<ModProject> projects = List.of();
@@ -437,6 +471,16 @@ public final class MainFrame extends JFrame {
         if (GradleRunner.wrapper(p.path()).isPresent()) {
             int runningCount = gradle.runningTasks(p.path()).size();
             tabs.addTab(runningCount > 1 ? "Gradle (" + runningCount + ")" : "Gradle", runningCount > 0 ? Icons.get(Icons.RUN) : null, scrollTab(gradleTab(p)));
+        }
+        if (p.git()) {
+            ChangelogTab changelog = changelogTabs.get(p.path());
+            if (changelog == null) {
+                changelog = new ChangelogTab(changelogHost, p);
+                changelogTabs.put(p.path(), changelog);
+            } else {
+                changelog.update(p);
+            }
+            tabs.addTab("Changelog", changelog);
         }
         List<Dependencies.Entry> deps = Dependencies.read(p.path());
         if (!deps.isEmpty() || (meta != null && !meta.dependencies().isEmpty())) {
@@ -1316,7 +1360,11 @@ public final class MainFrame extends JFrame {
     }
 
     private void commitDialog(ModProject p) {
-        CommitDialog.show(this, git, p.path(), p.mcVersion() + "/" + p.name()).ifPresent(req -> {
+        commitDialog(p, "");
+    }
+
+    private void commitDialog(ModProject p, String message) {
+        CommitDialog.show(this, git, p.path(), p.mcVersion() + "/" + p.name(), message).ifPresent(req -> {
             log("Committing " + req.selected().size() + " file(s) in " + p.mcVersion() + "/" + p.name() + (req.push() ? " and pushing" : ""));
             background(req.push() ? "Committing and pushing…" : "Committing…", () -> {
                 GitChanges.commit(git, p.path(), req.all(), req.selected(), req.message(), this::logAsync);
@@ -1393,7 +1441,8 @@ public final class MainFrame extends JFrame {
             List<String> missing = EnvFile.EXPECTED.stream().filter(k -> vars0.getOrDefault(k, "").isBlank()).toList();
             String vars = (env.isEmpty() ? "No variables in <tt>.env</tt>."
                     : "Environment from <tt>.env</tt>: " + Ui.html(String.join(", ", env.keySet())))
-                    + (missing.isEmpty() ? "" : "<br><font color='#c77800'>Missing or empty: " + Ui.html(String.join(", ", missing)) + "</font>");
+                    + (missing.isEmpty() ? "" : "<br><font color='#c77800'>Missing or empty: " + Ui.html(String.join(", ", missing)) + "</font>")
+                    + changelogWarning(p);
             if (JOptionPane.showConfirmDialog(this,
                     "<html><b>gradlew " + Ui.html(task) + "</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for "
                             + Ui.html(p.mcVersion() + "/" + p.name()) + ".<br>" + vars + "<br><br>Run it now?</html>",
@@ -1413,6 +1462,21 @@ public final class MainFrame extends JFrame {
             error("Gradle", e.getMessage());
         }
         gradleStateChanged(p);
+    }
+
+    /** HTML line for the publish confirmation if CHANGELOG.md exists but is not for the current mod_version. */
+    private static String changelogWarning(ModProject p) {
+        Path file = p.path().resolve(Changelog.FILE);
+        if (p.modVersion() == null || !Files.isRegularFile(file)) return "";
+        try {
+            String expected = Changelog.displayVersion(p.modVersion(), p.gradleMcVersion() != null ? p.gradleMcVersion() : p.mcVersion());
+            String found = Changelog.detectVersion(Files.readString(file)).orElse(null);
+            if (found != null && found.replaceFirst("^[vV]", "").equals(expected)) return "";
+            return "<br><font color='#c77800'>CHANGELOG.md is for " + Ui.html(found == null ? "an unknown version" : found)
+                    + ", not " + Ui.html(expected) + " (see the Changelog tab)</font>";
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** Variables from {@code <master>/.env}; empty if there is none or it cannot be read. */

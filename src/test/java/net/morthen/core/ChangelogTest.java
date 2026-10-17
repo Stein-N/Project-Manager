@@ -140,6 +140,11 @@ class ChangelogTest {
         assertTrue(commit("chore: tidy up").hiddenByDefault());
         assertTrue(commit("Bump version to 1.4.0").hiddenByDefault());
         assertTrue(commit("1.4.0").hiddenByDefault());
+        assertTrue(commit("bump versions").hiddenByDefault());
+        assertTrue(commit("Release 1.4.0").hiddenByDefault());
+        assertTrue(commit("update changelog").hiddenByDefault());
+        assertFalse(commit("Update version checker").hiddenByDefault());
+        assertFalse(commit("update LootTableModifier to be more flexible").hiddenByDefault());
         assertFalse(commit("feat: version checker").hiddenByDefault());
         assertFalse(commit("Fix tooltip").hiddenByDefault());
         assertTrue(new Changelog.Commit("a", "a", "t", "d", true, ConventionalCommit.parse("Merge x")).hiddenByDefault());
@@ -188,7 +193,7 @@ class ChangelogTest {
         commit(repo, "feat: new thing", "b.txt");
         commit(repo, "fix: other", "c.txt");
 
-        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0");
+        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0", "1.1.0");
         assertEquals(bump, starts.getFirst().sha());
         List<Changelog.Commit> commits = Changelog.commits(git, repo, bump);
         assertEquals(List.of("other", "new thing"), commits.stream().map(c -> c.message().subject()).toList());
@@ -205,7 +210,7 @@ class ChangelogTest {
         write(repo, "gradle.properties", "mod_version=1.1.0\n");
         commit(repo, "1.1.0");
 
-        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0");
+        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0", "1.1.0");
         assertEquals(first, starts.getFirst().sha());
         assertEquals(2, Changelog.commits(git, repo, first).size());
     }
@@ -221,7 +226,7 @@ class ChangelogTest {
         String release = head(repo);
         commit(repo, "fix: after release", "b.txt");
 
-        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0");
+        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.1.0", "1.1.0");
         assertEquals(release, starts.getFirst().sha());
         assertTrue(starts.getFirst().label().startsWith("CHANGELOG.md for 1.0.0"));
         assertEquals(1, Changelog.commits(git, repo, release).size());
@@ -232,9 +237,63 @@ class ChangelogTest {
         Path repo = initRepo();
         commit(repo, "init", "a.txt");
         commit(repo, "Merge-free history", "b.txt");
-        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.0.0");
+        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.0.0", "1.0.0");
         assertEquals(1, starts.size());
         assertEquals(2, Changelog.commits(git, repo, null).size());
+    }
+
+    // ---------------------------------------------------------------- real-world format (#### v2.1.6, version=1.21.1-2.1.6)
+
+    @Test
+    void displayVersionStripsMinecraftVersion() {
+        assertEquals("2.1.6", Changelog.displayVersion("1.21.1-2.1.6", "1.21.1"));
+        assertEquals("2.1.6", Changelog.displayVersion("2.1.6+1.21.1", "1.21.1"));
+        assertEquals("2.1.6", Changelog.displayVersion("2.1.6-mc1.21.1", "1.21.1"));
+        assertEquals("2.1.6", Changelog.displayVersion("2.1.6", "1.21.1"));
+        assertEquals("1.21.1", Changelog.displayVersion("1.21.1", "1.21.1"));
+        assertNull(Changelog.displayVersion(null, "1.21.1"));
+    }
+
+    @Test
+    void deeperHeadingsWithVPrefix() throws IOException {
+        assertEquals(Optional.of("2.1.6"), Changelog.detectVersion("#### v2.1.6\n- update LootTableModifier"));
+        Files.writeString(tmp.resolve(Changelog.FILE), "#### v2.1.6\n- update LootTableModifier");
+        Files.writeString(tmp.resolve(Changelog.FULL_FILE), "#### v2.1.6\n- update LootTableModifier\n\n#### v2.1.5\n- older\n");
+
+        assertEquals(Changelog.Action.REPLACE_SAME_VERSION, Changelog.plan(tmp, "2.1.6").action());
+        Changelog.Plan plan = Changelog.save(tmp, "2.1.7", "## 2.1.7 – Minecraft 1.21.1 – 2026-10-17\n- new", false);
+        assertEquals(Changelog.Action.OLD_VERSION_ALREADY_IN_FULL, plan.action(), "v2.1.6 is already in the full log");
+        assertEquals("#### v2.1.6\n- update LootTableModifier\n\n#### v2.1.5\n- older\n",
+                Files.readString(tmp.resolve(Changelog.FULL_FILE)));
+
+        // the next version moves 2.1.7 to the top, above the #### entries
+        Changelog.save(tmp, "2.1.8", "## 2.1.8", false);
+        assertTrue(Files.readString(tmp.resolve(Changelog.FULL_FILE)).startsWith("## 2.1.7 – Minecraft 1.21.1 – 2026-10-17\n- new\n\n#### v2.1.6"));
+        assertEquals("## 2.1.7 – Minecraft 1.21.1 – 2026-10-17\n- new", Changelog.styleSample(tmp, 2));
+    }
+
+    @Test
+    void startsWithMinecraftPrefixedVersion() throws IOException {
+        Path repo = initRepo();
+        write(repo, "gradle.properties", "version=1.21.1-2.1.5\nminecraft_version=1.21.1\n");
+        write(repo, Changelog.FILE, "#### v2.1.5\n- a");
+        commit(repo, "init");
+        write(repo, "gradle.properties", "version=1.21.1-2.1.6\nminecraft_version=1.21.1\n");
+        write(repo, Changelog.FILE, "#### v2.1.6\n- b");
+        commit(repo, "bump version update changelog");
+        String bump = head(repo);
+        write(repo, "gradle.properties", "version=1.21.1-2.1.6\nminecraft_version=1.21.1\nloader=x\n");
+        commit(repo, "touch other version line", "x.txt"); // same value: the bump stays the start
+        commit(repo, "update testmod", "y.txt");
+
+        List<Changelog.Start> starts = Changelog.starts(git, repo, "1.21.1-2.1.6", "2.1.6");
+        assertEquals(bump, starts.getFirst().sha(), starts.toString());
+        assertEquals(2, Changelog.commits(git, repo, bump).size());
+    }
+
+    @Test
+    void claudeAnswerWithOtherHeadingLevel() {
+        assertEquals(Optional.of("#### v2.1.7\n- a\n"), Changelog.cleanAnswer("#### v2.1.7\n- a", "2.1.7"));
     }
 
     // ---------------------------------------------------------------- helpers

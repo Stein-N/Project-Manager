@@ -1,6 +1,7 @@
 # Feature-Plan: Changelog-Assistent (lokal, mit Claude)
 
-> Status: **in Umsetzung** (Fragen geklärt, siehe [Entscheidungen](#entscheidungen-geklärt-am-17102026)).
+> Status: **umgesetzt** (17.10.2026) – `core/ClaudeRunner`, `core/ConventionalCommit`, `core/Changelog`, `ui/ChangelogTab`.
+> Entscheidungen siehe [unten](#entscheidungen-geklärt-am-17102026), Abweichungen unter [Umsetzungsnotizen](#umsetzungsnotizen).
 > Verwandtes Feature: [Backport-Assistent](backport-assistant.md)
 > (gemeinsamer Baustein `ClaudeRunner`, siehe [unten](#gemeinsame-bausteine-mit-dem-backport-assistenten)).
 
@@ -161,6 +162,20 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
 8. **Mehrere MC-Versionen:** Changelog pro Worktree einzeln.
 9. **Publish:** Warnung vor `publishMods`, wenn die Version in `CHANGELOG.md` nicht zur `mod_version` passt.
 10. **Commit danach:** „Save“ und „Save & open commit dialog“ (Nachricht `docs: changelog for <version>`).
+
+## Umsetzungsnotizen
+
+- **Versionserkennung** akzeptiert Überschriften jeder Ebene (`## 1.4.0 – …`, `## [1.4.0]`, `#### v2.1.6`), weil
+  bestehende Changelogs (z. B. Resource-Library) `#### vX.Y.Z` nutzen. Neue Einträge werden oberhalb der ersten
+  Versions-Überschrift in `CHANGELOG_FULL.md` eingefügt, egal welcher Ebene.
+- **Anzeige-Version:** `mod_version`/`version` kann die MC-Version enthalten (`1.21.1-2.1.6`, `2.1.6+1.21.1`); im
+  Changelog wird sie ohne MC-Teil verwendet (`2.1.6`), Vergleiche ignorieren ein führendes `v`.
+- **Claude ohne Werkzeuge:** `--tools ""` allein reicht nicht – die MCP-Server des Kontos bleiben sonst aktiv. Daher
+  immer `--strict-mcp-config` mit leerer MCP-Konfiguration. `--bare` scheidet aus (kein OAuth-Login).
+- **UI:** Das Fenster ist fest 900×680, der Tab hat nur ca. 610×300 px → zwei Unter-Reiter „Commits“ und „Draft“;
+  die Vorschau nutzt ein Swing-`JEditorPane` (der JavaFX-WebView ist an den README-Tab gebunden). Eine Tab-Instanz pro
+  Projekt überlebt die häufigen Neuaufbauten der Detailansicht (Entwurf und laufender Claude-Lauf bleiben erhalten).
+- Einstellungen: Pfad zur Claude-CLI, Modell, Budget pro Lauf (Standard 1 $), Zeitlimit (Standard 15 min).
 
 ## Einstieg für die neue Sitzung
 

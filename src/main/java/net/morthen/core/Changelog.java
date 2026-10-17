@@ -28,11 +28,16 @@ public final class Changelog {
     public static final List<String> SECTIONS = List.of("Added", "Changed", "Fixed", "Removed", "Performance");
 
     private static final Set<String> INTERNAL_TYPES = Set.of("chore", "ci", "docs", "refactor", "test", "build", "style");
+    /** Housekeeping subjects: "bump versions", "Release 1.4.0", "1.4.0", "update changelog". */
     private static final Pattern VERSION_BUMP = Pattern.compile(
-            "^(bump|update|set|release|prepare)?\\s*(mod\\s*)?(version|release)\\b.*\\d.*|^v?\\d+(\\.\\d+)+\\S*$",
+            "^(bump|update|set|prepare)\\s+(the\\s+)?(mod\\s+)?versions?(\\s+(to\\s+)?v?\\d\\S*)?\\s*$"
+                    + "|^(release|version)\\s+v?\\d.*"
+                    + "|^v?\\d+(\\.\\d+)+\\S*$"
+                    + "|^(update|add)\\s+(the\\s+)?changelog\\b.*",
             Pattern.CASE_INSENSITIVE);
+    /** A heading of any level that starts with a version: {@code ## 1.4.0 – …}, {@code #### v2.1.6}, {@code ## [1.4.0]}. */
     private static final Pattern HEADING_VERSION = Pattern.compile(
-            "^##\\s+\\[?v?(\\d[\\w.+-]*?)]?(?=\\s|$|]|\\))", Pattern.MULTILINE);
+            "^#{1,6}\\s+\\[?[vV]?(\\d[\\w.+-]*?)]?(?=\\s|$|]|\\))", Pattern.MULTILINE);
     private static final Pattern VERSION_PROPERTY = Pattern.compile(
             "^\\s*(mod_version|modVersion|version)\\s*[=:]\\s*(\\S+)\\s*$", Pattern.MULTILINE);
     private static final String FIELD = "\u001f";
@@ -103,33 +108,37 @@ public final class Changelog {
      * Candidates for the start of the range, the preferred one first: the last change of {@code CHANGELOG.md} if it
      * holds another version (= release of the previous version), then the commit that set {@code mod_version} to the
      * current value – or, if nothing was committed after that bump, the commit that set the previous value.
+     *
+     * @param modVersion     raw value from gradle.properties (e.g. {@code 1.21.1-2.1.6})
+     * @param displayVersion version as written in the changelog (see {@link #displayVersion})
      */
-    public static List<Start> starts(Git git, Path repo, String currentVersion) {
+    public static List<Start> starts(Git git, Path repo, String modVersion, String displayVersion) {
         List<Start> starts = new ArrayList<>();
         String changelogCommit = single(git, repo, "log", "-1", "--format=%H", "--", FILE);
         if (changelogCommit != null) {
             String version = show(git, repo, changelogCommit, FILE).flatMap(Changelog::detectVersion).orElse(null);
-            if (version != null && !version.equals(currentVersion)) {
+            if (version != null && !sameVersion(version, displayVersion)) {
                 starts.add(new Start(changelogCommit, "CHANGELOG.md for " + version + " (" + abbrev(changelogCommit) + ")"));
             }
         }
 
-        // Commits that changed the version property, newest first, with the value they set
+        // Commits that set a new value of the version property, newest first. "-G version" also finds changes of
+        // other lines (minecraft_version, …); of several commits with the same value the oldest one set it.
         List<String[]> bumps = new ArrayList<>();
         String log = single(git, repo, "log", "--format=%H", "-G", "version", "--", "gradle.properties");
         if (log != null) {
-            String newerValue = null;
-            for (String sha : log.split("\n")) {
-                String value = show(git, repo, sha.trim(), "gradle.properties").flatMap(Changelog::versionProperty).orElse(null);
-                if (value == null || value.equals(newerValue)) continue;
-                bumps.add(new String[]{sha.trim(), value});
-                newerValue = value;
+            for (String line : log.split("\n")) {
+                String sha = line.trim();
+                String value = show(git, repo, sha, "gradle.properties").flatMap(Changelog::versionProperty).orElse(null);
+                if (value == null) continue;
+                if (!bumps.isEmpty() && bumps.getLast()[1].equals(value)) bumps.getLast()[0] = sha;
+                else bumps.add(new String[]{sha, value});
             }
         }
         for (int i = 0; i < bumps.size(); i++) {
             String sha = bumps.get(i)[0];
             String value = bumps.get(i)[1];
-            if (!value.equals(currentVersion)) continue;
+            if (!value.equals(modVersion)) continue;
             String after = single(git, repo, "rev-list", "--count", sha + "..HEAD");
             boolean nothingAfter = after == null || "0".equals(after);
             if (!nothingAfter) {
@@ -159,6 +168,31 @@ public final class Changelog {
             if (found.containsKey(key)) return Optional.of(found.get(key));
         }
         return Optional.empty();
+    }
+
+    /**
+     * The mod version as written in the changelog: without a Minecraft prefix or suffix
+     * ({@code 1.21.1-2.1.6} → {@code 2.1.6}, {@code 2.1.6+1.21.1} → {@code 2.1.6}).
+     */
+    public static String displayVersion(String modVersion, String mcVersion) {
+        if (modVersion == null) return null;
+        String v = modVersion.strip();
+        if (mcVersion != null && !mcVersion.isBlank()) {
+            String mc = mcVersion.strip();
+            for (String prefix : List.of(mc + "-", mc + "+", "mc" + mc + "-")) {
+                if (v.startsWith(prefix) && v.length() > prefix.length()) return v.substring(prefix.length());
+            }
+            for (String suffix : List.of("-" + mc, "+" + mc, "+mc" + mc, "-mc" + mc)) {
+                if (v.endsWith(suffix) && v.length() > suffix.length()) return v.substring(0, v.length() - suffix.length());
+            }
+        }
+        return v;
+    }
+
+    /** Versions are equal ignoring a leading "v" ({@code v2.1.6} = {@code 2.1.6}). */
+    static boolean sameVersion(String a, String b) {
+        if (a == null || b == null) return false;
+        return a.replaceFirst("^[vV]", "").equalsIgnoreCase(b.replaceFirst("^[vV]", ""));
     }
 
     // ---------------------------------------------------------------- draft
@@ -242,10 +276,10 @@ public final class Changelog {
     public static Optional<String> cleanAnswer(String answer, String version) {
         String text = answer == null ? "" : answer.replace("\r\n", "\n").strip();
         text = text.replaceAll("^```(?:markdown|md)?\\n", "").replaceAll("\\n```$", "").strip();
-        int heading = text.startsWith("## ") ? 0 : text.indexOf("\n## ") + 1;
-        if (heading < 0 || !text.startsWith("## ", heading)) return Optional.empty();
+        int heading = firstVersionHeading(text);
+        if (heading < 0) return Optional.empty();
         text = text.substring(heading);
-        return version.equals(detectVersion(text).orElse(null)) ? Optional.of(text + "\n") : Optional.empty();
+        return sameVersion(detectVersion(text).orElse(null), version) ? Optional.of(text + "\n") : Optional.empty();
     }
 
     /** The section about changelogs from a CLAUDE.md (a heading containing "changelog"), or null. */
@@ -271,7 +305,7 @@ public final class Changelog {
 
     // ---------------------------------------------------------------- files
 
-    /** Version of the first {@code ## } heading: {@code ## 1.4.0 – …}, {@code ## [1.4.0]}, {@code ## v1.4.0}. */
+    /** Version of the first heading that carries one: {@code ## 1.4.0 – …}, {@code ## [1.4.0]}, {@code #### v1.4.0}. */
     public static Optional<String> detectVersion(String markdown) {
         if (markdown == null) return Optional.empty();
         Matcher m = HEADING_VERSION.matcher(markdown.replace("\r\n", "\n"));
@@ -301,7 +335,7 @@ public final class Changelog {
         if (current.isBlank()) return new Plan(Action.CREATE, null);
         Optional<String> old = detectVersion(current);
         if (old.isEmpty()) return new Plan(Action.UNKNOWN_CONTENT, null);
-        if (old.get().equals(version)) return new Plan(Action.REPLACE_SAME_VERSION, old.get());
+        if (sameVersion(old.get(), version)) return new Plan(Action.REPLACE_SAME_VERSION, old.get());
         return containsVersion(read(dir.resolve(FULL_FILE)), old.get())
                 ? new Plan(Action.OLD_VERSION_ALREADY_IN_FULL, old.get())
                 : new Plan(Action.MOVE_OLD_VERSION, old.get());
@@ -328,8 +362,8 @@ public final class Changelog {
         String entry = section.replace("\r\n", "\n").strip() + "\n";
         String text = full.replace("\r\n", "\n");
         if (text.isBlank()) return FULL_HEADER + "\n\n" + entry;
-        int first = text.startsWith("## ") ? 0 : text.indexOf("\n## ") + 1;
-        if (first <= 0 && !text.startsWith("## ")) {
+        int first = firstVersionHeading(text);
+        if (first < 0) {
             return text.stripTrailing() + "\n\n" + entry;
         }
         return text.substring(0, first) + entry + "\n" + text.substring(first);
@@ -338,7 +372,7 @@ public final class Changelog {
     static boolean containsVersion(String full, String version) {
         Matcher m = HEADING_VERSION.matcher(full.replace("\r\n", "\n"));
         while (m.find()) {
-            if (m.group(1).equals(version)) return true;
+            if (sameVersion(m.group(1), version)) return true;
         }
         return false;
     }
@@ -346,13 +380,19 @@ public final class Changelog {
     /** First lines of CHANGELOG_FULL.md as a style sample for Claude, or null. */
     public static String styleSample(Path dir, int maxLines) throws IOException {
         String full = read(dir.resolve(FULL_FILE)).replace("\r\n", "\n");
-        int first = full.startsWith("## ") ? 0 : full.indexOf("\n## ") + 1;
-        if (first <= 0 && !full.startsWith("## ")) return null;
+        int first = firstVersionHeading(full);
+        if (first < 0) return null;
         String[] lines = full.substring(first).split("\n");
         return String.join("\n", List.of(lines).subList(0, Math.min(maxLines, lines.length))).strip();
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** Offset of the first heading with a version, or -1. */
+    private static int firstVersionHeading(String text) {
+        Matcher m = HEADING_VERSION.matcher(text);
+        return m.find() ? m.start() : -1;
+    }
 
     private static String read(Path file) throws IOException {
         return Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8) : "";

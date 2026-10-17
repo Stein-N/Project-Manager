@@ -127,7 +127,14 @@ final class CommitDialog extends JDialog {
     }
 
     static Optional<Request> show(Window owner, Git git, Path repo, String title) {
+        return show(owner, git, repo, title, "");
+    }
+
+    /** Like {@link #show(Window, Git, Path, String)} with a pre-filled commit message. */
+    static Optional<Request> show(Window owner, Git git, Path repo, String title, String message) {
         CommitDialog dialog = new CommitDialog(owner, git, repo, title);
+        dialog.messageArea.setText(message);
+        dialog.updateButtons();
         dialog.setVisible(true);
         return Optional.ofNullable(dialog.result);
     }
