@@ -17,7 +17,8 @@ public final class BackportClaude {
     /** Git commands Claude may run; everything else (commit, checkout, reset, …) is denied. */
     private static final List<String> ALLOWED = List.of("Read", "Edit", "Write", "Glob", "Grep",
             "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git ls-files:*)",
-            "Bash(git grep:*)", "Bash(git rm:*)", "Bash(./gradlew build:*)", "Bash(./gradlew compileJava:*)");
+            "Bash(git grep:*)", "Bash(git ls-tree:*)", "Bash(git cat-file:*)", "Bash(git blame:*)", "Bash(git rm:*)",
+            "Bash(./gradlew build:*)", "Bash(./gradlew compileJava:*)");
     /** Denied explicitly as well, so a broader allow rule can never let them through. */
     private static final List<String> DENIED = List.of("Bash(git commit:*)", "Bash(git push:*)", "Bash(git checkout:*)",
             "Bash(git switch:*)", "Bash(git branch:*)", "Bash(git reset:*)", "Bash(git rebase:*)", "Bash(git worktree:*)",

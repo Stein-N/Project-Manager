@@ -1,5 +1,6 @@
 package net.morthen.ui;
 
+import net.morthen.core.BackportClaude;
 import net.morthen.core.Changelog;
 import net.morthen.core.ClaudeKeys;
 import net.morthen.core.ClaudeRunner;
@@ -107,6 +108,11 @@ public final class MainFrame extends JFrame {
         @Override
         public List<ModProject> siblings(ModProject project) {
             return MainFrame.this.siblings(project);
+        }
+
+        @Override
+        public List<String> claudeApiKeys() {
+            return MainFrame.this.claudeApiKeys();
         }
 
         @Override
@@ -1788,6 +1794,8 @@ public final class MainFrame extends JFrame {
                 () -> JOptionPane.showMessageDialog(this, "Claude Code CLI not found on the PATH.")));
         JTextField claudeModel = new JTextField(config.claudeModel());
         claudeModel.putClientProperty("JTextField.placeholderText", "sonnet (default) or opus");
+        JTextField backportModel = new JTextField(config.backportModel());
+        backportModel.putClientProperty("JTextField.placeholderText", BackportClaude.DEFAULT_MODEL + " (default)");
         javax.swing.JSpinner claudeBudget = new javax.swing.JSpinner(
                 new javax.swing.SpinnerNumberModel(config.claudeMaxBudgetUsd(), 0.0, 100.0, 0.5));
         javax.swing.JSpinner claudeTimeout = new javax.swing.JSpinner(
@@ -1795,6 +1803,14 @@ public final class MainFrame extends JFrame {
         JPanel claudeLimits = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         claudeLimits.add(claudeBudget);
         claudeLimits.add(Ui.muted("USD (0 = no limit), stop after"));
+        javax.swing.JSpinner backportBudget = new javax.swing.JSpinner(
+                new javax.swing.SpinnerNumberModel(config.backportMaxBudgetUsd(), 0.0, 100.0, 1.0));
+        JPanel backportModelRow = new JPanel(new BorderLayout(6, 0));
+        backportModelRow.add(backportModel, BorderLayout.CENTER);
+        JPanel backportBudgetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        backportBudgetRow.add(backportBudget);
+        backportBudgetRow.add(Ui.muted("USD per run"));
+        backportModelRow.add(backportBudgetRow, BorderLayout.EAST);
         claudeLimits.add(claudeTimeout);
         claudeLimits.add(Ui.muted("minutes"));
 
@@ -1805,7 +1821,8 @@ public final class MainFrame extends JFrame {
                 .add("Auto-fetch every", fetchRow)
                 .add("", tray)
                 .add("Claude Code CLI", claudeField, claudeDetect)
-                .add("Claude model", claudeModel)
+                .add("Changelog model", claudeModel)
+                .add("Backport model", backportModelRow)
                 .add("Claude budget per run", claudeLimits)
                 .add("Claude sign-in", Ui.muted(claudeSignIn()));
 
@@ -1826,6 +1843,8 @@ public final class MainFrame extends JFrame {
         config.setMinimizeToTray(tray.isSelected());
         config.setClaudeExecutable(claudeField.getText());
         config.setClaudeModel(claudeModel.getText());
+        config.setBackportModel(backportModel.getText());
+        config.setBackportMaxBudgetUsd(((Number) backportBudget.getValue()).doubleValue());
         config.setClaudeMaxBudgetUsd(((Number) claudeBudget.getValue()).doubleValue());
         config.setClaudeTimeoutMinutes((Integer) claudeTimeout.getValue());
         config.save();

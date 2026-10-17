@@ -115,6 +115,29 @@ public final class Config {
         setString("claudeModel", model);
     }
 
+    /** Model for backports (conflicts, build errors); Opus 5.5 by default, the changelog keeps its own model. */
+    public String backportModel() {
+        String model = props.getProperty("backportModel", "").trim();
+        return model.isEmpty() ? BackportClaude.DEFAULT_MODEL : model;
+    }
+
+    public void setBackportModel(String model) {
+        setString("backportModel", model);
+    }
+
+    /** Spending limit per Claude run in a backport (several turns with Opus); 0 = no limit. */
+    public double backportMaxBudgetUsd() {
+        try {
+            return Math.max(0, Double.parseDouble(props.getProperty("backportMaxBudgetUsd", "5.0").trim()));
+        } catch (NumberFormatException e) {
+            return 5.0;
+        }
+    }
+
+    public void setBackportMaxBudgetUsd(double usd) {
+        props.setProperty("backportMaxBudgetUsd", Double.toString(Math.max(0, usd)));
+    }
+
     /** Spending limit per Claude run in US dollars; 0 = no limit. */
     public double claudeMaxBudgetUsd() {
         try {

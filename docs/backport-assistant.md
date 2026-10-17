@@ -1,6 +1,6 @@
 # Feature-Plan: Backport-Assistent (lokal, ohne Commits)
 
-> Status: **Stufe 1 (nur Git) umgesetzt** (17.10.2026: `core/Backport`, `ui/BackportTab`), Stufe 2 (Claude) offen. Siehe
+> Status: **Stufe 1 und 2 umgesetzt** (17.10.2026: `core/Backport`, `core/BackportClaude`, `ui/BackportTab`). Siehe
 > [Entscheidungen](#entscheidungen-geklärt-am-17102026).
 > Verwandtes Feature: [Changelog-Assistent](changelog-assistant.md) – beide nutzen einen gemeinsamen
 > `core/ClaudeRunner`; sinnvoll ist, den Changelog zuerst zu bauen (Claude ohne Werkzeuge) und den Backport darauf
@@ -227,6 +227,27 @@ Folgen für den Backport:
   Genaue CLI-Optionen vor der Umsetzung gegen die echte CLI prüfen.
 - **Tests:** Fake-CLI (Ablauf, Abbruch, Verstoß gegen die Sperren) und ein echter Lauf an einer Kopie von
   Resource-Library (Ziel 1.21.1).
+
+## Umsetzungsnotizen Stufe 2
+
+- Aufruf: `claude -p --restricted --permission-mode dontAsk --permission-prompts none` mit `--tools Read,Edit,Write,
+  Glob,Grep,Bash`, Allow-Liste (Dateien, `git status/diff/log/show/ls-files/grep/ls-tree/cat-file/blame/rm`,
+  `./gradlew build/compileJava`) und expliziter Deny-Liste (u. a. `git commit/push/checkout/switch/branch/reset/
+  rebase/worktree/cherry-pick/merge/stash/add`, `rm`). Gegen die echte CLI geprüft: commit, checkout -b, reset --hard,
+  Schreiben außerhalb des Ordners (Bash und Write), `.git/hooks` und `rm` werden abgelehnt; abgelehnte Aufrufe
+  (`permission_denials`) stehen in den Notizen.
+- Vor/nach jedem Claude-Lauf: Branches, Tags und HEAD des Arbeitsordners verglichen; bei Abweichung Abbruch.
+- Zwischenstand vor jedem Commit (`git write-tree`, Wiederherstellung mit `read-tree --reset -u` + `clean -fd`):
+  „Skip this commit“ und Claudes `skip` nehmen genau diesen Commit zurück.
+- Version und `CHANGELOG.md` werden nur übernommen, wenn mindestens ein Commit portiert wurde.
+- Reiter „Notes“ (Markdown): pro Commit Claudes Entscheidung, Kosten, Notizen, abgelehnte Aufrufe; dazu die
+  Hinweise des Tools (zurückgesetzte Dateien, `runData`, Build-Ergebnis).
+- Einstellungen: „Backport model“ (Standard `claude-opus-5-5`) und eigenes Budget (Standard 5 $ pro Lauf);
+  Zeitlimit mindestens 30 min.
+- Echte Läufe: Resource-Library `86835d5` → 1.21.1: Claude entscheidet begründet `skip` (Funktion und Paket
+  `net.morthen.*` gibt es dort nicht), Commit vollständig zurückgenommen, 0,12 $. Gebauter Konflikt
+  (Umbenennung vs. geänderter Wert): Claude löst ihn, behält den Wert des Ziels, 0,05 $
+  (`BackportClaudeSmokeTest`, nur mit `CLAUDE_SMOKE=1`).
 
 ## Einstieg für die neue Sitzung
 
