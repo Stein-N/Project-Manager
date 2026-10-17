@@ -245,7 +245,7 @@ public final class SystemActions {
         return pathDirs.stream().map(d -> d.resolve(program)).filter(Files::isRegularFile).findFirst();
     }
 
-    private static List<Path> pathDirectories() {
+    static List<Path> pathDirectories() {
         String path = System.getenv("PATH");
         if (path == null) return List.of();
         return Arrays.stream(path.split(File.pathSeparator))

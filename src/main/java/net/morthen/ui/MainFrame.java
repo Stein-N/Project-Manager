@@ -1,5 +1,6 @@
 package net.morthen.ui;
 
+import net.morthen.core.ClaudeRunner;
 import net.morthen.core.Config;
 import net.morthen.core.Dependencies;
 import net.morthen.core.EnvFile;
@@ -1588,12 +1589,32 @@ public final class MainFrame extends JFrame {
         fetchRow.add(Ui.muted("minutes (0 = off)"));
         JCheckBox tray = new JCheckBox("Minimize to system tray", config.minimizeToTray());
 
+        JTextField claudeField = new JTextField(config.claudeExecutable());
+        JButton claudeDetect = new JButton("Detect");
+        claudeDetect.addActionListener(e -> ClaudeRunner.find(null).ifPresentOrElse(
+                p -> claudeField.setText(p.toString()),
+                () -> JOptionPane.showMessageDialog(this, "Claude Code CLI not found on the PATH.")));
+        JTextField claudeModel = new JTextField(config.claudeModel());
+        claudeModel.putClientProperty("JTextField.placeholderText", "default of the CLI (e.g. sonnet, opus)");
+        javax.swing.JSpinner claudeBudget = new javax.swing.JSpinner(
+                new javax.swing.SpinnerNumberModel(config.claudeMaxBudgetUsd(), 0.0, 100.0, 0.5));
+        javax.swing.JSpinner claudeTimeout = new javax.swing.JSpinner(
+                new javax.swing.SpinnerNumberModel(config.claudeTimeoutMinutes(), 1, 240, 5));
+        JPanel claudeLimits = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        claudeLimits.add(claudeBudget);
+        claudeLimits.add(Ui.muted("USD (0 = no limit), stop after"));
+        claudeLimits.add(claudeTimeout);
+        claudeLimits.add(Ui.muted("minutes"));
+
         Ui.Form form = new Ui.Form()
                 .add("Master folder", master, masterBrowse)
                 .add("IntelliJ launcher", idea, detect)
                 .add("Git executable", gitField)
                 .add("Auto-fetch every", fetchRow)
-                .add("", tray);
+                .add("", tray)
+                .add("Claude Code CLI", claudeField, claudeDetect)
+                .add("Claude model", claudeModel)
+                .add("Claude budget per run", claudeLimits);
 
         if (JOptionPane.showConfirmDialog(this, form, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
@@ -1610,6 +1631,10 @@ public final class MainFrame extends JFrame {
         git.setExecutable(config.gitExecutable());
         config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
         config.setMinimizeToTray(tray.isSelected());
+        config.setClaudeExecutable(claudeField.getText());
+        config.setClaudeModel(claudeModel.getText());
+        config.setClaudeMaxBudgetUsd(((Number) claudeBudget.getValue()).doubleValue());
+        config.setClaudeTimeoutMinutes((Integer) claudeTimeout.getValue());
         config.save();
         scheduleAutoFetch();
         applyTraySetting();

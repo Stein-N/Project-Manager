@@ -93,6 +93,58 @@ public final class Config {
         props.setProperty("minimizeToTray", Boolean.toString(value));
     }
 
+    /** Path of the Claude Code CLI; empty = search the PATH. */
+    public String claudeExecutable() {
+        return props.getProperty("claude", "").trim();
+    }
+
+    public void setClaudeExecutable(String claude) {
+        setString("claude", claude);
+    }
+
+    /** Model for Claude runs ({@code --model}); empty = default of the CLI. */
+    public String claudeModel() {
+        return props.getProperty("claudeModel", "").trim();
+    }
+
+    public void setClaudeModel(String model) {
+        setString("claudeModel", model);
+    }
+
+    /** Spending limit per Claude run in US dollars; 0 = no limit. */
+    public double claudeMaxBudgetUsd() {
+        try {
+            return Math.max(0, Double.parseDouble(props.getProperty("claudeMaxBudgetUsd", "1.0").trim()));
+        } catch (NumberFormatException e) {
+            return 1.0;
+        }
+    }
+
+    public void setClaudeMaxBudgetUsd(double usd) {
+        props.setProperty("claudeMaxBudgetUsd", Double.toString(Math.max(0, usd)));
+    }
+
+    /** A Claude run is stopped after this many minutes. */
+    public int claudeTimeoutMinutes() {
+        try {
+            return Math.max(1, Integer.parseInt(props.getProperty("claudeTimeoutMinutes", "15").trim()));
+        } catch (NumberFormatException e) {
+            return 15;
+        }
+    }
+
+    public void setClaudeTimeoutMinutes(int minutes) {
+        props.setProperty("claudeTimeoutMinutes", Integer.toString(Math.max(1, minutes)));
+    }
+
+    private void setString(String key, String value) {
+        if (value == null || value.isBlank()) {
+            props.remove(key);
+        } else {
+            props.setProperty(key, value.trim());
+        }
+    }
+
     private Optional<Path> path(String key) {
         String value = props.getProperty(key, "").trim();
         return value.isEmpty() ? Optional.empty() : Optional.of(Path.of(value));
