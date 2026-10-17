@@ -8,6 +8,7 @@ import net.morthen.core.GradleRunner;
 import net.morthen.core.ModMetadata;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
+import net.morthen.core.Readme;
 import net.morthen.core.SystemActions;
 import net.morthen.core.Worktrees;
 
@@ -414,6 +415,7 @@ public final class MainFrame extends JFrame {
         javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
         tabs.putClientProperty("JTabbedPane.tabHeight", 30);
         tabs.addTab("Overview", scrollTab(overviewTab(p)));
+        Readme.find(p.path()).ifPresent(readme -> tabs.addTab("README", ReadmeView.create(readme, msg -> error("README", msg))));
         if (p.git()) {
             String gitTitle = "Git" + (p.changes() > 0 ? "  ●" + p.changes() : "") + (p.ahead() > 0 ? "  ↑" + p.ahead() : "")
                     + (p.behind() > 0 ? "  ↓" + p.behind() : "");

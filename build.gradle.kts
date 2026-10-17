@@ -13,6 +13,8 @@ repositories {
 dependencies {
     implementation("com.formdev:flatlaf:3.6.1")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.commonmark:commonmark:0.24.0")
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.24.0")
 
     testImplementation(platform("org.junit:junit-bom:6.0.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
