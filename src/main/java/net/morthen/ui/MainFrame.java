@@ -5,6 +5,7 @@ import net.morthen.core.Dependencies;
 import net.morthen.core.Git;
 import net.morthen.core.GitChanges;
 import net.morthen.core.GradleRunner;
+import net.morthen.core.GradleTasks;
 import net.morthen.core.ModMetadata;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
@@ -96,6 +97,10 @@ public final class MainFrame extends JFrame {
     private String selectedTab = "Overview";
     /** Latest dependency versions per project from "Check for updates" (session cache). */
     private final Map<Path, Map<String, String>> latestVersions = new java.util.HashMap<>();
+    /** Projects whose run tasks are being detected right now. */
+    private final java.util.Set<Path> detectingTasks = new java.util.HashSet<>();
+    /** Projects for which an automatic detection was already started this session. */
+    private final java.util.Set<Path> autoDetected = new java.util.HashSet<>();
 
     public MainFrame(Config config) {
         super("MC Mod Project Manager");
@@ -588,8 +593,6 @@ public final class MainFrame extends JFrame {
             actions.add(stop);
         } else {
             actions.add(button("Build", () -> runGradle(p, "build")));
-            actions.add(button("Run client", () -> runGradle(p, "runClient")));
-            actions.add(button("Run server", () -> runGradle(p, "runServer")));
         }
         actions.add(button("Open build/libs", () -> openBuildLibs(p)));
         long versionsOfMod = projects.stream()
@@ -598,7 +601,52 @@ public final class MainFrame extends JFrame {
         if (versionsOfMod > 1) {
             actions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
         }
-        stack.push(actions, 14);
+        stack.push(actions, 16);
+
+        // --- run configurations, grouped by loader
+        Optional<GradleTasks.Cached> cached = GradleTasks.cached(p.path());
+        boolean detecting = detectingTasks.contains(p.path());
+        JPanel runHeader = new JPanel(new BorderLayout());
+        runHeader.add(Ui.heading("Run configurations", "h4"), BorderLayout.WEST);
+        JButton detect = button(detecting ? "Detecting…" : cached.isPresent() ? "↻ Refresh" : "Detect", () -> detectTasks(p));
+        detect.putClientProperty("JButton.buttonType", "toolBarButton");
+        detect.setEnabled(!detecting && task == null);
+        runHeader.add(detect, BorderLayout.EAST);
+        stack.push(runHeader, 6);
+
+        if (cached.isEmpty()) {
+            stack.push(Ui.muted(detecting
+                    ? "<html>Asking Gradle for the available run tasks… (output in the log)</html>"
+                    : "<html>Run configurations are read from Gradle (<tt>gradlew tasks --all</tt>). The first run of a "
+                    + "fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
+        } else {
+            List<GradleTasks.Group> groups = GradleTasks.group(cached.get().tasks(), rootTaskGroupName(p));
+            if (groups.isEmpty()) stack.push(Ui.muted("No run tasks found."), 14);
+            for (GradleTasks.Group group : groups) {
+                stack.push(Ui.heading(group.name(), "semibold"), 4);
+                JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
+                for (GradleTasks.RunTask t : group.tasks()) {
+                    JButton b = button(t.label(), () -> runGradle(p, t.path()));
+                    b.setToolTipText("<html><tt>gradlew " + Ui.html(t.path()) + "</tt>"
+                            + (t.description().isEmpty() ? "" : "<br>" + Ui.html(t.description())) + "</html>");
+                    b.setEnabled(task == null);
+                    if (t.path().equals(task)) b.setText("▶ " + t.label());
+                    buttons.add(b);
+                }
+                stack.push(buttons, 12);
+            }
+            String when = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+                    .format(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(cached.get().detected()),
+                            java.time.ZoneId.systemDefault()));
+            stack.push(Ui.muted(cached.get().tasks().size() + " run tasks · detected " + when
+                    + (cached.get().stale() ? " · build files changed since" : "")), 14);
+        }
+        // detect automatically when it is cheap (project was configured before) and nothing is known yet / outdated
+        if (!detecting && task == null && (cached.isEmpty() || cached.get().stale())
+                && Files.isDirectory(p.path().resolve(".gradle")) && autoDetected.add(p.path())) {
+            SwingUtilities.invokeLater(() -> detectTasks(p));
+        }
+
         Ui.Form info = new Ui.Form();
         Dependencies.wrapperVersion(p.path()).ifPresent(v -> info.add("Gradle wrapper", Ui.copyable(v)));
         info.add("Wrapper", Ui.copyable(GradleRunner.wrapper(p.path()).map(Path::toString).orElse("–")));
@@ -1315,6 +1363,35 @@ public final class MainFrame extends JFrame {
             error("Gradle", e.getMessage());
         }
         gradleStateChanged(p);
+    }
+
+    /** Root tasks: "General" for multiloader builds, otherwise the loader of the project. */
+    private static String rootTaskGroupName(ModProject p) {
+        boolean subprojects = List.of("common", "fabric", "quilt", "forge", "neoforge").stream()
+                .anyMatch(s -> Files.isRegularFile(p.path().resolve(s).resolve("build.gradle"))
+                        || Files.isRegularFile(p.path().resolve(s).resolve("build.gradle.kts")));
+        if (subprojects || p.loader() == null || p.loader().startsWith("Multiloader") || p.loader().equals("Architectury")) {
+            return "General";
+        }
+        return p.loader();
+    }
+
+    private void detectTasks(ModProject p) {
+        if (!detectingTasks.add(p.path())) return;
+        String tag = "[" + p.mcVersion() + "/" + p.name() + "] ";
+        log("> gradlew tasks --all    (" + p.path() + ")");
+        gradleStateChanged(p);
+        background("Detecting run configurations…", () -> {
+            try {
+                return GradleTasks.detect(gradle, p.path(), line -> logAsync(tag + line));
+            } finally {
+                // also on failure (the error dialog is shown by background())
+                SwingUtilities.invokeLater(() -> {
+                    detectingTasks.remove(p.path());
+                    gradleStateChanged(p);
+                });
+            }
+        }, tasks -> log("✔ " + tag + tasks.size() + " run configuration(s) found"));
     }
 
     private void stopGradle(ModProject p) {

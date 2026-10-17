@@ -77,9 +77,11 @@ public final class GradleRunner {
             throw new IOException("A Gradle task is already running in this project: " + runningTask(project));
         }
         Path wrapper = wrapper(project).orElseThrow(() -> new IOException("No Gradle wrapper (gradlew) found in " + project));
-        List<String> command = SystemActions.isWindows()
-                ? List.of("cmd.exe", "/c", wrapper.toAbsolutePath().toString(), task, "--console=plain")
-                : List.of(wrapper.toAbsolutePath().toString(), task, "--console=plain");
+        List<String> command = new ArrayList<>();
+        if (SystemActions.isWindows()) command.addAll(List.of("cmd.exe", "/c"));
+        command.add(wrapper.toAbsolutePath().toString());
+        command.addAll(List.of(task.trim().split("\\s+"))); // e.g. "tasks --all"
+        command.add("--console=plain");
         Process process = new ProcessBuilder(command)
                 .directory(project.toFile())
                 .redirectErrorStream(true)
