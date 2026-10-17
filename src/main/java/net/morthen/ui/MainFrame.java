@@ -2,6 +2,7 @@ package net.morthen.ui;
 
 import net.morthen.core.Config;
 import net.morthen.core.Git;
+import net.morthen.core.GitChanges;
 import net.morthen.core.GradleRunner;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
@@ -418,6 +419,12 @@ public final class MainFrame extends JFrame {
         if (p.git()) {
             actions.add(button("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
             actions.add(button("Pull (fast-forward)", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
+            if (p.changes() > 0) {
+                actions.add(button("Commit…", () -> commitDialog(p)));
+            }
+            if (p.ahead() > 0 || (p.upstream() == null && !p.remoteUrl().isEmpty() && p.branch() != null)) {
+                actions.add(button(p.upstream() == null ? "Push (set upstream)" : "Push (" + p.ahead() + ")", () -> push(p)));
+            }
             actions.add(button("Add version (worktree)…", () -> addWorktree(p)));
             if (p.standaloneClone()) {
                 actions.add(button("Convert to shared repo…", () -> convertToShared(p)));
@@ -1028,6 +1035,31 @@ public final class MainFrame extends JFrame {
             log(result.ok() ? "✔ " + label + " done" : "✖ " + label + " failed (exit code " + result.exitCode() + ")");
             if (!result.ok()) error(label + " failed", result.output());
             refresh();
+        });
+    }
+
+    private void commitDialog(ModProject p) {
+        CommitDialog.show(this, git, p.path(), p.mcVersion() + "/" + p.name()).ifPresent(req -> {
+            log("Committing " + req.selected().size() + " file(s) in " + p.mcVersion() + "/" + p.name() + (req.push() ? " and pushing" : ""));
+            background(req.push() ? "Committing and pushing…" : "Committing…", () -> {
+                GitChanges.commit(git, p.path(), req.all(), req.selected(), req.message(), this::logAsync);
+                if (req.push()) GitChanges.push(git, p.path(), this::logAsync);
+                return p.path();
+            }, path -> {
+                log(req.push() ? "✔ Committed and pushed" : "✔ Committed");
+                reloadAndSelect(path, null);
+            });
+        });
+    }
+
+    private void push(ModProject p) {
+        log("> git push    (" + p.path() + ")");
+        background("Pushing " + p.name() + "…", () -> {
+            GitChanges.push(git, p.path(), this::logAsync);
+            return p.path();
+        }, path -> {
+            log("✔ Pushed");
+            reloadAndSelect(path, null);
         });
     }
 

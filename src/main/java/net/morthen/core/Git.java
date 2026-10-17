@@ -69,7 +69,7 @@ public final class Git {
                     }
                 }
             }
-            return new Result(process.waitFor(), out.toString().strip());
+            return new Result(process.waitFor(), out.toString().stripTrailing());
         } catch (IOException e) {
             return new Result(-1, "could not start git: " + e.getMessage());
         } catch (InterruptedException e) {
