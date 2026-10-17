@@ -1,5 +1,6 @@
 package net.morthen.ui;
 
+import net.morthen.core.Autostart;
 import net.morthen.core.BackportClaude;
 import net.morthen.core.Changelog;
 import net.morthen.core.ClaudeKeys;
@@ -237,6 +238,16 @@ public final class MainFrame extends JFrame {
         scheduleAutoFetch();
         applyTraySetting();
         SwingUtilities.invokeLater(this::firstStart);
+    }
+
+    /** Start without taking focus: hidden in the tray if possible, otherwise as an iconified window. */
+    public void showMinimized() {
+        if (config.minimizeToTray() && TrayManager.supported()) {
+            tray.install();
+            if (tray.installed()) return; // stays hidden, the tray icon opens it
+        }
+        setExtendedState(ICONIFIED);
+        setVisible(true);
     }
 
     /** Title with the version from the jar manifest (missing when started from the IDE). */
@@ -1787,6 +1798,12 @@ public final class MainFrame extends JFrame {
         fetchRow.add(Ui.muted("minutes (0 = off)"));
         JCheckBox tray = new JCheckBox("Minimize to system tray", config.minimizeToTray());
 
+        JCheckBox autostart = new JCheckBox("Start minimized with the system", config.autostart());
+        autostart.setEnabled(Autostart.supported());
+        if (!Autostart.supported()) {
+            autostart.setToolTipText("Only available when started from the jar file on Windows or Linux");
+        }
+
         JTextField claudeField = new JTextField(config.claudeExecutable());
         JButton claudeDetect = new JButton("Detect");
         claudeDetect.addActionListener(e -> ClaudeRunner.find(null).ifPresentOrElse(
@@ -1820,6 +1837,7 @@ public final class MainFrame extends JFrame {
                 .add("Git executable", gitField)
                 .add("Auto-fetch every", fetchRow)
                 .add("", tray)
+                .add("", autostart)
                 .add("Claude Code CLI", claudeField, claudeDetect)
                 .add("Changelog model", claudeModel)
                 .add("Backport model", backportModelRow)
@@ -1841,6 +1859,14 @@ public final class MainFrame extends JFrame {
         git.setExecutable(config.gitExecutable());
         config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
         config.setMinimizeToTray(tray.isSelected());
+        if (autostart.isEnabled()) {
+            try {
+                Autostart.apply(autostart.isSelected());
+                config.setAutostart(autostart.isSelected());
+            } catch (java.io.IOException e) {
+                error("Autostart", e.getMessage());
+            }
+        }
         config.setClaudeExecutable(claudeField.getText());
         config.setClaudeModel(claudeModel.getText());
         config.setBackportModel(backportModel.getText());

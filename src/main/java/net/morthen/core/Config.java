@@ -93,6 +93,14 @@ public final class Config {
         props.setProperty("minimizeToTray", Boolean.toString(value));
     }
 
+    public boolean autostart() {
+        return Boolean.parseBoolean(props.getProperty("autostart", "false"));
+    }
+
+    public void setAutostart(boolean value) {
+        props.setProperty("autostart", Boolean.toString(value));
+    }
+
     /** Path of the Claude Code CLI; empty = search the PATH. */
     public String claudeExecutable() {
         return props.getProperty("claude", "").trim();
