@@ -1,5 +1,6 @@
 package net.morthen.ui;
 
+import net.morthen.core.ClaudeKeys;
 import net.morthen.core.EnvFile;
 
 import javax.swing.BorderFactory;
@@ -35,7 +36,8 @@ import java.util.function.Consumer;
  * Editor for {@code <master>/.env}. Values are hidden unless "Show values" is checked.
  */
 final class EnvDialog extends JDialog {
-    private static final List<String> PRESETS = EnvFile.EXPECTED;
+    private static final List<String> PRESETS = java.util.stream.Stream.concat(EnvFile.EXPECTED.stream(),
+            java.util.stream.Stream.of(ClaudeKeys.VARIABLE)).toList();
 
     private final Path master;
     private final Consumer<String> log;
@@ -73,7 +75,9 @@ final class EnvDialog extends JDialog {
 
         JLabel info = new JLabel("<html><body style='width:540px'>Stored as <tt>.env</tt> in the master folder and passed to the "
                 + "<b>publish</b> and <b>publishMods</b> tasks – read them in the build script with "
-                + "<tt>providers.environmentVariable(\"MODRINTH_API\")</tt>.</body></html>");
+                + "<tt>providers.environmentVariable(\"MODRINTH_API\")</tt>. "
+                + "<tt>CLAUDE_API</tt> holds Anthropic API keys for Claude (several separated by <tt>;</tt>, the next one is "
+                + "used when a key fails); it is not passed to Gradle.</body></html>");
         info.setToolTipText(EnvFile.path(master).toString());
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
 

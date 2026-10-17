@@ -177,6 +177,12 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
   die Vorschau nutzt ein Swing-`JEditorPane` (der JavaFX-WebView ist an den README-Tab gebunden). Eine Tab-Instanz pro
   Projekt überlebt die häufigen Neuaufbauten der Detailansicht (Entwurf und laufender Claude-Lauf bleiben erhalten).
 - Einstellungen: Pfad zur Claude-CLI, Modell, Budget pro Lauf (Standard 1 $), Zeitlimit (Standard 15 min).
+- **API-Keys (`CLAUDE_API`):** mehrere Anthropic-API-Keys, getrennt mit `;`, aus der `.env` im Master-Ordner oder
+  der System-Umgebung (`.env` hat Vorrang). Ist die Variable gesetzt, läuft die CLI mit `ANTHROPIC_API_KEY` und
+  `--bare`, sonst mit dem Claude-Code-Login. Ist ein Key nicht nutzbar (API 401/402/403/429, `authentication_failed`,
+  `billing_error`, `rate_limit`, „credit balance“), wird die Anfrage mit dem nächsten Key wiederholt; andere Fehler
+  (z. B. 400, 500, Timeout, Budget) nicht. Im Log stehen Keys nur gekürzt (`…abcd`). `CLAUDE_API` wird nicht an die
+  Gradle-Publish-Tasks weitergegeben.
 
 ## Einstieg für die neue Sitzung
 

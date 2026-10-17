@@ -42,21 +42,48 @@ public final class ClaudeRunner {
     /**
      * @param model        {@code --model} or null/blank for the CLI default
      * @param maxBudgetUsd {@code --max-budget-usd}; 0 = no limit
-     * @param timeout      the process is killed afterwards; null = no limit
+     * @param timeout      the process is killed afterwards (per attempt); null = no limit
+     * @param apiKeys      Anthropic API keys tried in order (see {@link ClaudeKeys}); empty = login of the CLI
      */
-    public record Request(Path workDir, String prompt, Tools tools, String model, double maxBudgetUsd, Duration timeout) {
+    public record Request(Path workDir, String prompt, Tools tools, String model, double maxBudgetUsd, Duration timeout,
+                          List<String> apiKeys) {
+        public Request {
+            apiKeys = apiKeys == null ? List.of() : List.copyOf(apiKeys);
+        }
+
+        /** With the login of the CLI. */
+        public Request(Path workDir, String prompt, Tools tools, String model, double maxBudgetUsd, Duration timeout) {
+            this(workDir, prompt, tools, model, maxBudgetUsd, timeout, List.of());
+        }
     }
 
     public enum Status { SUCCESS, ERROR, CANCELLED, TIMEOUT }
 
-    /** @param text the final answer (SUCCESS) or the error message */
-    public record Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens) {
+    /**
+     * @param text           the final answer (SUCCESS) or the error message
+     * @param apiErrorStatus HTTP status of a failed API call ({@code api_error_status}), 0 if none
+     * @param apiError       error code of a failed API call (e.g. {@code authentication_failed}) or null
+     */
+    public record Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens,
+                          int apiErrorStatus, String apiError) {
+        public Outcome(Status status, String text, double costUsd, long inputTokens, long outputTokens) {
+            this(status, text, costUsd, inputTokens, outputTokens, 0, null);
+        }
+
         public boolean ok() {
             return status == Status.SUCCESS;
         }
 
         static Outcome failed(Status status, String text) {
             return new Outcome(status, text, 0, 0, 0);
+        }
+
+        Outcome withApiError(String error) {
+            return new Outcome(status, text, costUsd, inputTokens, outputTokens, apiErrorStatus, error);
+        }
+
+        Outcome withText(String newText) {
+            return new Outcome(status, newText, costUsd, inputTokens, outputTokens, apiErrorStatus, apiError);
         }
     }
 
@@ -90,14 +117,20 @@ public final class ClaudeRunner {
         return Optional.empty();
     }
 
-    /** Command line for {@code request} (the prompt itself goes to stdin). */
-    static List<String> command(Path executable, Request request, Path mcpConfig) {
+    /**
+     * Command line for {@code request} (the prompt itself goes to stdin).
+     *
+     * @param withApiKey the run uses an API key: {@code --bare} then skips hooks, plugins, memory and CLAUDE.md
+     *                   discovery of the user setup (it only accepts {@code ANTHROPIC_API_KEY}, not the login)
+     */
+    static List<String> command(Path executable, Request request, Path mcpConfig, boolean withApiKey) {
         List<String> command = new ArrayList<>();
         String exe = executable.toString();
         String lower = exe.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".cmd") || lower.endsWith(".bat")) command.addAll(List.of("cmd.exe", "/c"));
         command.add(exe);
         command.addAll(List.of("-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"));
+        if (withApiKey) command.add("--bare");
         command.addAll(List.of("--strict-mcp-config", "--mcp-config", mcpConfig.toString()));
         Tools tools = request.tools() == null ? Tools.none() : request.tools();
         command.add("--tools");
@@ -124,19 +157,101 @@ public final class ClaudeRunner {
 
     /**
      * Starts Claude asynchronously. Readable progress lines go to {@code log}; {@code done} receives the outcome
-     * exactly once (on a background thread).
+     * exactly once (on a background thread). With API keys, a key that cannot be used (see
+     * {@link ClaudeKeys#keyUnusable}) is skipped and the request is repeated with the next one.
      */
     public static Run start(Path executable, Request request, Consumer<String> log, Consumer<Outcome> done)
             throws IOException {
+        if (request.apiKeys().isEmpty()) return launch(executable, request, null, log, done);
+        KeyRotation rotation = new KeyRotation(executable, request, log, done);
+        rotation.next(null);
+        return rotation;
+    }
+
+    /** Tries the keys one after the other until one works or all are used up. */
+    private static final class KeyRotation implements Run {
+        private final Path executable;
+        private final Request request;
+        private final Consumer<String> log;
+        private final Consumer<Outcome> done;
+        private final List<String> failures = new ArrayList<>();
+        private int index = -1;
+        private volatile Execution current;
+        private volatile boolean cancelled;
+
+        KeyRotation(Path executable, Request request, Consumer<String> log, Consumer<Outcome> done) {
+            this.executable = executable;
+            this.request = request;
+            this.log = log;
+            this.done = done;
+        }
+
+        /** Starts the next key; throws only for the first one (later failures end up in {@code done}). */
+        synchronized void next(Outcome previous) throws IOException {
+            List<String> keys = request.apiKeys();
+            index++;
+            String key = keys.get(index);
+            if (keys.size() > 1) log.accept("Using API key " + (index + 1) + "/" + keys.size() + " (" + ClaudeKeys.mask(key) + ")");
+            try {
+                current = launch(executable, request, key, log, this::finished);
+            } catch (IOException e) {
+                if (previous == null) throw e;
+                done.accept(Outcome.failed(Status.ERROR, "Could not start Claude: " + e.getMessage()));
+            }
+        }
+
+        private void finished(Outcome outcome) {
+            List<String> keys = request.apiKeys();
+            if (cancelled || !ClaudeKeys.keyUnusable(outcome)) {
+                done.accept(outcome);
+                return;
+            }
+            String key = keys.get(index);
+            String reason = (outcome.apiErrorStatus() > 0 ? outcome.apiErrorStatus() + " " : "") + outcome.text();
+            failures.add("key " + (index + 1) + " (" + ClaudeKeys.mask(key) + "): " + reason);
+            if (index + 1 >= keys.size()) {
+                done.accept(outcome.withText(keys.size() == 1 ? "API key " + ClaudeKeys.mask(key) + " cannot be used: " + reason
+                        : "None of the " + keys.size() + " API keys can be used:\n" + String.join("\n", failures)));
+                return;
+            }
+            log.accept("API key " + (index + 1) + " (" + ClaudeKeys.mask(key) + ") cannot be used (" + reason + ") – trying the next key");
+            try {
+                next(outcome);
+            } catch (IOException e) {
+                done.accept(Outcome.failed(Status.ERROR, "Could not start Claude: " + e.getMessage()));
+            }
+        }
+
+        @Override
+        public void cancel() {
+            cancelled = true;
+            Execution e = current;
+            if (e != null) e.cancel();
+        }
+
+        @Override
+        public boolean isRunning() {
+            Execution e = current;
+            return !cancelled && e != null && e.isRunning();
+        }
+    }
+
+    /** One CLI process; {@code apiKey} null = login of the CLI. */
+    private static Execution launch(Path executable, Request request, String apiKey, Consumer<String> log,
+                                    Consumer<Outcome> done) throws IOException {
         Path mcpConfig = Files.createTempFile("claude-mcp-", ".json");
         Files.writeString(mcpConfig, EMPTY_MCP_CONFIG);
         mcpConfig.toFile().deleteOnExit();
         Process process;
         try {
-            process = new ProcessBuilder(command(executable, request, mcpConfig))
+            ProcessBuilder builder = new ProcessBuilder(command(executable, request, mcpConfig, apiKey != null))
                     .directory(request.workDir().toFile())
-                    .redirectErrorStream(true)
-                    .start();
+                    .redirectErrorStream(true);
+            if (apiKey != null) {
+                builder.environment().put("ANTHROPIC_API_KEY", apiKey);
+                builder.environment().remove("ANTHROPIC_AUTH_TOKEN"); // would take precedence over the key
+            }
+            process = builder.start();
         } catch (IOException e) {
             Files.deleteIfExists(mcpConfig);
             throw e;
@@ -192,6 +307,7 @@ public final class ClaudeRunner {
 
         Outcome pump(String prompt, Consumer<String> log) {
             Outcome result = null;
+            String apiError = null; // "error" of a synthetic assistant message, e.g. authentication_failed
             List<String> plain = new ArrayList<>(); // non-JSON output (error messages of the CLI)
             try {
                 try (OutputStream stdin = process.getOutputStream()) {
@@ -213,6 +329,9 @@ public final class ClaudeRunner {
                         }
                         String text = describe(event);
                         if (text != null) log.accept(text);
+                        if ("assistant".equals(string(event, "type")) && string(event, "error") != null) {
+                            apiError = string(event, "error");
+                        }
                         if ("result".equals(string(event, "type"))) result = outcome(event);
                     }
                 }
@@ -220,7 +339,7 @@ public final class ClaudeRunner {
                 if (killedAs != null) {
                     return Outcome.failed(killedAs, killedAs == Status.TIMEOUT ? "Claude timed out." : "Cancelled.");
                 }
-                if (result != null) return result;
+                if (result != null) return apiError != null && !result.ok() ? result.withApiError(apiError) : result;
                 String output = String.join("\n", plain).strip();
                 return Outcome.failed(Status.ERROR, "Claude exited with code " + exit
                         + (output.isEmpty() ? " without a result." : ":\n" + output));
@@ -289,7 +408,8 @@ public final class ClaudeRunner {
             }
             case "result" -> {
                 Outcome o = outcome(event);
-                return (o.ok() ? "Claude finished" : "Claude failed") + String.format(Locale.ROOT,
+                return (o.ok() ? "Claude finished" : "Claude failed" + (o.apiErrorStatus() > 0 ? " (API " + o.apiErrorStatus() + ")" : ""))
+                        + String.format(Locale.ROOT,
                         " – $%.4f, %d tokens in, %d out", o.costUsd(), o.inputTokens(), o.outputTokens());
             }
             default -> {
@@ -315,7 +435,8 @@ public final class ClaudeRunner {
                     + number(usage, "cache_read_input_tokens");
             out = number(usage, "output_tokens");
         }
-        return new Outcome(error ? Status.ERROR : Status.SUCCESS, text == null ? "" : text, cost, in, out);
+        int apiStatus = (int) number(event, "api_error_status");
+        return new Outcome(error ? Status.ERROR : Status.SUCCESS, text == null ? "" : text, cost, in, out, apiStatus, null);
     }
 
     private static List<JsonElement> content(JsonObject event) {

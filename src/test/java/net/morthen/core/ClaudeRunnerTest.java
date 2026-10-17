@@ -62,7 +62,7 @@ class ClaudeRunnerTest {
 
     @Test
     void commandWithoutTools() {
-        List<String> cmd = ClaudeRunner.command(Path.of("claude"), request("hi", null, null), Path.of("mcp.json"));
+        List<String> cmd = ClaudeRunner.command(Path.of("claude"), request("hi", null, null), Path.of("mcp.json"), false);
         assertEquals("claude", cmd.getFirst());
         assertTrue(cmd.containsAll(List.of("-p", "--strict-mcp-config", "--no-session-persistence")));
         assertEquals("", cmd.get(cmd.indexOf("--tools") + 1));
@@ -76,7 +76,7 @@ class ClaudeRunnerTest {
     void commandWithTools() {
         ClaudeRunner.Tools tools = new ClaudeRunner.Tools(List.of("Read", "Edit"), List.of("Bash(git diff:*)"),
                 List.of("Bash(git commit:*)", "Bash(git push:*)"), "dontAsk");
-        List<String> cmd = ClaudeRunner.command(Path.of("C:/x/claude.cmd"), request("hi", tools, "haiku"), Path.of("m"));
+        List<String> cmd = ClaudeRunner.command(Path.of("C:/x/claude.cmd"), request("hi", tools, "haiku"), Path.of("m"), false);
         assertEquals(List.of("cmd.exe", "/c"), cmd.subList(0, 2));
         assertEquals("Read,Edit", cmd.get(cmd.indexOf("--tools") + 1));
         assertEquals("Bash(git diff:*)", cmd.get(cmd.indexOf("--allowedTools") + 1));

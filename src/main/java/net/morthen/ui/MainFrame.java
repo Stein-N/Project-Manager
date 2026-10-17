@@ -1,6 +1,7 @@
 package net.morthen.ui;
 
 import net.morthen.core.Changelog;
+import net.morthen.core.ClaudeKeys;
 import net.morthen.core.ClaudeRunner;
 import net.morthen.core.Config;
 import net.morthen.core.Dependencies;
@@ -101,6 +102,11 @@ public final class MainFrame extends JFrame {
         @Override
         public void error(String title, String message) {
             MainFrame.this.error(title, message);
+        }
+
+        @Override
+        public List<String> claudeApiKeys() {
+            return MainFrame.this.claudeApiKeys();
         }
 
         @Override
@@ -695,7 +701,7 @@ public final class MainFrame extends JFrame {
             boolean general = group.name().equals("General");
             stack.push(Ui.heading(general ? "General" : group.name() + " · game tests", "h4"), 6);
             if (general) {
-                int envCount = envVariables().size();
+                int envCount = publishEnvironment().size();
                 JPanel envRow = new JPanel(new BorderLayout(8, 0));
                 envRow.add(Ui.muted(envCount == 0 ? "Publish tasks: no environment variables set (.env)"
                         : "Publish tasks use " + envCount + " variable(s) from .env"), BorderLayout.CENTER);
@@ -1465,7 +1471,7 @@ public final class MainFrame extends JFrame {
         boolean publish = name.equals("publish") || name.equals("publishMods");
         Map<String, String> env = Map.of();
         if (publish) {
-            env = envVariables();
+            env = publishEnvironment();
             Map<String, String> vars0 = env;
             List<String> missing = EnvFile.EXPECTED.stream().filter(k -> vars0.getOrDefault(k, "").isBlank()).toList();
             String vars = (env.isEmpty() ? "No variables in <tt>.env</tt>."
@@ -1506,6 +1512,26 @@ public final class MainFrame extends JFrame {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** Anthropic API keys from {@code CLAUDE_API} (.env, then system environment); empty = Claude Code login. */
+    private List<String> claudeApiKeys() {
+        return ClaudeKeys.resolve(envVariables(), System.getenv());
+    }
+
+    /** For the settings: which credentials Claude runs use. */
+    private String claudeSignIn() {
+        List<String> keys = claudeApiKeys();
+        return keys.isEmpty()
+                ? "Claude Code login – set CLAUDE_API (.env or environment) to use API keys"
+                : keys.size() + " API key(s) from CLAUDE_API, tried in order";
+    }
+
+    /** .env for the Gradle publish tasks – without the Claude API keys, Gradle does not need them. */
+    private Map<String, String> publishEnvironment() {
+        Map<String, String> env = new LinkedHashMap<>(envVariables());
+        env.remove(ClaudeKeys.VARIABLE);
+        return env;
     }
 
     /** Variables from {@code <master>/.env}; empty if there is none or it cannot be read. */
@@ -1707,7 +1733,8 @@ public final class MainFrame extends JFrame {
                 .add("", tray)
                 .add("Claude Code CLI", claudeField, claudeDetect)
                 .add("Claude model", claudeModel)
-                .add("Claude budget per run", claudeLimits);
+                .add("Claude budget per run", claudeLimits)
+                .add("Claude sign-in", Ui.muted(claudeSignIn()));
 
         if (JOptionPane.showConfirmDialog(this, form, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
