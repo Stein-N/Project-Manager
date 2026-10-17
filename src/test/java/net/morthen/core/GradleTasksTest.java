@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GradleTasksTest {
@@ -22,63 +21,56 @@ class GradleTasksTest {
             assemble - Assembles the outputs of this project.
             build - Assembles and tests this project.
             fabric:build - Assembles and tests this project.
-            neoforge:build - Assembles and tests this project.
 
             Fabric tasks
             ------------
             fabric:runClient - Starts the client run configuration.
-            fabric:runServer - Starts the server run configuration.
-            fabric:runTestmodClient
-            fabric:runGametest - Runs the game tests.
-            fabric:runClientGametest
-            fabric:runDatagen
+            fabric:runGametest - not offered
+            fabric:runGametests - Runs the game tests.
+            fabric:runClientGametest - not offered
+
+            ForgeGradle runs tasks
+            ----------------------
+            forge:runClient
+            forge:runGameTestServer - Runs the game test server.
 
             Mod development tasks
             ---------------------
             neoforge:runClient - Runs the 'client' run.
             neoforge:runGameTestServer - Runs the 'gameTestServer' run.
-            neoforge:runData - Runs the 'data' run.
+            neoforge:runClientGameTest - not offered
 
             Publishing tasks
             ----------------
             publish - Publishes all publications produced by this project.
             publishMods - Publish all mods.
-            fabric:publish - Publishes all publications produced by this project.
-            fabric:publishMods - Publish the mod.
-            fabric:publishToMavenLocal - not offered
             neoforge:publishMods - Publish the mod.
             BUILD SUCCESSFUL in 4s
             """;
 
     @Test
-    void buildAndPublishAreGeneralGametestsPerLoader() {
-        List<GradleTasks.RunTask> tasks = GradleTasks.parse(OUTPUT);
-        List<String> paths = tasks.stream().map(GradleTasks.RunTask::path).toList();
-        assertEquals(List.of("build", ":fabric:runGametest", ":fabric:runClientGametest", ":neoforge:runGameTestServer",
-                "publish", "publishMods"), paths);
-        assertFalse(paths.stream().anyMatch(p -> p.endsWith("runClient") || p.endsWith("runServer")), "no client/server runs");
-
-        List<GradleTasks.Group> groups = GradleTasks.group(tasks, "General");
-        assertEquals(List.of("General", "Fabric", "NeoForge"), groups.stream().map(GradleTasks.Group::name).toList());
-        assertEquals(List.of("Build", "Publish", "Publish mods"), labels(groups.get(0)));
-        assertEquals(List.of("Client gametest", "Gametest"), labels(groups.get(1)));
-        assertEquals(List.of("Game test server"), labels(groups.get(2)));
+    void generalTasksAndOneGametestRunPerLoader() {
+        List<GradleTasks.Group> groups = GradleTasks.group(GradleTasks.parse(OUTPUT), "General");
+        assertEquals(List.of("General", "Fabric", "Forge", "NeoForge"), groups.stream().map(GradleTasks.Group::name).toList());
+        assertEquals(List.of("build", "publish", "publishMods"), paths(groups.get(0)));
+        assertEquals(List.of(":fabric:runGametests"), paths(groups.get(1)));
+        assertEquals(List.of(":forge:runGameTestServer"), paths(groups.get(2)));
+        // NeoForge's ModDevGradle spells it runGameTestServer – matched case-insensitively
+        assertEquals(List.of(":neoforge:runGameTestServer"), paths(groups.get(3)));
         assertTrue(groups.get(0).tasks().get(2).publishes());
     }
 
     @Test
-    void olderCachesAreNormalized() {
-        // cache of the previous version: client runs and per-loader build/publish tasks
-        List<GradleTasks.RunTask> cached = List.of(new GradleTasks.RunTask(":fabric:runClient", ""),
-                new GradleTasks.RunTask(":fabric:build", ""), new GradleTasks.RunTask(":fabric:publishMods", ""),
-                new GradleTasks.RunTask(":neoforge:publishMods", ""), new GradleTasks.RunTask(":fabric:runGametest", ""));
-        List<GradleTasks.Group> groups = GradleTasks.group(cached, "General");
+    void singleLoaderProjectUsesRootGametestOfItsLoader() {
+        List<GradleTasks.RunTask> tasks = List.of(new GradleTasks.RunTask(":runGametests", ""),
+                new GradleTasks.RunTask(":runGameTestServer", ""), new GradleTasks.RunTask(":runClient", ""));
+        List<GradleTasks.Group> groups = GradleTasks.group(tasks, "Fabric");
         assertEquals(List.of("General", "Fabric"), groups.stream().map(GradleTasks.Group::name).toList());
-        assertEquals(List.of("build", "publishMods"), groups.get(0).tasks().stream().map(GradleTasks.RunTask::path).toList());
-        assertEquals(List.of("Gametest"), labels(groups.get(1)));
+        assertEquals(List.of(":runGametests"), paths(groups.get(1)));
+        assertEquals(List.of("build"), paths(groups.get(0)), "General always offers Build");
     }
 
-    private static List<String> labels(GradleTasks.Group group) {
-        return group.tasks().stream().map(GradleTasks.RunTask::label).toList();
+    private static List<String> paths(GradleTasks.Group group) {
+        return group.tasks().stream().map(GradleTasks.RunTask::path).toList();
     }
 }

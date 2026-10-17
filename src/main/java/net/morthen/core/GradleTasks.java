@@ -73,6 +73,11 @@ public final class GradleTasks {
     }
 
     private static final Pattern TASK_LINE = Pattern.compile("^([A-Za-z0-9_.\\-]+(?::[A-Za-z0-9_.\\-]+)*)(?:\\s+-\\s+(.*))?$");
+    /** The only game test run offered per loader (compared case-insensitively). */
+    private static final Map<String, String> GAMETEST_TASK = Map.of(
+            "fabric", "runGametests",
+            "forge", "runGameTestServer",
+            "neoforge", "runGametestServer");
     private static final List<String> LOADER_ORDER = List.of("common", "fabric", "quilt", "forge", "neoforge");
     private static final Path CACHE_FILE = Path.of(System.getProperty("user.home"), ".mc-project-manager", "gradle-tasks.json");
     private static final Gson GSON = new Gson();
@@ -84,6 +89,12 @@ public final class GradleTasks {
     /** Tasks the tool may run: build, publish, publishMods and every game test task. */
     public static boolean isAllowed(String name) {
         return name.equals("build") || isPublish(name) || name.toLowerCase(Locale.ROOT).contains("gametest");
+    }
+
+    /** Whether {@code name} is the game test run offered for {@code loader} (subproject or loader name). */
+    static boolean isOfferedGametest(String loader, String name) {
+        String expected = GAMETEST_TASK.get(loader.toLowerCase(Locale.ROOT));
+        return expected != null && expected.equalsIgnoreCase(name);
     }
 
     /** Tasks that are offered once for the whole project (General) instead of per loader. */
@@ -141,7 +152,8 @@ public final class GradleTasks {
     // ---------------------------------------------------------------- grouping
 
     /**
-     * "General" (build, publish, publishMods – always contains Build), then the game tests per loader: root game tests
+     * "General" (build, publish, publishMods – always contains Build), then one game test run per loader (Fabric:
+     * runGametests, Forge: runGameTestServer, NeoForge: runGametestServer): root game tests
      * of a single-loader project form a group named {@code rootLoaderLabel}; subprojects are ordered Common, Fabric,
      * Quilt, Forge, NeoForge, then the rest.
      */
@@ -154,6 +166,10 @@ public final class GradleTasks {
             if (!isAllowed(t.name())) continue;
             // build/publish of subprojects (older caches) are folded into General
             RunTask task = isGeneral(t.name()) ? new RunTask(t.name(), t.description()) : t;
+            if (!isGeneral(task.name())) {
+                String loader = task.project().isEmpty() ? rootLoaderLabel : task.project().substring(task.project().lastIndexOf(':') + 1);
+                if (!isOfferedGametest(loader, task.name())) continue;
+            }
             if (!seen.add(task.path())) continue;
             String key = isGeneral(task.name()) ? ""
                     : task.project().isEmpty() ? (rootLoaderLabel.equals("General") ? "" : rootKey)
