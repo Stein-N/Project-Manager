@@ -73,6 +73,7 @@ public final class MainFrame extends JFrame {
     private final Config config;
     private final Git git;
     private final GradleRunner gradle = new GradleRunner();
+    private final TrayManager tray = new TrayManager(this, this::openInIntelliJ, this::exitApplication);
 
     private List<String> versions = List.of();
     private List<ModProject> projects = List.of();
@@ -104,13 +105,20 @@ public final class MainFrame extends JFrame {
             public void windowClosing(java.awt.event.WindowEvent e) {
                 exitApplication();
             }
+
+            @Override
+            public void windowIconified(java.awt.event.WindowEvent e) {
+                if (config.minimizeToTray() && TrayManager.supported()) tray.hideToTray();
+            }
         });
+        setIconImages(AppIcon.images());
         setSize(WINDOW_SIZE);
         setResizable(false);
         setLocationRelativeTo(null);
 
         buildUi();
         scheduleAutoFetch();
+        applyTraySetting();
         SwingUtilities.invokeLater(this::firstStart);
     }
 
@@ -255,6 +263,7 @@ public final class MainFrame extends JFrame {
         versions = result.versions();
         projects = result.projects();
         repos = result.repos();
+        tray.updateProjects(projects);
     }
 
     /** Other worktrees of the same repository. */
@@ -1301,6 +1310,12 @@ public final class MainFrame extends JFrame {
         });
     }
 
+    /** The tray icon is shown while "minimize to tray" is enabled. */
+    private void applyTraySetting() {
+        if (config.minimizeToTray() && TrayManager.supported()) tray.install();
+        else tray.uninstall();
+    }
+
     private void exitApplication() {
         int running = gradle.runningCount();
         if (running > 0 && JOptionPane.showConfirmDialog(this,
@@ -1309,6 +1324,7 @@ public final class MainFrame extends JFrame {
             return;
         }
         gradle.stopAll();
+        tray.uninstall();
         dispose();
         System.exit(0);
     }
@@ -1375,6 +1391,7 @@ public final class MainFrame extends JFrame {
         config.setMinimizeToTray(tray.isSelected());
         config.save();
         scheduleAutoFetch();
+        applyTraySetting();
         refresh();
     }
 
