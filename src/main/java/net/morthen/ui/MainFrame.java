@@ -427,7 +427,8 @@ public final class MainFrame extends JFrame {
             tabs.addTab(gitTitle, scrollTab(gitTab(p)));
         }
         if (GradleRunner.wrapper(p.path()).isPresent()) {
-            tabs.addTab(gradle.isRunning(p.path()) ? "Gradle  ▶" : "Gradle", scrollTab(gradleTab(p)));
+            int runningCount = gradle.runningTasks(p.path()).size();
+            tabs.addTab(runningCount == 0 ? "Gradle" : "Gradle  ▶" + (runningCount > 1 ? runningCount : ""), scrollTab(gradleTab(p)));
         }
         List<Dependencies.Entry> deps = Dependencies.read(p.path());
         if (!deps.isEmpty() || (meta != null && !meta.dependencies().isEmpty())) {
@@ -582,18 +583,24 @@ public final class MainFrame extends JFrame {
 
     private Ui.Stack gradleTab(ModProject p) {
         Ui.Stack stack = new Ui.Stack();
-        String task = gradle.runningTask(p.path());
-        if (task != null) {
-            stack.push(new JLabel("<html><font color='#2e7d32'>▶</font> <b>" + Ui.html(task) + "</b> is running – output in the Git log below.</html>"), 10);
+        List<String> running = gradle.runningTasks(p.path());
+        if (!running.isEmpty()) {
+            // one row per running task, each with its own stop button
+            Ui.Form runningForm = new Ui.Form();
+            for (String t : running) {
+                JButton stop = button("■ Stop", () -> stopGradle(p, t));
+                stop.setForeground(new java.awt.Color(0xD32F2F));
+                stop.putClientProperty("JButton.buttonType", "roundRect");
+                JPanel row = new JPanel(new BorderLayout(8, 0));
+                row.add(new JLabel("<html><font color='#2e7d32'>▶</font> <tt>" + Ui.html(t) + "</tt></html>"), BorderLayout.CENTER);
+                row.add(stop, BorderLayout.EAST);
+                runningForm.add("Running", row);
+            }
+            stack.push(runningForm, 4);
+            stack.push(Ui.muted("Output in the log below. Up to " + GradleRunner.MAX_PER_LOADER + " tasks per loader can run at the same time."), 12);
         }
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        if (task != null) {
-            JButton stop = button("■ Stop " + task, () -> stopGradle(p));
-            stop.setForeground(new java.awt.Color(0xD32F2F));
-            actions.add(stop);
-        } else {
-            actions.add(button("Build", () -> runGradle(p, "build")));
-        }
+        actions.add(gradleButton(p, "build", "Build"));
         actions.add(button("Open build/libs", () -> openBuildLibs(p)));
         long versionsOfMod = projects.stream()
                 .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
@@ -610,7 +617,7 @@ public final class MainFrame extends JFrame {
         runHeader.add(Ui.heading("Run configurations", "h4"), BorderLayout.WEST);
         JButton detect = button(detecting ? "Detecting…" : cached.isPresent() ? "↻ Refresh" : "Detect", () -> detectTasks(p));
         detect.putClientProperty("JButton.buttonType", "toolBarButton");
-        detect.setEnabled(!detecting && task == null);
+        detect.setEnabled(!detecting && gradle.canStart(p.path(), "tasks --all"));
         runHeader.add(detect, BorderLayout.EAST);
         stack.push(runHeader, 6);
 
@@ -626,11 +633,9 @@ public final class MainFrame extends JFrame {
                 stack.push(Ui.heading(group.name(), "semibold"), 4);
                 JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
                 for (GradleTasks.RunTask t : group.tasks()) {
-                    JButton b = button(t.label(), () -> runGradle(p, t.path()));
+                    JButton b = gradleButton(p, t.path(), t.label());
                     b.setToolTipText("<html><tt>gradlew " + Ui.html(t.path()) + "</tt>"
                             + (t.description().isEmpty() ? "" : "<br>" + Ui.html(t.description())) + "</html>");
-                    b.setEnabled(task == null);
-                    if (t.path().equals(task)) b.setText("▶ " + t.label());
                     buttons.add(b);
                 }
                 stack.push(buttons, 12);
@@ -642,7 +647,7 @@ public final class MainFrame extends JFrame {
                     + (cached.get().stale() ? " · build files changed since" : "")), 14);
         }
         // detect automatically when it is cheap (project was configured before) and nothing is known yet / outdated
-        if (!detecting && task == null && (cached.isEmpty() || cached.get().stale())
+        if (!detecting && running.isEmpty() && (cached.isEmpty() || cached.get().stale())
                 && Files.isDirectory(p.path().resolve(".gradle")) && autoDetected.add(p.path())) {
             SwingUtilities.invokeLater(() -> detectTasks(p));
         }
@@ -1394,9 +1399,23 @@ public final class MainFrame extends JFrame {
         }, tasks -> log("✔ " + tag + tasks.size() + " run configuration(s) found"));
     }
 
-    private void stopGradle(ModProject p) {
-        log("Stopping " + gradle.runningTask(p.path()) + " in " + p.mcVersion() + "/" + p.name() + " …");
-        gradle.stop(p.path());
+    /** Starts the task, or – while it runs – stops it. Disabled when the loader already runs the maximum. */
+    private JButton gradleButton(ModProject p, String task, String label) {
+        if (gradle.isRunning(p.path(), task)) {
+            JButton stop = button("■ " + label, () -> stopGradle(p, task));
+            stop.setForeground(new java.awt.Color(0xD32F2F));
+            stop.setToolTipText("Running – click to stop");
+            return stop;
+        }
+        JButton b = button(label, () -> runGradle(p, task));
+        b.setEnabled(gradle.canStart(p.path(), task));
+        if (!b.isEnabled()) b.setToolTipText(GradleRunner.MAX_PER_LOADER + " tasks of this loader are already running");
+        return b;
+    }
+
+    private void stopGradle(ModProject p, String task) {
+        log("Stopping " + task + " in " + p.mcVersion() + "/" + p.name() + " …");
+        gradle.stop(p.path(), task);
     }
 
     /** Repaints the tree and refreshes the details if they show {@code p}. */
