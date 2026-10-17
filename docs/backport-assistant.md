@@ -1,7 +1,7 @@
 # Feature-Plan: Backport-Assistent (lokal, ohne Commits)
 
-> Status: **geplant, noch nicht begonnen.** Dieses Dokument ist der Startpunkt für eine neue Sitzung.
-> Vor dem Start die [offenen Fragen](#offene-fragen) klären.
+> Status: **in Umsetzung** (nach dem Changelog-Assistenten). Fragen geklärt, siehe
+> [Entscheidungen](#entscheidungen-geklärt-am-17102026).
 > Verwandtes Feature: [Changelog-Assistent](changelog-assistant.md) – beide nutzen einen gemeinsamen
 > `core/ClaudeRunner`; sinnvoll ist, den Changelog zuerst zu bauen (Claude ohne Werkzeuge) und den Backport darauf
 > aufzusetzen.
@@ -150,33 +150,27 @@ Stufe 1 ist für sich schon nutzbar (konfliktfreie Backports ohne KI).
 - **`git apply` beim Übernehmen** kann scheitern, wenn der Ziel-Worktree inzwischen eigene Änderungen hat →
   vorher prüfen/warnen, `--3way` nutzen.
 
-## Offene Fragen
+## Entscheidungen (geklärt am 17.10.2026)
 
-1. **Was heißt „lokal“?**
-   - (a) Claude Code CLI auf dem Rechner – Modell läuft über die Anthropic-API (Internet + Claude-Konto nötig).
-     *Empfehlung.*
-   - (b) Komplett offline mit lokalem Modell (z. B. Ollama + Code-Modell) – schwächere Qualität bei
-     NeoForge↔Forge-Umbauten, starke GPU nötig, Ollama nicht installiert.
-   - (c) Beides, wählbar.
-2. **Granularität:** jeden Commit einzeln portieren (eigene Entscheidung/Notizen pro Commit) oder mehrere Commits in
-   einem Durchlauf als Gruppe?
-3. **Build-Check:** Pflicht vor „Apply“ oder optional (Checkbox)?
-4. **Woher kommen die Typ-Regeln pro Ziel?**
-   - aus `.github/workflows/backport.yml` lesen,
-   - aus der CLAUDE.md lesen,
-   - oder in den Tool-Einstellungen pro Mod/Ziel pflegen (nichts im Repo ändern)?
-5. **Quell-Version:** immer die neueste Version / `main`, oder frei wählbar?
-6. **Ort des Arbeits-Worktrees:** `<master>/.backport/…` (sichtbar im Master-Ordner, vom Scanner ignoriert) oder im
-   System-Temp-Ordner?
-7. **`src/generated/`:** nach dem Backport automatisch `./gradlew runData` im Arbeits-Worktree ausführen oder nur
-   darauf hinweisen?
-8. **Fehlende CLAUDE.md:** Backport trotzdem erlauben (nur Git-Modus), Vorlage anbieten oder Claude-Modus sperren?
-9. **Kosten-Anzeige:** Soll das Tool Token/Kosten pro Lauf anzeigen (sofern die CLI sie liefert) oder ein Limit setzen?
-10. **Gleichzeitigkeit:** Soll pro Mod nur ein Backport gleichzeitig laufen, oder pro Ziel-Version einer?
+1. **„Lokal“** = Claude Code CLI auf dem Rechner (Anthropic-API über das Claude-Konto). Kein Ollama.
+2. **Granularität:** Die gewählten Commits laufen als **Gruppe** in einem Durchlauf nacheinander
+   (`cherry-pick --no-commit`). Bei einem Konflikt hält der Durchlauf an; der Konflikt wird manuell oder per Claude
+   gelöst, dann geht es mit dem nächsten Commit weiter. Ein Ergebnis (`decision` + `notes.md`) pro Durchlauf.
+3. **Build-Check:** optional per Checkbox („Run build afterwards“).
+4. **Typ-Regeln** liegen in den **Tool-Einstellungen** pro Mod und Ziel-Version (nichts im Repo ändern). Beim ersten
+   Aufruf werden sie aus `.github/workflows/backport.yml` (`types`) bzw. der CLAUDE.md vorbelegt, falls vorhanden;
+   sonst sind alle Typen erlaubt.
+5. **Quell-Version:** frei wählbar, Standard = neueste Version der Mod.
+6. **Arbeits-Worktree:** `<master>/.backport/<mod>-<ziel>` (versteckter Ordner, vom Scanner ignoriert).
+7. **`src/generated/`:** nur Hinweis anzeigen, `runData` nicht automatisch ausführen.
+8. **Fehlende CLAUDE.md:** Git-Modus erlaubt, Claude-Modus gesperrt mit Hinweis.
+9. **Kosten:** Kosten/Tokens pro Lauf anzeigen (aus dem `result`-Event von `stream-json`), Budget-Limit über
+   `--max-budget-usd` (Einstellung).
+10. **Gleichzeitigkeit:** höchstens ein Backport pro Ziel-Version.
 
 ## Einstieg für die neue Sitzung
 
 1. Dieses Dokument und `C:\Users\Nico\Desktop\CLAUDE.md` lesen.
-2. Offene Fragen mit dem Nutzer klären.
+2. Entscheidungen oben beachten (Fragen sind geklärt).
 3. Mit Stufe 1 beginnen: zuerst `core/Backport` (Kandidaten, Filter, Marker, „bereits portiert“, Arbeits-Worktree,
    Cherry-Pick, Apply/Discard) mit JUnit-Tests gegen echte Git-Repos (Muster: `WorktreesTest`), danach der UI-Tab.

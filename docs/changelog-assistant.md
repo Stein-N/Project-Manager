@@ -1,7 +1,7 @@
 # Feature-Plan: Changelog-Assistent (lokal, mit Claude)
 
-> Status: **geplant, noch nicht begonnen.** Startpunkt für eine neue Sitzung – vor dem Start die
-> [offenen Fragen](#offene-fragen) klären. Verwandtes Feature: [Backport-Assistent](backport-assistant.md)
+> Status: **in Umsetzung** (Fragen geklärt, siehe [Entscheidungen](#entscheidungen-geklärt-am-17102026)).
+> Verwandtes Feature: [Backport-Assistent](backport-assistant.md)
 > (gemeinsamer Baustein `ClaudeRunner`, siehe [unten](#gemeinsame-bausteine-mit-dem-backport-assistenten)).
 
 ## Ziel
@@ -26,11 +26,14 @@ Anforderungen (wie beim Backport-Assistenten):
 
 1. **Version bestimmen:** `mod_version` (bzw. `version`) aus `gradle.properties` des Projekts – liegt schon als
    `ModProject.modVersion()` vor; dazu `ModProject.mcVersion()` / `gradleMcVersion()`.
-2. **Commit-Bereich bestimmen** (Start = „letzte Version“, Ende = `HEAD` des Worktrees), Reihenfolge der Quellen:
-   1. Git-Tag der vorherigen Version (Schema klären, siehe offene Fragen),
-   2. der Commit, der `mod_version` in `gradle.properties` zuletzt geändert hat,
-   3. der Commit, der `CHANGELOG.md` zuletzt geändert hat,
-   4. manuell im Dialog wählbar (Start-Commit).
+2. **Commit-Bereich bestimmen** (Start = „letzte Version“, Ende = `HEAD` des Worktrees). Keine Git-Tags; Kandidaten
+   für den Start, alle im Dialog wählbar, Vorauswahl in dieser Reihenfolge:
+   1. der Commit, der `CHANGELOG.md` zuletzt geändert hat – wenn dort eine **andere** Version als die aktuelle steht
+      (= Release der vorherigen Version),
+   2. der Commit, der `mod_version` auf den **aktuellen** Wert gesetzt hat (Versions-Bump nach dem Release);
+      liegen danach keine Commits mehr (Bump erst beim Release), stattdessen der Commit, der den **vorherigen** Wert
+      gesetzt hat,
+   3. manuell im Dialog wählbar (Start-Commit).
 3. **Commits sammeln:** `git log <start>..HEAD` mit SHA, Betreff, Text, Autor, Datum; gruppiert nach
    Conventional-Commit-Typ. Backport-Commits mit `(cherry picked from commit …)` bleiben erhalten (Hinweis „backport“).
    Merge-Commits und reine Versions-/CI-Commits werden standardmäßig ausgeblendet.
@@ -90,8 +93,7 @@ Kopf von `CHANGELOG_FULL.md`: `# Changelog` + eine Leerzeile, danach die Version
 
 ## UI-Skizze
 
-Ort: neuer Tab **„Changelog“** in der Projektansicht (alternativ Abschnitt im Gradle-Tab neben Publish – siehe
-offene Fragen).
+Ort: neuer Tab **„Changelog“** in der Projektansicht.
 
 ```
 Version: 1.4.0 (gradle.properties)   Minecraft 1.21.1
@@ -137,7 +139,7 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
 
 ## Risiken
 
-- **Bereichsbestimmung:** ohne einheitliches Tag-Schema kann die „letzte Version“ falsch erkannt werden → im Dialog
+- **Bereichsbestimmung:** ohne Tags kann die „letzte Version“ falsch erkannt werden → im Dialog
   immer anzeigen und änderbar machen.
 - **Manuell gepflegte Changelogs** mit abweichendem Format → Versionserkennung tolerant halten
   (`## [1.4.0]`, `## v1.4.0`, `## 1.4.0 - …`), bei Unklarheit nachfragen statt verschieben.
@@ -145,24 +147,23 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
   zwischen MC-Versionen unterscheiden (Backports).
 - **Kontingent:** jeder Claude-Lauf verbraucht Kontingent; Fallback ohne Claude ist immer verfügbar.
 
-## Offene Fragen
+## Entscheidungen (geklärt am 17.10.2026)
 
-1. **Ort im UI:** eigener Tab „Changelog“ oder Abschnitt im Gradle-Tab (neben Publish)?
-2. **Tag-Schema** für die „letzte Version“: `v1.3.2`, `1.3.2`, `1.21.1-1.3.2`, `mc1.21.1-1.3.2` …? Werden überhaupt
-   Tags gesetzt, oder soll die Erkennung über `gradle.properties`/`CHANGELOG.md` laufen?
-3. **Sprache und Ton** des Changelogs: Englisch? Eher knapp (Stichpunkte) oder erklärend?
-4. **Kategorien:** Keep-a-Changelog (`Added/Changed/Fixed/Removed`) oder nach Commit-Typ
-   (`Features/Fixes/Performance`)? Interne Commits ganz weglassen oder unter „Other“?
-5. **Überschrift:** Minecraft-Version und Datum in der Überschrift (`## 1.4.0 – Minecraft 1.21.1 – 2026-10-17`)?
-6. **Kopf von `CHANGELOG_FULL.md`:** nur `# Changelog` oder ein eigener Text?
-7. **Gleiche Version erneut generieren:** einfach überschreiben oder vorher fragen?
-8. **Mehrere MC-Versionen:** Changelog pro Worktree einzeln, oder optional „für alle Versionen dieser Mod“ in einem
-   Durchlauf?
-9. **Verknüpfung mit Publish:** Warnung vor `publishMods`, wenn `CHANGELOG.md` nicht zur `mod_version` passt?
-10. **Commit danach:** nur Dateien schreiben, oder Button „Save & open commit dialog“ mit vorbelegter Nachricht?
+1. **Ort im UI:** eigener Tab **„Changelog“** in der Projektansicht.
+2. **Keine Git-Tags.** Die „letzte Version“ wird über die letzte Änderung an `CHANGELOG.md` bzw. an `mod_version`
+   in `gradle.properties` erkannt (Details unter [Ablauf](#ablauf), Schritt 2); im Dialog immer änderbar.
+3. **Sprache und Ton:** Englisch, knappe Stichpunkte.
+4. **Kategorien:** Keep-a-Changelog – `Added`, `Changed`, `Fixed`, `Removed`, `Performance`. Interne Commits
+   (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `style`, Versions-Bumps) werden weggelassen.
+5. **Überschrift** mit Minecraft-Version und Datum: `## 1.4.0 – Minecraft 1.21.1 – 2026-10-17`.
+6. **Kopf von `CHANGELOG_FULL.md`:** nur `# Changelog`.
+7. **Gleiche Version erneut generieren:** vorher nachfragen, dann überschreiben.
+8. **Mehrere MC-Versionen:** Changelog pro Worktree einzeln.
+9. **Publish:** Warnung vor `publishMods`, wenn die Version in `CHANGELOG.md` nicht zur `mod_version` passt.
+10. **Commit danach:** „Save“ und „Save & open commit dialog“ (Nachricht `docs: changelog for <version>`).
 
 ## Einstieg für die neue Sitzung
 
 1. Dieses Dokument (und ggf. [backport-assistant.md](backport-assistant.md)) lesen.
-2. Offene Fragen klären.
+2. Entscheidungen oben beachten (Fragen sind geklärt).
 3. `core/ClaudeRunner` + `core/Changelog` mit JUnit-Tests (Muster: `WorktreesTest`, `GitChangesTest`), danach der UI-Tab.
