@@ -143,16 +143,16 @@ public final class MainFrame extends JFrame {
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
         toolbar.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-        toolbar.add(toolButton("➕ Clone project", "Clone a Git repository into a version folder", () -> cloneDialog(null, null, selectedVersion())));
-        toolbar.add(toolButton("📥 Import", "Take over an existing local project folder", () -> importProject(selectedVersion())));
-        toolbar.add(toolButton("📁 New version", "Create a new Minecraft version folder", this::createVersion));
+        toolbar.add(toolButton("Clone project", Icons.CLONE, "Clone a Git repository into a version folder", () -> cloneDialog(null, null, selectedVersion())));
+        toolbar.add(toolButton("Import", Icons.IMPORT, "Take over an existing local project folder", () -> importProject(selectedVersion())));
+        toolbar.add(toolButton("New version", Icons.NEW_FOLDER, "Create a new Minecraft version folder", this::createVersion));
         toolbar.addSeparator();
-        toolbar.add(toolButton("⟳ Refresh", "Rescan folders (F5)", this::refresh));
-        toolbar.add(toolButton("⇣ Fetch all", "git fetch for all projects", this::fetchAll));
-        toolbar.add(toolButton("♻ Clean up", "Gradle caches and build output – find data no project uses",
+        toolbar.add(toolButton("Refresh", Icons.REFRESH, "Rescan folders (F5)", this::refresh));
+        toolbar.add(toolButton("Fetch all", Icons.FETCH, "git fetch for all projects", this::fetchAll));
+        toolbar.add(toolButton("Clean up", Icons.CLEANUP, "Gradle caches and build output – find data no project uses",
                 () -> CleanupDialog.show(this, projects, gradle, this::logAsync)));
         toolbar.add(javax.swing.Box.createHorizontalGlue());
-        toolbar.add(toolButton("⚙ Settings", "Master path, IntelliJ, Git", this::openSettings));
+        toolbar.add(toolButton("Settings", Icons.SETTINGS, "Master path, IntelliJ, Git", this::openSettings));
 
         // --- left side: filter + tree
         filterField.putClientProperty("JTextField.placeholderText", "Filter projects…");
@@ -212,7 +212,7 @@ public final class MainFrame extends JFrame {
         logPanel.setPreferredSize(new Dimension(0, LOG_HEIGHT));
         JPanel logHeader = new JPanel(new BorderLayout());
         logHeader.add(Ui.heading("Git log", "h4"), BorderLayout.WEST);
-        JButton clearLog = new JButton("Clear");
+        JButton clearLog = new JButton("Clear", Icons.get(Icons.CLEANUP));
         clearLog.putClientProperty("JButton.buttonType", "toolBarButton");
         clearLog.addActionListener(e -> logArea.setText(""));
         logHeader.add(clearLog, BorderLayout.EAST);
@@ -435,7 +435,7 @@ public final class MainFrame extends JFrame {
         }
         if (GradleRunner.wrapper(p.path()).isPresent()) {
             int runningCount = gradle.runningTasks(p.path()).size();
-            tabs.addTab(runningCount == 0 ? "Gradle" : "Gradle  ▶" + (runningCount > 1 ? runningCount : ""), scrollTab(gradleTab(p)));
+            tabs.addTab(runningCount > 1 ? "Gradle (" + runningCount + ")" : "Gradle", runningCount > 0 ? Icons.get(Icons.RUN) : null, scrollTab(gradleTab(p)));
         }
         List<Dependencies.Entry> deps = Dependencies.read(p.path());
         if (!deps.isEmpty() || (meta != null && !meta.dependencies().isEmpty())) {
@@ -476,9 +476,14 @@ public final class MainFrame extends JFrame {
         if (version != null) info.add("Mod version", Ui.copyable(version));
         if (p.gradleMcVersion() != null) {
             String text = p.gradleMcVersion();
-            info.add("MC (gradle)", new JLabel(p.versionMismatch()
-                    ? "<html>" + Ui.html(text) + " <font color='#d32f2f'>⚠ does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
-                    : text));
+            JLabel mc = new JLabel(p.versionMismatch()
+                    ? "<html>" + Ui.html(text) + " <font color='#d32f2f'>does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
+                    : text);
+            if (p.versionMismatch()) {
+                mc.setIcon(Icons.get(Icons.WARNING));
+                mc.setHorizontalTextPosition(JLabel.LEADING); // value first, warning icon behind it
+            }
+            info.add("MC (gradle)", mc);
         }
         if (meta != null) {
             if (!meta.authors().isEmpty()) info.add("Authors", Ui.copyable(String.join(", ", meta.authors())));
@@ -494,10 +499,10 @@ public final class MainFrame extends JFrame {
         stack.push(info, 14);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
-        actions.add(button("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
-        actions.add(button("Move / rename…", () -> moveProject(p)));
-        JButton delete = button("Remove…", () -> deleteProject(p));
+        actions.add(button("Open in Explorer", Icons.FOLDER, () -> run(() -> SystemActions.openExplorer(p.path()))));
+        actions.add(button("Open terminal", Icons.TERMINAL, () -> run(() -> SystemActions.openTerminal(p.path()))));
+        actions.add(button("Move / rename…", Icons.EDIT, () -> moveProject(p)));
+        JButton delete = button("Remove…", Icons.DELETE, () -> deleteProject(p));
         delete.setForeground(new java.awt.Color(0xD32F2F));
         actions.add(delete);
         stack.push(actions, 0);
@@ -509,7 +514,7 @@ public final class MainFrame extends JFrame {
         Ui.Form info = new Ui.Form();
         info.add("Branch", Ui.copyable(p.branch()));
         info.add("Upstream", Ui.copyable(p.upstream() == null ? "– (no tracking branch)" : p.upstream()));
-        info.add("Status", new JLabel(statusHtml(p)));
+        info.add("Status", new JLabel(statusHtml(p), p.changes() == 0 ? Icons.get(Icons.SUCCESS) : null, JLabel.LEADING));
         info.add("Remote", Ui.copyable(p.remoteUrl().isEmpty() ? "–" : p.remoteUrl()));
         info.add("Repository", new JLabel(repoDescription(p)));
         List<ModProject> siblings = siblings(p);
@@ -517,7 +522,8 @@ public final class MainFrame extends JFrame {
             // grid instead of a flow layout so the chips wrap inside the fixed width
             JPanel links = new JPanel(new GridLayout(0, 3, 6, 6));
             for (ModProject s : siblings) {
-                JButton link = new JButton(s.mcVersion() + (s.branch() != null && !s.branch().equals(s.mcVersion()) ? "  ⎇ " + s.branch() : ""));
+                boolean ownBranch = s.branch() != null && !s.branch().equals(s.mcVersion());
+                JButton link = new JButton(s.mcVersion() + (ownBranch ? "  " + s.branch() : ""), ownBranch ? Icons.get(Icons.BRANCH) : null);
                 link.putClientProperty("JButton.buttonType", "roundRect");
                 link.setToolTipText(s.path() + (s.branch() != null ? "  [" + s.branch() + "]" : ""));
                 link.addActionListener(e -> reselect(s.path()));
@@ -528,18 +534,18 @@ public final class MainFrame extends JFrame {
         stack.push(info, 14);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
-        actions.add(button("Pull (fast-forward)", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
-        JButton commit = button(p.changes() > 0 ? "Commit (" + p.changes() + ")…" : "Commit…", () -> commitDialog(p));
+        actions.add(button("Fetch", Icons.FETCH, () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
+        actions.add(button("Pull (fast-forward)", Icons.PULL, () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
+        JButton commit = button(p.changes() > 0 ? "Commit (" + p.changes() + ")…" : "Commit…", Icons.COMMIT, () -> commitDialog(p));
         commit.setEnabled(p.changes() > 0);
         actions.add(commit);
         boolean canPush = p.ahead() > 0 || (p.upstream() == null && !p.remoteUrl().isEmpty() && p.branch() != null);
-        JButton push = button(p.upstream() == null ? "Push (set upstream)" : "Push" + (p.ahead() > 0 ? " (" + p.ahead() + ")" : ""), () -> push(p));
+        JButton push = button(p.upstream() == null ? "Push (set upstream)" : "Push" + (p.ahead() > 0 ? " (" + p.ahead() + ")" : ""), Icons.PUSH, () -> push(p));
         push.setEnabled(canPush);
         actions.add(push);
-        actions.add(button("Add version (worktree)…", () -> addWorktree(p)));
+        actions.add(button("Add version (worktree)…", Icons.ADD, () -> addWorktree(p)));
         if (p.standaloneClone()) {
-            actions.add(button("Convert to shared repo…", () -> convertToShared(p)));
+            actions.add(button("Convert to shared repo…", Icons.MERGE, () -> convertToShared(p)));
         }
         stack.push(actions, 16);
 
@@ -595,11 +601,11 @@ public final class MainFrame extends JFrame {
             // one row per running task, each with its own stop button
             Ui.Form runningForm = new Ui.Form();
             for (String t : running) {
-                JButton stop = button("■ Stop", () -> stopGradle(p, t));
+                JButton stop = button("Stop", Icons.STOP, () -> stopGradle(p, t));
                 stop.setForeground(new java.awt.Color(0xD32F2F));
                 stop.putClientProperty("JButton.buttonType", "roundRect");
                 JPanel row = new JPanel(new BorderLayout(8, 0));
-                row.add(new JLabel("<html><font color='#2e7d32'>▶</font> <tt>" + Ui.html(t) + "</tt></html>"), BorderLayout.CENTER);
+                row.add(new JLabel("<html><tt>" + Ui.html(t) + "</tt></html>", Icons.get(Icons.RUN), JLabel.LEADING), BorderLayout.CENTER);
                 row.add(stop, BorderLayout.EAST);
                 runningForm.add("Running", row);
             }
@@ -619,7 +625,7 @@ public final class MainFrame extends JFrame {
                 JPanel envRow = new JPanel(new BorderLayout(8, 0));
                 envRow.add(Ui.muted(envCount == 0 ? "Publish tasks: no environment variables set (.env)"
                         : "Publish tasks use " + envCount + " variable(s) from .env"), BorderLayout.CENTER);
-                JButton editEnv = button("Edit .env…", this::editEnvironment);
+                JButton editEnv = button("Edit .env…", Icons.EDIT, this::editEnvironment);
                 editEnv.putClientProperty("JButton.buttonType", "toolBarButton");
                 envRow.add(editEnv, BorderLayout.EAST);
                 stack.push(envRow, 6);
@@ -643,14 +649,14 @@ public final class MainFrame extends JFrame {
         }
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Open build/libs", () -> openBuildLibs(p)));
+        actions.add(button("Open build/libs", Icons.FOLDER, () -> openBuildLibs(p)));
         long versionsOfMod = projects.stream()
                 .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
                 .count();
         if (versionsOfMod > 1) {
-            actions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
+            actions.add(button("Build all " + versionsOfMod + " versions", Icons.BUILD, () -> buildAllVersions(p.name())));
         }
-        JButton refreshTasks = button(detecting ? "Refreshing Gradle tasks…" : "↻ Refresh Gradle tasks", () -> detectTasks(p));
+        JButton refreshTasks = button(detecting ? "Refreshing Gradle tasks…" : "Refresh Gradle tasks", Icons.REFRESH, () -> detectTasks(p));
         refreshTasks.setToolTipText("Reads the available tasks again (gradlew tasks --all)");
         refreshTasks.setEnabled(!detecting && gradle.canStart(p.path(), "tasks --all"));
         actions.add(refreshTasks);
@@ -679,7 +685,7 @@ public final class MainFrame extends JFrame {
         if (!deps.isEmpty()) {
             JPanel depHeader = new JPanel(new BorderLayout());
             depHeader.add(Ui.heading("Versions (gradle.properties)", "h4"), BorderLayout.WEST);
-            JButton check = button("Check for updates", () -> checkUpdates(p, deps));
+            JButton check = button("Check for updates", Icons.UPGRADE, () -> checkUpdates(p, deps));
             check.putClientProperty("JButton.buttonType", "toolBarButton");
             depHeader.add(check, BorderLayout.EAST);
             stack.push(depHeader, 4);
@@ -692,18 +698,18 @@ public final class MainFrame extends JFrame {
                 if (l != null) {
                     JPanel status = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
                     if (l.startsWith("!")) {
-                        JLabel failed = Ui.muted("? lookup failed");
+                        JLabel failed = Ui.muted("lookup failed"); failed.setIcon(Icons.get(Icons.WARNING));
                         failed.setToolTipText(l.substring(1));
                         status.add(failed);
                     } else if (Dependencies.isNewer(l, d.value())) {
-                        status.add(new JLabel("<html><font color='#c77800'>⬆ " + Ui.html(l) + "</font></html>"));
+                        status.add(new JLabel("<html><font color='#c77800'>" + Ui.html(l) + "</font></html>", Icons.get(Icons.UPGRADE), JLabel.LEADING));
                         if (d.updatable()) {
                             JButton update = button("Update", () -> updateDependency(p, d, l));
                             update.putClientProperty("JButton.buttonType", "roundRect");
                             status.add(update);
                         }
                     } else {
-                        status.add(new JLabel("<html><font color='#2e7d32'>✔ latest</font></html>"));
+                        status.add(new JLabel("<html><font color='#2e7d32'>latest</font></html>", Icons.get(Icons.SUCCESS), JLabel.LEADING));
                     }
                     row.add(status, BorderLayout.EAST);
                 }
@@ -727,7 +733,7 @@ public final class MainFrame extends JFrame {
 
     private static String statusHtml(ModProject p) {
         List<String> parts = new ArrayList<>();
-        parts.add(p.changes() == 0 ? "<font color='#2e7d32'>✔ no local changes</font>"
+        parts.add(p.changes() == 0 ? "<font color='#2e7d32'>no local changes</font>"
                 : "<font color='#c77800'>● " + p.changes() + " changed file(s)</font>");
         if (p.ahead() > 0) parts.add("<font color='#2e7d32'>↑ " + p.ahead() + " not pushed</font>");
         if (p.behind() > 0) parts.add("<font color='#d32f2f'>↓ " + p.behind() + " behind remote</font>");
@@ -745,10 +751,10 @@ public final class MainFrame extends JFrame {
         stack.push(info, 18);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Clone project into this version…", () -> cloneDialog(null, null, v.version())));
-        actions.add(button("Import local project…", () -> importProject(v.version())));
-        actions.add(button("Open folder", () -> run(() -> SystemActions.openExplorer(v.path()))));
-        actions.add(button("Delete version folder (if empty)", () -> deleteVersion(v)));
+        actions.add(button("Clone project into this version…", Icons.CLONE, () -> cloneDialog(null, null, v.version())));
+        actions.add(button("Import local project…", Icons.IMPORT, () -> importProject(v.version())));
+        actions.add(button("Open folder", Icons.FOLDER, () -> run(() -> SystemActions.openExplorer(v.path()))));
+        actions.add(button("Delete version folder (if empty)", Icons.DELETE, () -> deleteVersion(v)));
         stack.push(actions, 18);
 
         List<ModProject> list = projects.stream().filter(p -> p.mcVersion().equals(v.version())).toList();
@@ -756,7 +762,9 @@ public final class MainFrame extends JFrame {
             stack.push(Ui.heading("Quick open", "h4"), 6);
             JPanel quick = new JPanel(new GridLayout(0, 2, 8, 8));
             for (ModProject p : list) {
-                quick.add(button(p.name() + (p.branch() != null ? "  ⎇ " + p.branch() : ""), () -> openInIntelliJ(p)));
+                JButton open = button(p.name() + (p.branch() != null ? "  " + p.branch() : ""), Icons.INTELLIJ, () -> openInIntelliJ(p));
+                open.setToolTipText("Open in IntelliJ");
+                quick.add(open);
             }
             stack.push(quick, 0);
         }
@@ -797,11 +805,11 @@ public final class MainFrame extends JFrame {
         stack.push(info, 18);
 
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Clone project…", () -> cloneDialog(null, null, selectedVersion())));
-        actions.add(button("Import local project…", () -> importProject(null)));
-        actions.add(button("New Minecraft version…", this::createVersion));
-        actions.add(button("Open master folder", () -> run(() -> SystemActions.openExplorer(master.get()))));
-        actions.add(button("Environment variables (.env)…", this::editEnvironment));
+        actions.add(button("Clone project…", Icons.CLONE, () -> cloneDialog(null, null, selectedVersion())));
+        actions.add(button("Import local project…", Icons.IMPORT, () -> importProject(null)));
+        actions.add(button("New Minecraft version…", Icons.NEW_FOLDER, this::createVersion));
+        actions.add(button("Open master folder", Icons.FOLDER, () -> run(() -> SystemActions.openExplorer(master.get()))));
+        actions.add(button("Environment variables (.env)…", Icons.CONFIG, this::editEnvironment));
         stack.push(actions, 24);
 
         stack.push(Ui.heading("Shared repositories (" + Worktrees.REPOS_DIR + ")", "h3"), 4);
@@ -817,9 +825,9 @@ public final class MainFrame extends JFrame {
                     + "<br><font color='" + Ui.hex(UIManager.getColor("Label.disabledForeground")) + "'>"
                     + Ui.html(r.url().isEmpty() ? "(no remote)" : r.url()) + "</font></html>"), BorderLayout.CENTER);
             JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-            buttons.add(button("Add version…", () -> addWorktree(r.path(), r.name(), null, null)));
+            buttons.add(button("Add version…", Icons.ADD, () -> addWorktree(r.path(), r.name(), null, null)));
             if (r.worktrees().isEmpty()) {
-                JButton del = button("Delete…", () -> deleteSharedRepo(r));
+                JButton del = button("Delete…", Icons.DELETE, () -> deleteSharedRepo(r));
                 del.setForeground(new java.awt.Color(0xD32F2F));
                 buttons.add(del);
             }
@@ -829,11 +837,11 @@ public final class MainFrame extends JFrame {
 
         long clones = projects.stream().filter(p -> p.standaloneClone() && !p.remoteUrl().isEmpty()).count();
         JPanel maintenance = new JPanel(new GridLayout(0, 2, 8, 8));
-        JButton convert = button("Convert all clones (" + clones + ")…", this::convertAll);
+        JButton convert = button("Convert all clones (" + clones + ")…", Icons.MERGE, this::convertAll);
         convert.setEnabled(clones > 0);
         convert.setToolTipText("Convert standalone clones into worktrees of shared repositories");
         maintenance.add(convert);
-        JButton prune = button("Clean up stale worktree entries", this::pruneAll);
+        JButton prune = button("Clean up stale worktree entries", Icons.CLEANUP, this::pruneAll);
         prune.setToolTipText("git worktree prune – removes entries of worktrees whose folder was deleted");
         maintenance.add(prune);
         stack.push(maintenance, 0);
@@ -1457,12 +1465,12 @@ public final class MainFrame extends JFrame {
     /** Starts the task, or – while it runs – stops it. Disabled when the loader already runs the maximum. */
     private JButton gradleButton(ModProject p, String task, String label) {
         if (gradle.isRunning(p.path(), task)) {
-            JButton stop = button("■ " + label, () -> stopGradle(p, task));
+            JButton stop = button(label, Icons.STOP, () -> stopGradle(p, task));
             stop.setForeground(new java.awt.Color(0xD32F2F));
             stop.setToolTipText("Running – click to stop");
             return stop;
         }
-        JButton b = button(label, () -> runGradle(p, task));
+        JButton b = button(label, gradleIcon(task), () -> runGradle(p, task));
         b.setEnabled(gradle.canStart(p.path(), task));
         if (!b.isEnabled()) b.setToolTipText(GradleRunner.MAX_PER_LOADER + " tasks of this loader are already running");
         return b;
@@ -1618,24 +1626,24 @@ public final class MainFrame extends JFrame {
         Object o = selectedObject();
         JPopupMenu menu = new JPopupMenu();
         if (o instanceof ModProject p) {
-            menu.add(menuItem("Open in IntelliJ", () -> openInIntelliJ(p)));
-            menu.add(menuItem("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
-            menu.add(menuItem("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
+            menu.add(menuItem("Open in IntelliJ", Icons.INTELLIJ, () -> openInIntelliJ(p)));
+            menu.add(menuItem("Open in Explorer", Icons.FOLDER, () -> run(() -> SystemActions.openExplorer(p.path()))));
+            menu.add(menuItem("Open terminal", Icons.TERMINAL, () -> run(() -> SystemActions.openTerminal(p.path()))));
             if (p.git()) {
                 menu.addSeparator();
-                menu.add(menuItem("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
-                menu.add(menuItem("Pull", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
-                menu.add(menuItem("Add version (worktree)…", () -> addWorktree(p)));
+                menu.add(menuItem("Fetch", Icons.FETCH, () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
+                menu.add(menuItem("Pull", Icons.PULL, () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
+                menu.add(menuItem("Add version (worktree)…", Icons.ADD, () -> addWorktree(p)));
             }
             menu.addSeparator();
-            menu.add(menuItem("Remove…", () -> deleteProject(p)));
+            menu.add(menuItem("Remove…", Icons.DELETE, () -> deleteProject(p)));
         } else if (o instanceof VersionEntry v) {
-            menu.add(menuItem("Clone project here…", () -> cloneDialog(null, null, v.version())));
-            menu.add(menuItem("Import project…", () -> importProject(v.version())));
-            menu.add(menuItem("Open folder", () -> run(() -> SystemActions.openExplorer(v.path()))));
+            menu.add(menuItem("Clone project here…", Icons.CLONE, () -> cloneDialog(null, null, v.version())));
+            menu.add(menuItem("Import project…", Icons.IMPORT, () -> importProject(v.version())));
+            menu.add(menuItem("Open folder", Icons.FOLDER, () -> run(() -> SystemActions.openExplorer(v.path()))));
         } else {
-            menu.add(menuItem("New version…", this::createVersion));
-            menu.add(menuItem("Change master folder…", () -> {
+            menu.add(menuItem("New version…", Icons.NEW_FOLDER, this::createVersion));
+            menu.add(menuItem("Change master folder…", Icons.SETTINGS, () -> {
                 chooseMaster();
                 refresh();
             }));
@@ -1720,8 +1728,8 @@ public final class MainFrame extends JFrame {
         JOptionPane.showMessageDialog(this, new JScrollPane(area), title, JOptionPane.ERROR_MESSAGE);
     }
 
-    private static JButton toolButton(String text, String tooltip, Runnable action) {
-        JButton b = new JButton(text);
+    private static JButton toolButton(String text, String icon, String tooltip, Runnable action) {
+        JButton b = new JButton(text, Icons.get(icon));
         b.setToolTipText(tooltip);
         b.setFocusable(false);
         b.addActionListener(e -> action.run());
@@ -1734,10 +1742,30 @@ public final class MainFrame extends JFrame {
         return b;
     }
 
+    private static JButton button(String text, String icon, Runnable action) {
+        JButton b = button(text, action);
+        b.setIcon(Icons.get(icon));
+        return b;
+    }
+
     private static JMenuItem menuItem(String text, Runnable action) {
         JMenuItem item = new JMenuItem(text);
         item.addActionListener(e -> action.run());
         return item;
+    }
+
+    private static JMenuItem menuItem(String text, String icon, Runnable action) {
+        JMenuItem item = menuItem(text, action);
+        item.setIcon(Icons.get(icon));
+        return item;
+    }
+
+    /** Build, publish and game test tasks get matching icons. */
+    private static String gradleIcon(String task) {
+        String name = task.substring(task.lastIndexOf(':') + 1);
+        if (name.equals("build")) return Icons.BUILD;
+        if (name.equals("publish") || name.equals("publishMods")) return Icons.UPLOAD;
+        return Icons.TEST;
     }
 
     private static javax.swing.Action action(Runnable r) {

@@ -19,6 +19,7 @@ val javafxPlatforms = (findProperty("javafxPlatforms") as String? ?: "win,linux"
 
 dependencies {
     implementation("com.formdev:flatlaf:3.6.1")
+    implementation("com.formdev:flatlaf-extras:3.6.1") // FlatSVGIcon for the SVG icons
     implementation("com.google.code.gson:gson:2.11.0")
 
     // Markdown with the GitHub extensions
