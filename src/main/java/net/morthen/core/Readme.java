@@ -1,41 +1,39 @@
 package net.morthen.core;
 
-import org.commonmark.ext.gfm.tables.TableBlock;
+import org.commonmark.Extension;
+import org.commonmark.ext.autolink.AutolinkExtension;
+import org.commonmark.ext.footnotes.FootnotesExtension;
+import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TablesExtension;
-import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.Image;
-import org.commonmark.node.Node;
-import org.commonmark.node.Text;
+import org.commonmark.ext.heading.anchor.HeadingAnchorExtension;
+import org.commonmark.ext.task.list.items.TaskListItemsExtension;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * Finds a project's README and converts Markdown to HTML that Swing's HTML renderer can display.
+ * Finds a project's README and renders it (GitHub flavored Markdown) into a complete HTML page.
  */
 public final class Readme {
     private static final List<String> NAMES = List.of("readme.md", "readme.markdown", "readme.txt", "readme");
-    private static final List<org.commonmark.Extension> EXTENSIONS = List.of(TablesExtension.create());
+    private static final List<Extension> EXTENSIONS = List.of(
+            TablesExtension.create(),
+            StrikethroughExtension.create(),
+            TaskListItemsExtension.create(),
+            AutolinkExtension.create(),
+            HeadingAnchorExtension.create(),
+            FootnotesExtension.create());
     private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS).build();
-    private static final HtmlRenderer RENDERER = HtmlRenderer.builder()
-            .extensions(EXTENSIONS)
-            .attributeProviderFactory(context -> (node, tag, attributes) -> {
-                // Swing's renderer ignores CSS borders on tables – use HTML attributes instead
-                if (node instanceof TableBlock) {
-                    attributes.put("border", "1");
-                    attributes.put("cellpadding", "5");
-                    attributes.put("cellspacing", "0");
-                }
-            })
-            .build();
+    private static final HtmlRenderer RENDERER = HtmlRenderer.builder().extensions(EXTENSIONS).build();
 
     private Readme() {
     }
@@ -56,48 +54,34 @@ public final class Readme {
         return Optional.empty();
     }
 
-    public static String toHtml(Path file) throws IOException {
+    /** Complete HTML page: rendered README, style sheet, link handling script and a base URL for relative paths. */
+    public static String toPage(Path file) throws IOException {
         String text = Files.readString(file);
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (!name.endsWith(".md") && !name.endsWith(".markdown")) {
-            return "<pre>" + escape(text) + "</pre>";
-        }
-        return markdownToHtml(text);
+        String body = name.endsWith(".md") || name.endsWith(".markdown")
+                ? markdownToHtml(text)
+                : "<pre>" + escape(text) + "</pre>";
+        String base = file.toAbsolutePath().getParent().toUri().toString();
+        return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+                + "<base href=\"" + escape(base) + "\">"
+                + "<style>" + resource("readme.css") + "</style>"
+                + "</head><body><article class=\"markdown-body\">" + body + "</article>"
+                + "<script>" + resource("readme.js") + "</script>"
+                + "</body></html>";
     }
 
     static String markdownToHtml(String markdown) {
-        Node document = PARSER.parse(markdown);
-        replaceRemoteImages(document);
-        return RENDERER.render(document);
+        return RENDERER.render(PARSER.parse(markdown));
     }
 
-    /**
-     * Swing cannot render SVG (most badges) and would block while downloading remote images,
-     * so remote and SVG images are replaced by their alt text.
-     */
-    private static void replaceRemoteImages(Node document) {
-        List<Image> images = new ArrayList<>();
-        document.accept(new AbstractVisitor() {
-            @Override
-            public void visit(Image image) {
-                images.add(image);
-            }
-        });
-        for (Image image : images) {
-            String dest = image.getDestination().toLowerCase(Locale.ROOT);
-            boolean remote = dest.startsWith("http://") || dest.startsWith("https://") || dest.startsWith("//");
-            if (remote || dest.endsWith(".svg") || dest.contains(".svg?")) {
-                StringBuilder alt = new StringBuilder();
-                for (Node child = image.getFirstChild(); child != null; child = child.getNext()) {
-                    if (child instanceof Text t) alt.append(t.getLiteral());
-                }
-                if (!alt.isEmpty()) image.insertBefore(new Text("[" + alt + "]"));
-                image.unlink();
-            }
+    private static String resource(String name) throws IOException {
+        try (InputStream in = Readme.class.getResourceAsStream("/readme/" + name)) {
+            if (in == null) throw new IOException("missing resource " + name);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
     private static String escape(String text) {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 }

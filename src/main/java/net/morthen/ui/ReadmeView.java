@@ -1,83 +1,44 @@
 package net.morthen.ui;
 
+import javafx.application.Platform;
+import javafx.embed.swing.JFXPanel;
+import javafx.scene.Scene;
+import javafx.scene.paint.Color;
+import javafx.scene.web.WebEngine;
+import javafx.scene.web.WebView;
 import net.morthen.core.Readme;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JEditorPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import javax.swing.UIManager;
-import javax.swing.event.HyperlinkEvent;
-import javax.swing.text.html.HTMLDocument;
-import javax.swing.text.html.HTMLEditorKit;
-import javax.swing.text.html.StyleSheet;
 import java.awt.BorderLayout;
 import java.awt.Desktop;
-import java.awt.Font;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
-/** Rendered README of a project. */
+/**
+ * README preview rendered by JavaFX WebView (full HTML/CSS, SVG badges, remote images).
+ * One WebView is shared and only reloaded when the README changes.
+ */
 final class ReadmeView {
+    private static JFXPanel fxPanel;
+    private static WebEngine engine;
+    private static Path shownFile;
+    private static long shownModified;
+    private static Path pageFile;
+    private static Consumer<String> errorHandler = msg -> { };
+
     private ReadmeView() {
     }
 
     static JComponent create(Path readme, Consumer<String> onError) {
-        JEditorPane pane = new JEditorPane();
-        pane.setEditable(false);
-        pane.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
-        pane.setBackground(UIManager.getColor("TextArea.background"));
-        HTMLEditorKit kit = new StyledKit();
-        pane.setEditorKit(kit);
-        HTMLDocument doc = (HTMLDocument) kit.createDefaultDocument();
-        try {
-            doc.setBase(readme.getParent().toUri().toURL()); // relative images and links
-        } catch (Exception ignored) {
-            // images just won't load
-        }
-        pane.setDocument(doc);
-        pane.setText("<p style='color:#808080'>Loading README…</p>");
-        pane.addHyperlinkListener(e -> {
-            if (e.getEventType() != HyperlinkEvent.EventType.ACTIVATED) return;
-            String description = e.getDescription();
-            if (description != null && description.startsWith("#")) {
-                pane.scrollToReference(description.substring(1));
-                return;
-            }
-            try {
-                URI uri = e.getURL() != null ? e.getURL().toURI() : URI.create(description);
-                if ("file".equals(uri.getScheme())) Desktop.getDesktop().open(Path.of(uri).toFile());
-                else Desktop.getDesktop().browse(uri);
-            } catch (Exception ex) {
-                onError.accept("Could not open link: " + description);
-            }
-        });
-
-        new SwingWorker<String, Void>() {
-            @Override
-            protected String doInBackground() throws Exception {
-                return Readme.toHtml(readme);
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    pane.setText(get());
-                } catch (Exception ex) {
-                    pane.setText("<p>Could not read " + readme.getFileName() + ".</p>");
-                }
-                pane.setCaretPosition(0);
-            }
-        }.execute();
-
-        JScrollPane scroll = new JScrollPane(pane);
-        scroll.setBorder(null);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        errorHandler = onError;
+        ensureBrowser();
+        load(readme);
 
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBorder(BorderFactory.createEmptyBorder(4, 12, 4, 8));
@@ -95,35 +56,72 @@ final class ReadmeView {
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(bar, BorderLayout.NORTH);
-        panel.add(scroll, BorderLayout.CENTER);
-        SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(0));
+        panel.add(fxPanel, BorderLayout.CENTER); // moves the shared panel into this tab
         return panel;
     }
 
-    /** HTMLEditorKit with its own style sheet (the default one is shared by all editor kits). */
-    private static final class StyledKit extends HTMLEditorKit {
-        private final StyleSheet styles = new StyleSheet();
+    private static void ensureBrowser() {
+        if (fxPanel != null) return;
+        fxPanel = new JFXPanel(); // starts the JavaFX runtime
+        // details are rebuilt often – the runtime must survive when the panel is temporarily detached
+        Platform.setImplicitExit(false);
+        Platform.runLater(() -> {
+            WebView view = new WebView();
+            view.setContextMenuEnabled(false);
+            engine = view.getEngine();
+            // readme.js reports clicked links as alert("javaLink:<url>")
+            engine.setOnAlert(event -> {
+                String data = event.getData();
+                if (data != null && data.startsWith("javaLink:")) openLink(data.substring("javaLink:".length()));
+            });
+            fxPanel.setScene(new Scene(view, Color.WHITE));
+            if (shownFile != null) reload(shownFile);
+        });
+    }
 
-        StyledKit() {
-            styles.addStyleSheet(super.getStyleSheet());
-            Font font = UIManager.getFont("Label.font");
-            String family = font != null ? font.getFamily() : "SansSerif";
-            int size = font != null ? font.getSize() : 13;
-            styles.addRule("body { font-family: '" + family + "'; font-size: " + size + "pt; color: #1f1f1f; }");
-            styles.addRule("h1 { font-size: " + (size + 9) + "pt; margin-top: 4px; margin-bottom: 6px; }");
-            styles.addRule("h2 { font-size: " + (size + 5) + "pt; margin-top: 12px; margin-bottom: 4px; }");
-            styles.addRule("h3 { font-size: " + (size + 2) + "pt; margin-top: 10px; margin-bottom: 4px; }");
-            styles.addRule("p { margin-top: 4px; margin-bottom: 6px; }");
-            styles.addRule("code { font-family: Monospaced; font-size: " + (size - 1) + "pt; background-color: #f0f0f0; }");
-            styles.addRule("pre { font-family: Monospaced; font-size: " + (size - 1) + "pt; background-color: #f5f5f5; padding: 6px; }");
-            styles.addRule("blockquote { color: #666666; margin-left: 10px; padding-left: 8px; border-left: 3px solid #d0d0d0; }");
-            styles.addRule("a { color: #2675bf; }");
-            styles.addRule("th { background-color: #f0f0f0; }");
-        }
+    private static void load(Path readme) {
+        long modified = lastModified(readme);
+        if (readme.equals(shownFile) && modified == shownModified) return; // already shown
+        shownFile = readme;
+        shownModified = modified;
+        Platform.runLater(() -> {
+            if (engine != null) reload(readme);
+        });
+    }
 
-        @Override
-        public StyleSheet getStyleSheet() {
-            return styles;
+    /** FX thread. */
+    private static void reload(Path readme) {
+        try {
+            // Loaded from a file (not loadContent): only file pages may load local images of the project
+            if (pageFile == null) {
+                pageFile = Files.createTempFile("mcpm-readme", ".html");
+                pageFile.toFile().deleteOnExit();
+            }
+            Files.writeString(pageFile, Readme.toPage(readme));
+            engine.load(pageFile.toUri() + "?t=" + System.nanoTime()); // query forces a reload
+        } catch (Exception e) {
+            engine.loadContent("<p style='font-family:sans-serif'>Could not read " + readme.getFileName() + ": " + e.getMessage() + "</p>");
         }
+    }
+
+    private static long lastModified(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Links open in the browser, local files with their default application. */
+    private static void openLink(String href) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                URI uri = URI.create(href);
+                if ("file".equals(uri.getScheme())) Desktop.getDesktop().open(Path.of(uri).toFile());
+                else Desktop.getDesktop().browse(uri);
+            } catch (Exception e) {
+                errorHandler.accept("Could not open link: " + href);
+            }
+        });
     }
 }

@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReadmeTest {
@@ -23,21 +22,37 @@ class ReadmeTest {
     }
 
     @Test
-    void rendersMarkdownTablesAndDropsRemoteImages() {
+    void rendersGithubFlavoredMarkdown() {
         String html = Readme.markdownToHtml("""
                 # Title
                 [![Downloads](https://img.shields.io/badge/x.svg)](https://modrinth.com/mod/x)
-                ![local](docs/shot.png)
 
                 | Loader | Version |
                 |--------|---------|
                 | Fabric | 1.21.1  |
+
+                - [x] done
+                - [ ] open
+
+                ~~old~~ and https://example.com and a note[^1]
+
+                [^1]: The footnote.
                 """);
-        assertTrue(html.contains("<h1>Title</h1>"));
-        assertFalse(html.contains("shields.io"), "remote badge image removed");
-        assertTrue(html.contains("[Downloads]"), "alt text kept");
-        assertTrue(html.contains("href=\"https://modrinth.com/mod/x\""), "link kept");
-        assertTrue(html.contains("src=\"docs/shot.png\""), "local image kept");
-        assertTrue(html.contains("<table border=\"1\""));
+        assertTrue(html.contains("<h1 id=\"title\">Title</h1>"), "heading anchor");
+        assertTrue(html.contains("src=\"https://img.shields.io/badge/x.svg\""), "badges are kept");
+        assertTrue(html.contains("<table>"));
+        assertTrue(html.contains("type=\"checkbox\""), "task list");
+        assertTrue(html.contains("<del>old</del>"), "strikethrough");
+        assertTrue(html.contains("href=\"https://example.com\""), "autolink");
+        assertTrue(html.contains("The footnote."), "footnote");
+    }
+
+    @Test
+    void pageContainsBaseUrlStylesAndScript() throws IOException {
+        Path readme = Files.writeString(project.resolve("README.md"), "![logo](docs/logo.png)");
+        String page = Readme.toPage(readme);
+        assertTrue(page.contains("<base href=\"" + project.toUri()));
+        assertTrue(page.contains("max-width: 100%"));
+        assertTrue(page.contains("javaLink:"));
     }
 }
