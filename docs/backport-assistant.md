@@ -1,6 +1,6 @@
 # Feature-Plan: Backport-Assistent (lokal, ohne Commits)
 
-> Status: **in Umsetzung** (nach dem Changelog-Assistenten). Fragen geklärt, siehe
+> Status: **Stufe 1 (nur Git) umgesetzt** (17.10.2026: `core/Backport`, `ui/BackportTab`), Stufe 2 (Claude) offen. Siehe
 > [Entscheidungen](#entscheidungen-geklärt-am-17102026).
 > Verwandtes Feature: [Changelog-Assistent](changelog-assistant.md) – beide nutzen einen gemeinsamen
 > `core/ClaudeRunner`; sinnvoll ist, den Changelog zuerst zu bauen (Claude ohne Werkzeuge) und den Backport darauf
@@ -187,6 +187,25 @@ Folgen für den Backport:
 - Beides als uncommittete Änderung zusammen mit dem Backport, im Ergebnis sichtbar.
 - **Entschieden:** Übernahme von Changelog und Mod-Version passiert **automatisch** als Teil jedes Backports aus
   `main` (Checkbox, standardmäßig an); kein eigener Changelog-Generator auf den anderen Branches.
+
+## Umsetzungsnotizen Stufe 1
+
+- Tab „Backport“ auf jeder Version außer dem Main-Branch (Quelle wählbar, Standard `main`).
+- Kandidaten neueste zuerst, **nichts vorausgewählt** („Select portable“ / „None“): die Commits der Mods haben
+  meist keinen Conventional-Commit-Typ, und ältere Ziele liegen weit zurück (Resource-Library: 1.21.1 → 188,
+  1.20.1 → 245 Commits). Portiert wird immer chronologisch.
+- „Bereits portiert“ über `(cherry picked from commit …)`-Trailer im Ziel und `git cherry` (gleicher Patch).
+- Arbeits-Worktree `<master>/.backport/<mod>-<ziel>` mit detached HEAD, wird wiederverwendet und vor jedem Lauf
+  zurückgesetzt; Prüfung, dass HEAD nach jedem Schritt noch der Ziel-Commit ist.
+- „Nie portieren“-Dateien (gradle.properties, mods.toml, neoforge.mods.toml, `src/generated/`, `.github/`, Changelogs)
+  bleiben wie im Ziel – auch ihre Konflikte werden automatisch so gelöst (typisch: Versionszeile).
+- Konflikte: Lauf hält an, Konfliktdateien mit Diff bzw. Erklärung bei gelöschten Dateien; lösen in IntelliJ im
+  Arbeitsordner, „Continue“ prüft auf Konfliktmarker und macht weiter.
+- „Take over version and CHANGELOG.md“ (Standard an): Mod-Teil der Version + `CHANGELOG.md` der Quelle.
+- Apply per `git diff --binary --output` + `git apply --3way` als uncommittete Änderung, danach Commit-Dialog mit
+  vorbelegter Nachricht inkl. Trailer.
+- Praxisbefund: 26.1/26.2 enthalten `main` bereits (Merge); bei 1.21.1 fehlen viele Dateien (z. B. Forge-Teil,
+  Fabric-Hauptklasse) → viele modify/delete-Konflikte. Für solche Backports ist Stufe 2 (Claude) gedacht.
 
 ## Einstieg für die neue Sitzung
 
