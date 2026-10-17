@@ -1714,7 +1714,7 @@ public final class MainFrame extends JFrame {
                 p -> claudeField.setText(p.toString()),
                 () -> JOptionPane.showMessageDialog(this, "Claude Code CLI not found on the PATH.")));
         JTextField claudeModel = new JTextField(config.claudeModel());
-        claudeModel.putClientProperty("JTextField.placeholderText", "default of the CLI (e.g. sonnet, opus)");
+        claudeModel.putClientProperty("JTextField.placeholderText", "sonnet (default) or opus");
         javax.swing.JSpinner claudeBudget = new javax.swing.JSpinner(
                 new javax.swing.SpinnerNumberModel(config.claudeMaxBudgetUsd(), 0.0, 100.0, 0.5));
         javax.swing.JSpinner claudeTimeout = new javax.swing.JSpinner(

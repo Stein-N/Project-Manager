@@ -85,6 +85,10 @@ final class ChangelogTab extends JPanel {
 
     private ClaudeRunner.Run claudeRun;
     private boolean loadingStarts;
+    /** The prompt (with the diff) is being put together. */
+    private boolean preparing;
+    /** Upper limit for the diff in the prompt (about 100k tokens). */
+    private static final int MAX_DIFF_CHARS = 400_000;
 
     ChangelogTab(Host host, ModProject project) {
         super(new BorderLayout(0, 8));
@@ -313,29 +317,54 @@ final class ChangelogTab extends JPanel {
             return;
         }
         if (!confirmReplaceDraft()) return;
-        String prompt;
-        try {
-            String claudeMd = readIfExists(project.path().resolve("CLAUDE.md"));
-            String name = project.metadata() != null && project.metadata().name() != null
-                    ? project.metadata().name() : project.name();
-            prompt = Changelog.prompt(name, project.loader(), heading(), selected,
-                    Changelog.styleSample(project.path(), 40), Changelog.rulesFromClaudeMd(claudeMd));
-        } catch (IOException e) {
-            host.error("Changelog", e.getMessage());
-            return;
-        }
+        Changelog.Start start = (Changelog.Start) startBox.getSelectedItem();
+        ModProject p = project;
+        String heading = heading();
+        preparing = true;
+        updateGenerateButtons();
+        statusLabel.setText("Collecting the changes…");
+        // the diff can take a moment for big releases – not on the EDT
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                String claudeMd = readIfExists(p.path().resolve("CLAUDE.md"));
+                String name = p.metadata() != null && p.metadata().name() != null ? p.metadata().name() : p.name();
+                String diff = Changelog.diff(host.git(), p.path(), start == null ? null : start.sha(), MAX_DIFF_CHARS);
+                return Changelog.prompt(name, p.loader(), mcVersion(), heading, selected, diff,
+                        Changelog.aiStyleSample(p.path(), 60), Changelog.rulesFromClaudeMd(claudeMd));
+            }
+
+            @Override
+            protected void done() {
+                preparing = false;
+                try {
+                    startClaude(exe.get(), get(), selected.size());
+                } catch (Exception e) {
+                    statusLabel.setText(" ");
+                    updateGenerateButtons();
+                    host.error("Changelog", rootMessage(e));
+                }
+            }
+        }.execute();
+    }
+
+    private void startClaude(Path exe, String prompt, int commitCount) {
+        Config config = host.config();
         String tag = tag();
         String v = version;
         List<String> keys = host.claudeApiKeys();
-        host.log("> claude -p (changelog " + v + ", " + selected.size() + " commits, no tools, "
-                + (keys.isEmpty() ? "Claude Code login" : keys.size() + " token(s) from CLAUDE_API") + ")    (" + project.path() + ")");
+        host.log("> claude -p (changelog " + v + ", " + commitCount + " commits + diff, " + prompt.length() / 1000
+                + "k chars, no tools, " + (keys.isEmpty() ? "Claude Code login" : keys.size() + " token(s) from CLAUDE_API")
+                + ")    (" + project.path() + ")");
         ClaudeRunner.Request request = new ClaudeRunner.Request(project.path(), prompt, ClaudeRunner.Tools.none(),
                 config.claudeModel(), config.claudeMaxBudgetUsd(), Duration.ofMinutes(config.claudeTimeoutMinutes()), keys);
         try {
-            claudeRun = ClaudeRunner.start(exe.get(), request,
+            claudeRun = ClaudeRunner.start(exe, request,
                     line -> SwingUtilities.invokeLater(() -> host.log("    " + tag + line.replace("\n", "\n    " + tag))),
                     outcome -> SwingUtilities.invokeLater(() -> claudeFinished(outcome, v)));
         } catch (IOException e) {
+            statusLabel.setText(" ");
+            updateGenerateButtons();
             host.error("Could not start Claude", e.getMessage());
             return;
         }
@@ -355,13 +384,13 @@ final class ChangelogTab extends JPanel {
         }
         Optional<String> clean = Changelog.cleanAnswer(outcome.text(), v);
         if (clean.isPresent()) {
-            setDraft(clean.get());
+            setDraft(Changelog.withAiNote(clean.get()));
             statusLabel.setText("Draft by Claude (" + cost + ") – please review");
             host.log("✔ " + tag() + "Changelog draft by Claude (" + cost + ")");
         } else {
             setDraft(outcome.text());
-            statusLabel.setText("<html><font color='#c77800'>Claude's answer does not start with “## " + Ui.html(v)
-                    + "” – please fix</font></html>");
+            statusLabel.setText("<html><font color='#c77800'>Claude's answer does not start with “" + Ui.html(heading()) + "” (" + Ui.html(v)
+                    + ") – please fix</font></html>");
             host.log("⚠ " + tag() + "Claude's answer does not start with the version heading");
         }
     }
@@ -374,7 +403,7 @@ final class ChangelogTab extends JPanel {
     }
 
     private void updateGenerateButtons() {
-        boolean running = claudeRun != null;
+        boolean running = claudeRun != null || preparing;
         claudeButton.setEnabled(!running && version != null && !commits.selected().isEmpty());
         fallbackButton.setEnabled(!running && version != null);
         cancelButton.setVisible(running);

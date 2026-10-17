@@ -102,9 +102,13 @@ public final class Config {
         setString("claude", claude);
     }
 
-    /** Model for Claude runs ({@code --model}); empty = default of the CLI. */
+    /** Default model: Sonnet writes changelogs as good as Opus for this task, faster and with less usage. */
+    public static final String DEFAULT_CLAUDE_MODEL = "sonnet";
+
+    /** Model for Claude runs ({@code --model}, an alias like {@code sonnet}/{@code opus} or a full model id). */
     public String claudeModel() {
-        return props.getProperty("claudeModel", "").trim();
+        String model = props.getProperty("claudeModel", "").trim();
+        return model.isEmpty() ? DEFAULT_CLAUDE_MODEL : model;
     }
 
     public void setClaudeModel(String model) {
