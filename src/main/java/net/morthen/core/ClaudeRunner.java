@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -43,12 +44,12 @@ public final class ClaudeRunner {
      * @param model        {@code --model} or null/blank for the CLI default
      * @param maxBudgetUsd {@code --max-budget-usd}; 0 = no limit
      * @param timeout      the process is killed afterwards (per attempt); null = no limit
-     * @param apiKeys      Anthropic API keys tried in order (see {@link ClaudeKeys}); empty = login of the CLI
+     * @param tokens       Claude tokens tried in order (OAuth tokens or API keys, see {@link ClaudeKeys}); empty = login of the CLI
      */
     public record Request(Path workDir, String prompt, Tools tools, String model, double maxBudgetUsd, Duration timeout,
-                          List<String> apiKeys) {
+                          List<String> tokens) {
         public Request {
-            apiKeys = apiKeys == null ? List.of() : List.copyOf(apiKeys);
+            tokens = tokens == null ? List.of() : List.copyOf(tokens);
         }
 
         /** With the login of the CLI. */
@@ -120,17 +121,17 @@ public final class ClaudeRunner {
     /**
      * Command line for {@code request} (the prompt itself goes to stdin).
      *
-     * @param withApiKey the run uses an API key: {@code --bare} then skips hooks, plugins, memory and CLAUDE.md
-     *                   discovery of the user setup (it only accepts {@code ANTHROPIC_API_KEY}, not the login)
+     * @param bare {@code --bare}: skips hooks, plugins, memory and CLAUDE.md discovery of the user setup; only for
+     *             Platform API keys, since it ignores the login and {@code CLAUDE_CODE_OAUTH_TOKEN}
      */
-    static List<String> command(Path executable, Request request, Path mcpConfig, boolean withApiKey) {
+    static List<String> command(Path executable, Request request, Path mcpConfig, boolean bare) {
         List<String> command = new ArrayList<>();
         String exe = executable.toString();
         String lower = exe.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".cmd") || lower.endsWith(".bat")) command.addAll(List.of("cmd.exe", "/c"));
         command.add(exe);
         command.addAll(List.of("-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"));
-        if (withApiKey) command.add("--bare");
+        if (bare) command.add("--bare");
         command.addAll(List.of("--strict-mcp-config", "--mcp-config", mcpConfig.toString()));
         Tools tools = request.tools() == null ? Tools.none() : request.tools();
         command.add("--tools");
@@ -157,18 +158,18 @@ public final class ClaudeRunner {
 
     /**
      * Starts Claude asynchronously. Readable progress lines go to {@code log}; {@code done} receives the outcome
-     * exactly once (on a background thread). With API keys, a key that cannot be used (see
+     * exactly once (on a background thread). With tokens, a token that cannot be used (see
      * {@link ClaudeKeys#keyUnusable}) is skipped and the request is repeated with the next one.
      */
     public static Run start(Path executable, Request request, Consumer<String> log, Consumer<Outcome> done)
             throws IOException {
-        if (request.apiKeys().isEmpty()) return launch(executable, request, null, log, done);
+        if (request.tokens().isEmpty()) return launch(executable, request, null, log, done);
         KeyRotation rotation = new KeyRotation(executable, request, log, done);
         rotation.next(null);
         return rotation;
     }
 
-    /** Tries the keys one after the other until one works or all are used up. */
+    /** Tries the tokens one after the other until one works or all are used up. */
     private static final class KeyRotation implements Run {
         private final Path executable;
         private final Request request;
@@ -186,12 +187,12 @@ public final class ClaudeRunner {
             this.done = done;
         }
 
-        /** Starts the next key; throws only for the first one (later failures end up in {@code done}). */
+        /** Starts the next token; throws only for the first one (later failures end up in {@code done}). */
         synchronized void next(Outcome previous) throws IOException {
-            List<String> keys = request.apiKeys();
+            List<String> keys = request.tokens();
             index++;
             String key = keys.get(index);
-            if (keys.size() > 1) log.accept("Using API key " + (index + 1) + "/" + keys.size() + " (" + ClaudeKeys.mask(key) + ")");
+            if (keys.size() > 1) log.accept("Using token " + (index + 1) + "/" + keys.size() + " (" + ClaudeKeys.mask(key) + ")");
             try {
                 current = launch(executable, request, key, log, this::finished);
             } catch (IOException e) {
@@ -201,20 +202,20 @@ public final class ClaudeRunner {
         }
 
         private void finished(Outcome outcome) {
-            List<String> keys = request.apiKeys();
+            List<String> keys = request.tokens();
             if (cancelled || !ClaudeKeys.keyUnusable(outcome)) {
                 done.accept(outcome);
                 return;
             }
             String key = keys.get(index);
             String reason = (outcome.apiErrorStatus() > 0 ? outcome.apiErrorStatus() + " " : "") + outcome.text();
-            failures.add("key " + (index + 1) + " (" + ClaudeKeys.mask(key) + "): " + reason);
+            failures.add("token " + (index + 1) + " (" + ClaudeKeys.mask(key) + "): " + reason);
             if (index + 1 >= keys.size()) {
-                done.accept(outcome.withText(keys.size() == 1 ? "API key " + ClaudeKeys.mask(key) + " cannot be used: " + reason
-                        : "None of the " + keys.size() + " API keys can be used:\n" + String.join("\n", failures)));
+                done.accept(outcome.withText(keys.size() == 1 ? "Token " + ClaudeKeys.mask(key) + " cannot be used: " + reason
+                        : "None of the " + keys.size() + " tokens can be used:\n" + String.join("\n", failures)));
                 return;
             }
-            log.accept("API key " + (index + 1) + " (" + ClaudeKeys.mask(key) + ") cannot be used (" + reason + ") – trying the next key");
+            log.accept("Token " + (index + 1) + " (" + ClaudeKeys.mask(key) + ") cannot be used (" + reason + ") – trying the next token");
             try {
                 next(outcome);
             } catch (IOException e) {
@@ -236,20 +237,25 @@ public final class ClaudeRunner {
         }
     }
 
-    /** One CLI process; {@code apiKey} null = login of the CLI. */
-    private static Execution launch(Path executable, Request request, String apiKey, Consumer<String> log,
+    /** One CLI process; {@code token} null = login of the CLI. */
+    private static Execution launch(Path executable, Request request, String token, Consumer<String> log,
                                     Consumer<Outcome> done) throws IOException {
         Path mcpConfig = Files.createTempFile("claude-mcp-", ".json");
         Files.writeString(mcpConfig, EMPTY_MCP_CONFIG);
         mcpConfig.toFile().deleteOnExit();
         Process process;
         try {
-            ProcessBuilder builder = new ProcessBuilder(command(executable, request, mcpConfig, apiKey != null))
+            ProcessBuilder builder = new ProcessBuilder(command(executable, request, mcpConfig,
+                    token != null && ClaudeKeys.kind(token) == ClaudeKeys.Kind.API_KEY))
                     .directory(request.workDir().toFile())
                     .redirectErrorStream(true);
-            if (apiKey != null) {
-                builder.environment().put("ANTHROPIC_API_KEY", apiKey);
-                builder.environment().remove("ANTHROPIC_AUTH_TOKEN"); // would take precedence over the key
+            if (token != null) {
+                // only this token: inherited credentials would take precedence or mix in
+                Map<String, String> env = builder.environment();
+                env.remove("ANTHROPIC_API_KEY");
+                env.remove("ANTHROPIC_AUTH_TOKEN");
+                env.remove("CLAUDE_CODE_OAUTH_TOKEN");
+                env.put(ClaudeKeys.kind(token) == ClaudeKeys.Kind.API_KEY ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN", token);
             }
             process = builder.start();
         } catch (IOException e) {

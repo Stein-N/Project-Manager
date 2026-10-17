@@ -177,12 +177,14 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
   die Vorschau nutzt ein Swing-`JEditorPane` (der JavaFX-WebView ist an den README-Tab gebunden). Eine Tab-Instanz pro
   Projekt überlebt die häufigen Neuaufbauten der Detailansicht (Entwurf und laufender Claude-Lauf bleiben erhalten).
 - Einstellungen: Pfad zur Claude-CLI, Modell, Budget pro Lauf (Standard 1 $), Zeitlimit (Standard 15 min).
-- **API-Keys (`CLAUDE_API`):** mehrere Anthropic-API-Keys, getrennt mit `;`, aus der `.env` im Master-Ordner oder
-  der System-Umgebung (`.env` hat Vorrang). Ist die Variable gesetzt, läuft die CLI mit `ANTHROPIC_API_KEY` und
-  `--bare`, sonst mit dem Claude-Code-Login. Ist ein Key nicht nutzbar (API 401/402/403/429, `authentication_failed`,
-  `billing_error`, `rate_limit`, „credit balance“), wird die Anfrage mit dem nächsten Key wiederholt; andere Fehler
-  (z. B. 400, 500, Timeout, Budget) nicht. Im Log stehen Keys nur gekürzt (`…abcd`). `CLAUDE_API` wird nicht an die
-  Gradle-Publish-Tasks weitergegeben.
+- **Tokens (`CLAUDE_API`):** mehrere Claude-Tokens, getrennt mit `;`, aus der `.env` im Master-Ordner oder der
+  System-Umgebung (`.env` hat Vorrang). Normalfall sind **OAuth-Tokens eines Pro/Max-Abos** aus `claude setup-token`
+  → `CLAUDE_CODE_OAUTH_TOKEN` (ohne `--bare`, das OAuth ignoriert; ein ungültiges Token führt zu 401, kein stiller
+  Rückfall auf den gespeicherten Login – geprüft). Werte mit `sk-ant-api…` gelten als Platform-API-Key →
+  `ANTHROPIC_API_KEY` + `--bare`. Ohne `CLAUDE_API` läuft der Claude-Code-Login. Ist ein Token nicht nutzbar
+  (API 401/402/403/429, `authentication_failed`, `billing_error`, `rate_limit`, Texte wie „usage limit“, „OAuth“,
+  „credit balance“), wird die Anfrage mit dem nächsten Token wiederholt; andere Fehler (400, 500, Timeout, Budget)
+  nicht. Im Log nur gekürzt (`…abcd`); `CLAUDE_API` geht nicht an die Gradle-Publish-Tasks.
 
 ## Einstieg für die neue Sitzung
 

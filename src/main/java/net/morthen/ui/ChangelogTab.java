@@ -48,7 +48,7 @@ final class ChangelogTab extends JPanel {
 
         Config config();
 
-        /** Anthropic API keys from CLAUDE_API; empty = login of the Claude Code CLI. */
+        /** Claude tokens from CLAUDE_API (OAuth tokens or API keys); empty = login of the Claude Code CLI. */
         List<String> claudeApiKeys();
 
         /** Log line (EDT). */
@@ -328,7 +328,7 @@ final class ChangelogTab extends JPanel {
         String v = version;
         List<String> keys = host.claudeApiKeys();
         host.log("> claude -p (changelog " + v + ", " + selected.size() + " commits, no tools, "
-                + (keys.isEmpty() ? "Claude Code login" : keys.size() + " API key(s) from CLAUDE_API") + ")    (" + project.path() + ")");
+                + (keys.isEmpty() ? "Claude Code login" : keys.size() + " token(s) from CLAUDE_API") + ")    (" + project.path() + ")");
         ClaudeRunner.Request request = new ClaudeRunner.Request(project.path(), prompt, ClaudeRunner.Tools.none(),
                 config.claudeModel(), config.claudeMaxBudgetUsd(), Duration.ofMinutes(config.claudeTimeoutMinutes()), keys);
         try {

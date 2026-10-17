@@ -1514,7 +1514,7 @@ public final class MainFrame extends JFrame {
         }
     }
 
-    /** Anthropic API keys from {@code CLAUDE_API} (.env, then system environment); empty = Claude Code login. */
+    /** Claude tokens from {@code CLAUDE_API} (.env, then system environment); empty = Claude Code login. */
     private List<String> claudeApiKeys() {
         return ClaudeKeys.resolve(envVariables(), System.getenv());
     }
@@ -1523,11 +1523,11 @@ public final class MainFrame extends JFrame {
     private String claudeSignIn() {
         List<String> keys = claudeApiKeys();
         return keys.isEmpty()
-                ? "Claude Code login – set CLAUDE_API (.env or environment) to use API keys"
-                : keys.size() + " API key(s) from CLAUDE_API, tried in order";
+                ? "Claude Code login – set CLAUDE_API (tokens from claude setup-token) to use other accounts"
+                : keys.size() + " token(s) from CLAUDE_API, tried in order";
     }
 
-    /** .env for the Gradle publish tasks – without the Claude API keys, Gradle does not need them. */
+    /** .env for the Gradle publish tasks – without the Claude tokens, Gradle does not need them. */
     private Map<String, String> publishEnvironment() {
         Map<String, String> env = new LinkedHashMap<>(envVariables());
         env.remove(ClaudeKeys.VARIABLE);

@@ -76,8 +76,8 @@ final class EnvDialog extends JDialog {
         JLabel info = new JLabel("<html><body style='width:540px'>Stored as <tt>.env</tt> in the master folder and passed to the "
                 + "<b>publish</b> and <b>publishMods</b> tasks – read them in the build script with "
                 + "<tt>providers.environmentVariable(\"MODRINTH_API\")</tt>. "
-                + "<tt>CLAUDE_API</tt> holds Anthropic API keys for Claude (several separated by <tt>;</tt>, the next one is "
-                + "used when a key fails); it is not passed to Gradle.</body></html>");
+                + "<tt>CLAUDE_API</tt> holds Claude tokens from <tt>claude setup-token</tt> (Pro/Max; API keys <tt>sk-ant-api…</tt> work too), several separated by <tt>;</tt> – the next one is "
+                + "used when a token fails. It is not passed to Gradle.</body></html>");
         info.setToolTipText(EnvFile.path(master).toString());
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
 

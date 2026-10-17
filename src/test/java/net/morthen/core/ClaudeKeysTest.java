@@ -25,8 +25,10 @@ class ClaudeKeysTest {
             {"type":"result","subtype":"success","is_error":true,"api_error_status":401,"result":"Invalid API key · Fix external API key","total_cost_usd":0,"usage":{}}""";
     private static final String BAD_REQUEST = """
             {"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"prompt is too long","total_cost_usd":0,"usage":{}}""";
-    private static final String OK_RESULT = """
-            {"type":"result","subtype":"success","is_error":false,"result":"#### v1.0.0","total_cost_usd":0.01,"usage":{}}""";
+    private static final String OK_OAUTH = """
+            {"type":"result","subtype":"success","is_error":false,"result":"via oauth","total_cost_usd":0.01,"usage":{}}""";
+    private static final String OK_API_KEY = """
+            {"type":"result","subtype":"success","is_error":false,"result":"via api key","total_cost_usd":0.01,"usage":{}}""";
 
     @TempDir
     Path tmp;
@@ -70,7 +72,24 @@ class ClaudeKeysTest {
     }
 
     @Test
-    void commandUsesBareWithApiKey() {
+    void kindByPrefix() {
+        assertEquals(ClaudeKeys.Kind.OAUTH_TOKEN, ClaudeKeys.kind("sk-ant-oat01-abc"));
+        assertEquals(ClaudeKeys.Kind.API_KEY, ClaudeKeys.kind("sk-ant-api03-abc"));
+        assertEquals(ClaudeKeys.Kind.OAUTH_TOKEN, ClaudeKeys.kind("anything-else"));
+    }
+
+    @Test
+    void subscriptionLimitsAndInvalidTokensSwitchTokens() {
+        // texts of the real CLI
+        assertTrue(ClaudeKeys.keyUnusable(error(0, null, "Failed to authenticate. API Error: 401 OAuth access token is invalid.")));
+        assertTrue(ClaudeKeys.keyUnusable(error(0, null, "Not logged in · Please run /login")));
+        assertTrue(ClaudeKeys.keyUnusable(error(0, null, "Claude AI usage limit reached|1792254000")));
+    }
+
+    @Test
+    void oauthTokenGoesToOauthVariableWithoutBare() throws Exception {
+        assertEquals("via oauth", run(fakeCli(), List.of("sk-ant-oat01-good"), new CopyOnWriteArrayList<>()).text());
+        assertEquals("via api key", run(fakeCli(), List.of("sk-ant-api03-good"), new CopyOnWriteArrayList<>()).text());
         ClaudeRunner.Request r = request(List.of("k"));
         assertTrue(ClaudeRunner.command(Path.of("claude"), r, Path.of("m"), true).contains("--bare"));
         assertFalse(ClaudeRunner.command(Path.of("claude"), r, Path.of("m"), false).contains("--bare"));
@@ -81,17 +100,17 @@ class ClaudeKeysTest {
         List<String> log = new CopyOnWriteArrayList<>();
         ClaudeRunner.Outcome o = run(fakeCli(), List.of("bad-key-0001", "good-key-0002"), log);
         assertTrue(o.ok(), o.text());
-        assertEquals("#### v1.0.0", o.text());
-        assertTrue(log.stream().anyMatch(l -> l.contains("API key 1 (…0001) cannot be used (401") && l.contains("next key")), log.toString());
-        assertTrue(log.contains("Using API key 2/2 (…0002)"), log.toString());
+        assertEquals("via oauth", o.text());
+        assertTrue(log.stream().anyMatch(l -> l.contains("Token 1 (…0001) cannot be used (401") && l.contains("next token")), log.toString());
+        assertTrue(log.contains("Using token 2/2 (…0002)"), log.toString());
     }
 
     @Test
     void allKeysUnusable() throws Exception {
         ClaudeRunner.Outcome o = run(fakeCli(), List.of("bad-key-0001", "bad-key-0002"), new CopyOnWriteArrayList<>());
         assertEquals(ClaudeRunner.Status.ERROR, o.status());
-        assertTrue(o.text().startsWith("None of the 2 API keys can be used:"), o.text());
-        assertTrue(o.text().contains("key 2 (…0002): 401 Invalid API key"), o.text());
+        assertTrue(o.text().startsWith("None of the 2 tokens can be used:"), o.text());
+        assertTrue(o.text().contains("token 2 (…0002): 401 Invalid API key"), o.text());
     }
 
     @Test
@@ -100,7 +119,7 @@ class ClaudeKeysTest {
         ClaudeRunner.Outcome o = run(fakeCli(), List.of("broken-0001", "good-key-0002"), log);
         assertEquals(ClaudeRunner.Status.ERROR, o.status());
         assertEquals("prompt is too long", o.text());
-        assertFalse(log.stream().anyMatch(l -> l.contains("next key")), log.toString());
+        assertFalse(log.stream().anyMatch(l -> l.contains("next token")), log.toString());
     }
 
     private ClaudeRunner.Outcome run(Path fake, List<String> keys, List<String> log) throws Exception {
@@ -117,15 +136,20 @@ class ClaudeKeysTest {
         return new ClaudeRunner.Outcome(ClaudeRunner.Status.ERROR, text, 0, 0, 0, status, code);
     }
 
-    /** Answers by key prefix: bad… → 401, broken… → 400, anything else → success. */
+    /** Answers by token prefix: bad… → 401, broken… → 400, otherwise success naming the variable it got the token from. */
     private Path fakeCli() throws IOException {
         if (SystemActions.isWindows()) {
             Path script = tmp.resolve("claude.cmd");
             Files.writeString(script, String.join("\r\n",
                     "@echo off",
-                    "if \"%ANTHROPIC_API_KEY:~0,3%\"==\"bad\" goto bad",
-                    "if \"%ANTHROPIC_API_KEY:~0,6%\"==\"broken\" goto broken",
-                    "echo " + OK_RESULT,
+                    "set T=%ANTHROPIC_API_KEY%%CLAUDE_CODE_OAUTH_TOKEN%",
+                    "if \"%T:~0,3%\"==\"bad\" goto bad",
+                    "if \"%T:~0,6%\"==\"broken\" goto broken",
+                    "if defined CLAUDE_CODE_OAUTH_TOKEN goto oauth",
+                    "echo " + OK_API_KEY,
+                    "exit /b 0",
+                    ":oauth",
+                    "echo " + OK_OAUTH,
                     "exit /b 0",
                     ":bad",
                     "echo " + AUTH_ERROR,
@@ -139,10 +163,10 @@ class ClaudeKeysTest {
         Path script = tmp.resolve("claude");
         Files.writeString(script, String.join("\n",
                 "#!/bin/sh",
-                "case \"$ANTHROPIC_API_KEY\" in",
+                "case \"$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN\" in",
                 "  bad*) echo '" + AUTH_ERROR + "'; echo '" + AUTH_RESULT + "'; exit 1;;",
                 "  broken*) echo '" + BAD_REQUEST + "'; exit 1;;",
-                "  *) echo '" + OK_RESULT + "';;",
+                "  *) if [ -n \"$CLAUDE_CODE_OAUTH_TOKEN\" ]; then echo '" + OK_OAUTH + "'; else echo '" + OK_API_KEY + "'; fi;;",
                 "esac", ""));
         script.toFile().setExecutable(true);
         return script;
