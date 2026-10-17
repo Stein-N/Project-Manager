@@ -104,7 +104,7 @@ public final class MainFrame extends JFrame {
     private final java.util.Set<Path> autoDetected = new java.util.HashSet<>();
 
     public MainFrame(Config config) {
-        super("MC Mod Project Manager");
+        super(windowTitle());
         this.config = config;
         this.git = new Git(config.gitExecutable());
 
@@ -129,6 +129,12 @@ public final class MainFrame extends JFrame {
         scheduleAutoFetch();
         applyTraySetting();
         SwingUtilities.invokeLater(this::firstStart);
+    }
+
+    /** Title with the version from the jar manifest (missing when started from the IDE). */
+    private static String windowTitle() {
+        String version = MainFrame.class.getPackage().getImplementationVersion();
+        return "MC Mod Project Manager" + (version != null ? " " + version : "");
     }
 
     // =====================================================================  Layout

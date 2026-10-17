@@ -4,7 +4,6 @@ plugins {
 }
 
 group = "net.morthen"
-version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -49,6 +48,8 @@ application {
 tasks.jar {
     manifest {
         attributes["Main-Class"] = "net.morthen.Main"
+        attributes["Implementation-Title"] = "MC Mod Project Manager"
+        attributes["Implementation-Version"] = project.version
         attributes["Enable-Native-Access"] = "ALL-UNNAMED"
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
