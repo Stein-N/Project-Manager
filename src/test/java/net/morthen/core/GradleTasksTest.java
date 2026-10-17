@@ -51,28 +51,31 @@ class GradleTasksTest {
             """;
 
     @Test
-    void offersOnlyBuildGametestAndPublishTasks() {
+    void buildAndPublishAreGeneralGametestsPerLoader() {
         List<GradleTasks.RunTask> tasks = GradleTasks.parse(OUTPUT);
         List<String> paths = tasks.stream().map(GradleTasks.RunTask::path).toList();
-        assertEquals(List.of(":fabric:build", ":neoforge:build", ":fabric:runGametest", ":fabric:runClientGametest",
-                ":neoforge:runGameTestServer", "publish", "publishMods", ":fabric:publish", ":fabric:publishMods",
-                ":neoforge:publishMods"), paths);
+        assertEquals(List.of("build", ":fabric:runGametest", ":fabric:runClientGametest", ":neoforge:runGameTestServer",
+                "publish", "publishMods"), paths);
         assertFalse(paths.stream().anyMatch(p -> p.endsWith("runClient") || p.endsWith("runServer")), "no client/server runs");
 
         List<GradleTasks.Group> groups = GradleTasks.group(tasks, "General");
         assertEquals(List.of("General", "Fabric", "NeoForge"), groups.stream().map(GradleTasks.Group::name).toList());
-        assertEquals(List.of("Publish", "Publish mods"), labels(groups.get(0)));
-        assertEquals(List.of("Build", "Client gametest", "Gametest", "Publish", "Publish mods"), labels(groups.get(1)));
-        assertEquals(List.of("Build", "Game test server", "Publish mods"), labels(groups.get(2)));
-        assertTrue(groups.get(0).tasks().getFirst().publishes());
+        assertEquals(List.of("Build", "Publish", "Publish mods"), labels(groups.get(0)));
+        assertEquals(List.of("Client gametest", "Gametest"), labels(groups.get(1)));
+        assertEquals(List.of("Game test server"), labels(groups.get(2)));
+        assertTrue(groups.get(0).tasks().get(2).publishes());
     }
 
     @Test
-    void oldCachedClientAndServerRunsAreHidden() {
+    void olderCachesAreNormalized() {
+        // cache of the previous version: client runs and per-loader build/publish tasks
         List<GradleTasks.RunTask> cached = List.of(new GradleTasks.RunTask(":fabric:runClient", ""),
-                new GradleTasks.RunTask(":fabric:runGametest", ""));
+                new GradleTasks.RunTask(":fabric:build", ""), new GradleTasks.RunTask(":fabric:publishMods", ""),
+                new GradleTasks.RunTask(":neoforge:publishMods", ""), new GradleTasks.RunTask(":fabric:runGametest", ""));
         List<GradleTasks.Group> groups = GradleTasks.group(cached, "General");
-        assertEquals(List.of("Gametest"), labels(groups.getFirst()));
+        assertEquals(List.of("General", "Fabric"), groups.stream().map(GradleTasks.Group::name).toList());
+        assertEquals(List.of("build", "publishMods"), groups.get(0).tasks().stream().map(GradleTasks.RunTask::path).toList());
+        assertEquals(List.of("Gametest"), labels(groups.get(1)));
     }
 
     private static List<String> labels(GradleTasks.Group group) {

@@ -21,12 +21,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Detects the Gradle tasks the tool offers – build, game tests, publish and publishMods – and groups them by loader
- * subproject. Client/server runs are intentionally not offered. Results are cached on disk until a build file changes.
+ * Detects the Gradle tasks the tool offers: build, publish and publishMods once for the whole project (General) and the
+ * game test tasks per loader subproject. Client/server runs are intentionally not offered. Results are cached on disk until a build file changes.
  */
 public final class GradleTasks {
     /**
-     * @param path task path. Subproject tasks are absolute (":fabric:build") so only that loader runs; root
+     * @param path task path. Game tests are absolute (":fabric:runGametest") so only that loader runs; build and
      *             publish tasks are stored by name ("publishMods") so Gradle runs them in every subproject.
      */
     public record RunTask(String path, String description) {
@@ -55,13 +55,14 @@ public final class GradleTasks {
             return isPublish(name());
         }
 
-        /** Sort order inside a group: build, game tests, publish, publishMods. */
+        /** Sort order: build, publish, publishMods, then game tests. */
         int rank() {
-            String n = name();
-            if (n.equals("build")) return 0;
-            if (n.toLowerCase(Locale.ROOT).contains("gametest")) return 1;
-            if (n.equals("publish")) return 2;
-            return 3;
+            return switch (name()) {
+                case "build" -> 0;
+                case "publish" -> 1;
+                case "publishMods" -> 2;
+                default -> 3;
+            };
         }
     }
 
@@ -83,6 +84,11 @@ public final class GradleTasks {
     /** Tasks the tool may run: build, publish, publishMods and every game test task. */
     public static boolean isAllowed(String name) {
         return name.equals("build") || isPublish(name) || name.toLowerCase(Locale.ROOT).contains("gametest");
+    }
+
+    /** Tasks that are offered once for the whole project (General) instead of per loader. */
+    static boolean isGeneral(String name) {
+        return name.equals("build") || isPublish(name);
     }
 
     static boolean isPublish(String name) {
@@ -125,8 +131,8 @@ public final class GradleTasks {
             boolean root = !path.contains(":");
             String name = path.substring(path.lastIndexOf(':') + 1);
             if (!isAllowed(name)) continue;
-            if (root && name.equals("build")) continue; // the general "Build" button builds everything
-            String stored = root && isPublish(name) ? name : ":" + path;
+            // build and publishing are general tasks: run by name, Gradle executes them in every subproject
+            String stored = isGeneral(name) ? name : ":" + path;
             if (seen.add(stored)) tasks.add(new RunTask(stored, m.group(2) == null ? "" : m.group(2).strip()));
         }
         return tasks;
@@ -135,21 +141,35 @@ public final class GradleTasks {
     // ---------------------------------------------------------------- grouping
 
     /**
-     * Groups by subproject: root ("General", or the loader name for single-loader projects), Common, Fabric,
-     * Forge, NeoForge, then any other subprojects.
+     * "General" (build, publish, publishMods – always contains Build), then the game tests per loader: root game tests
+     * of a single-loader project form a group named {@code rootLoaderLabel}; subprojects are ordered Common, Fabric,
+     * Quilt, Forge, NeoForge, then the rest.
      */
-    public static List<Group> group(List<RunTask> tasks, String rootLabel) {
+    public static List<Group> group(List<RunTask> tasks, String rootLoaderLabel) {
+        String rootKey = "\0root";
         Map<String, List<RunTask>> byProject = new LinkedHashMap<>();
-        for (RunTask t : tasks) if (isAllowed(t.name()) && !(t.project().isEmpty() && t.name().equals("build"))) byProject.computeIfAbsent(t.project(), k -> new ArrayList<>()).add(t);
+        byProject.computeIfAbsent("", k -> new ArrayList<>()).add(new RunTask("build", "Builds all subprojects"));
+        Set<String> seen = new LinkedHashSet<>(List.of("build"));
+        for (RunTask t : tasks) {
+            if (!isAllowed(t.name())) continue;
+            // build/publish of subprojects (older caches) are folded into General
+            RunTask task = isGeneral(t.name()) ? new RunTask(t.name(), t.description()) : t;
+            if (!seen.add(task.path())) continue;
+            String key = isGeneral(task.name()) ? ""
+                    : task.project().isEmpty() ? (rootLoaderLabel.equals("General") ? "" : rootKey)
+                    : task.project();
+            byProject.computeIfAbsent(key, k -> new ArrayList<>()).add(task);
+        }
         List<String> order = new ArrayList<>(byProject.keySet());
-        order.sort(Comparator.comparingInt((String p) -> p.isEmpty() ? -1
+        order.sort(Comparator.comparingInt((String p) -> p.isEmpty() ? -2 : p.equals(rootKey) ? -1
                 : LOADER_ORDER.contains(p.toLowerCase(Locale.ROOT)) ? LOADER_ORDER.indexOf(p.toLowerCase(Locale.ROOT))
                 : LOADER_ORDER.size()).thenComparing(p -> p));
         List<Group> groups = new ArrayList<>();
         for (String p : order) {
             List<RunTask> list = new ArrayList<>(byProject.get(p));
             list.sort(Comparator.comparingInt(RunTask::rank).thenComparing(RunTask::name));
-            groups.add(new Group(p.isEmpty() ? rootLabel : displayName(p), list));
+            String name = p.isEmpty() ? "General" : p.equals(rootKey) ? rootLoaderLabel : displayName(p);
+            groups.add(new Group(name, list));
         }
         return groups;
     }

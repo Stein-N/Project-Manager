@@ -599,8 +599,33 @@ public final class MainFrame extends JFrame {
             stack.push(runningForm, 4);
             stack.push(Ui.muted("Output in the log below. Up to " + GradleRunner.MAX_PER_LOADER + " tasks per loader can run at the same time."), 12);
         }
+        // --- General (build, publish) and the game tests per loader
+        Optional<GradleTasks.Cached> cached = GradleTasks.cached(p.path());
+        boolean detecting = detectingTasks.contains(p.path());
+        List<GradleTasks.Group> groups = GradleTasks.group(cached.map(GradleTasks.Cached::tasks).orElse(List.of()),
+                rootTaskGroupName(p));
+        for (GradleTasks.Group group : groups) {
+            boolean general = group.name().equals("General");
+            stack.push(Ui.heading(general ? "General" : group.name() + " · game tests", "h4"), 6);
+            JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
+            for (GradleTasks.RunTask t : group.tasks()) {
+                JButton b = gradleButton(p, t.path(), t.label());
+                b.setToolTipText("<html><tt>gradlew " + Ui.html(t.path()) + "</tt>"
+                        + (t.description().isEmpty() ? "" : "<br>" + Ui.html(t.description())) + "</html>");
+                buttons.add(b);
+            }
+            stack.push(buttons, 14);
+        }
+        if (cached.isEmpty()) {
+            stack.push(Ui.muted(detecting
+                    ? "<html>Asking Gradle for the available tasks… (output in the log)</html>"
+                    : "<html>Publish and game test tasks are read from Gradle – click “Refresh Gradle tasks”. "
+                    + "The first run of a fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
+        } else if (groups.size() == 1) {
+            stack.push(Ui.muted("No game test tasks configured."), 14);
+        }
+
         JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(gradleButton(p, "build", "Build"));
         actions.add(button("Open build/libs", () -> openBuildLibs(p)));
         long versionsOfMod = projects.stream()
                 .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
@@ -608,43 +633,16 @@ public final class MainFrame extends JFrame {
         if (versionsOfMod > 1) {
             actions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
         }
-        boolean detectingNow = detectingTasks.contains(p.path());
-        JButton refreshTasks = button(detectingNow ? "Refreshing Gradle tasks…" : "↻ Refresh Gradle tasks", () -> detectTasks(p));
+        JButton refreshTasks = button(detecting ? "Refreshing Gradle tasks…" : "↻ Refresh Gradle tasks", () -> detectTasks(p));
         refreshTasks.setToolTipText("Reads the available tasks again (gradlew tasks --all)");
-        refreshTasks.setEnabled(!detectingNow && gradle.canStart(p.path(), "tasks --all"));
+        refreshTasks.setEnabled(!detecting && gradle.canStart(p.path(), "tasks --all"));
         actions.add(refreshTasks);
-        stack.push(actions, 16);
-
-        // --- build, game test and publish tasks, grouped by loader
-        Optional<GradleTasks.Cached> cached = GradleTasks.cached(p.path());
-        boolean detecting = detectingTasks.contains(p.path());
-        stack.push(Ui.heading("Gradle tasks per loader", "h4"), 6);
-
-        if (cached.isEmpty()) {
-            stack.push(Ui.muted(detecting
-                    ? "<html>Asking Gradle for the available tasks… (output in the log)</html>"
-                    : "<html>Build, game test and publish tasks are read from Gradle – click “Refresh Gradle tasks”. "
-                    + "The first run of a fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
-        } else {
-            List<GradleTasks.Group> groups = GradleTasks.group(cached.get().tasks(), rootTaskGroupName(p));
-            if (groups.isEmpty()) stack.push(Ui.muted("No build, game test or publish tasks found in the subprojects."), 14);
-            for (GradleTasks.Group group : groups) {
-                stack.push(Ui.heading(group.name(), "semibold"), 4);
-                JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
-                for (GradleTasks.RunTask t : group.tasks()) {
-                    JButton b = gradleButton(p, t.path(), t.label());
-                    b.setToolTipText("<html><tt>gradlew " + Ui.html(t.path()) + "</tt>"
-                            + (t.description().isEmpty() ? "" : "<br>" + Ui.html(t.description())) + "</html>");
-                    buttons.add(b);
-                }
-                stack.push(buttons, 12);
-            }
+        stack.push(actions, 6);
+        if (cached.isPresent()) {
             String when = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
                     .format(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(cached.get().detected()),
                             java.time.ZoneId.systemDefault()));
-            int offered = groups.stream().mapToInt(g -> g.tasks().size()).sum();
-            stack.push(Ui.muted(offered + " tasks · detected " + when
-                    + (cached.get().stale() ? " · build files changed since" : "")), 14);
+            stack.push(Ui.muted("Tasks detected " + when + (cached.get().stale() ? " · build files changed since" : "")), 14);
         }
         // detect automatically when it is cheap (project was configured before) and nothing is known yet / outdated
         if (!detecting && running.isEmpty() && (cached.isEmpty() || cached.get().stale())
