@@ -1,8 +1,5 @@
 package net.morthen.ui;
 
-import com.formdev.flatlaf.FlatDarkLaf;
-import com.formdev.flatlaf.FlatLaf;
-import com.formdev.flatlaf.FlatLightLaf;
 import net.morthen.core.Config;
 import net.morthen.core.Git;
 import net.morthen.core.ModProject;
@@ -113,7 +110,7 @@ public final class MainFrame extends JFrame {
         toolbar.add(toolButton("⟳ Refresh", "Rescan folders (F5)", this::refresh));
         toolbar.add(toolButton("⇣ Fetch all", "git fetch for all projects", this::fetchAll));
         toolbar.add(javax.swing.Box.createHorizontalGlue());
-        toolbar.add(toolButton("⚙ Settings", "Master path, IntelliJ, Git, theme", this::openSettings));
+        toolbar.add(toolButton("⚙ Settings", "Master path, IntelliJ, Git", this::openSettings));
 
         // --- left side: filter + tree
         filterField.putClientProperty("JTextField.placeholderText", "Filter projects…");
@@ -1033,13 +1030,11 @@ public final class MainFrame extends JFrame {
                 () -> JOptionPane.showMessageDialog(this, "No installation found.")));
 
         JTextField gitField = new JTextField(config.gitExecutable());
-        JCheckBox dark = new JCheckBox("Dark theme", config.isDarkMode());
 
         Ui.Form form = new Ui.Form()
                 .add("Master folder", master, masterBrowse)
                 .add("IntelliJ (idea64.exe)", idea, detect)
-                .add("Git executable", gitField)
-                .add("", dark);
+                .add("Git executable", gitField);
 
         if (JOptionPane.showConfirmDialog(this, form, "Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
@@ -1054,15 +1049,7 @@ public final class MainFrame extends JFrame {
         }
         config.setGitExecutable(gitField.getText());
         git.setExecutable(config.gitExecutable());
-        boolean themeChanged = dark.isSelected() != config.isDarkMode();
-        config.setDarkMode(dark.isSelected());
         config.save();
-
-        if (themeChanged) {
-            if (dark.isSelected()) FlatDarkLaf.setup();
-            else FlatLightLaf.setup();
-            FlatLaf.updateUI();
-        }
         refresh();
     }
 

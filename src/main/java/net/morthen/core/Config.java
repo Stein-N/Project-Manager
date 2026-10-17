@@ -72,14 +72,6 @@ public final class Config {
         }
     }
 
-    public boolean isDarkMode() {
-        return Boolean.parseBoolean(props.getProperty("dark", "true"));
-    }
-
-    public void setDarkMode(boolean dark) {
-        props.setProperty("dark", Boolean.toString(dark));
-    }
-
     private Optional<Path> path(String key) {
         String value = props.getProperty(key, "").trim();
         return value.isEmpty() ? Optional.empty() : Optional.of(Path.of(value));
