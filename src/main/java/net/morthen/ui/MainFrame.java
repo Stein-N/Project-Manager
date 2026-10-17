@@ -73,7 +73,7 @@ import java.util.function.Consumer;
 public final class MainFrame extends JFrame {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
     /** Fixed window size; the layout is tuned to exactly this size. */
-    private static final Dimension WINDOW_SIZE = new Dimension(900, 680);
+    private static final Dimension WINDOW_SIZE = new Dimension(900, 560);
     private static final int LEFT_WIDTH = 290;
     private static final int MAX_LOG_CHARS = 400_000;
 
