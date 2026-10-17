@@ -40,12 +40,11 @@ Anforderungen (wie beim Backport-Assistenten):
    Merge-Commits und reine Versions-/CI-Commits werden standardmäßig ausgeblendet.
 4. **Entwurf erzeugen:**
    - **Mit Claude:** Commit-Liste + Vorlage + Regeln (siehe unten) → Claude liefert den Markdown-Text auf stdout.
-   - **Ohne Claude (Fallback):** deterministisch nach Typ gruppiert (`feat` → Added, `fix` → Fixed,
-     `perf` → Performance, Rest optional unter „Other“).
+   - **Ohne Claude (Fallback):** ein Stichpunkt pro Commit-Betreff, älteste zuerst.
 5. **Vorschau + Bearbeiten:** Entwurf in einem Editor mit Markdown-Vorschau (vorhandenes `ReadmeView`/`Readme`),
    Nutzer kann anpassen.
 6. **Speichern:**
-   - `CHANGELOG.md` lesen und dessen Version erkennen (erste Überschrift `## …`, siehe Format).
+   - `CHANGELOG.md` lesen und dessen Version erkennen (erste Überschrift mit Version, siehe [Format](#format)).
    - **Gleiche Version** wie die aktuelle → nur `CHANGELOG.md` ersetzen (Neu-Generierung), nichts verschieben.
    - **Andere Version** → alten Inhalt von `CHANGELOG.md` oben in `CHANGELOG_FULL.md` einfügen (nach einem evtl.
      Datei-Kopf), dann `CHANGELOG.md` überschreiben.
@@ -55,26 +54,25 @@ Anforderungen (wie beim Backport-Assistenten):
 7. **Ergebnis:** Dateien sind geändert, aber nicht committet; der Git-Tab zeigt sie als Änderungen.
    Optional direkt den Commit-Dialog mit vorbelegter Nachricht öffnen (`docs: changelog for <version>`).
 
-## Vorgeschlagenes Format
+## Format
 
-Eine Version pro Abschnitt, damit `CHANGELOG.md` direkt als Release-Text nutzbar ist (z. B. vom
-`publishMods`-Task: `changelog = file("CHANGELOG.md").readText()`):
+Das **bisherige Format** der Mods wird beibehalten (geändert am 17.10.2026, ersetzt den ursprünglichen Vorschlag
+mit Keep-a-Changelog-Abschnitten und MC-Version/Datum in der Überschrift):
 
 ```markdown
-## 1.4.0 – Minecraft 1.21.1 – 2026-10-17
-
-### Added
-- Config screen for the tooltip options
-
-### Fixed
-- Crash when opening the inventory with an empty slot
-
-### Performance
-- Faster chunk scanning
+#### v2.1.7
+- update LootTableModifier, uses now a Supplier instead of a fixed value
+- adding Model Render Helper
 ```
 
-Die erste `## `-Überschrift trägt die Version → daran erkennt das Tool, welche Version in `CHANGELOG.md` steht.
-Kopf von `CHANGELOG_FULL.md`: `# Changelog` + eine Leerzeile, danach die Versionen (neueste oben).
+- Überschrift nur mit der **Mod-Version** (`#### v<version>`), ohne Minecraft-Version und Datum: Alle
+  Minecraft-Versionen einer Mod tragen dieselbe Mod-Version (über den Backport werden alle auf diese Version
+  angehoben). Der MC-Teil in `version=1.21.1-2.1.7` dient nur dazu, Datei-Konflikte auf CurseForge/Modrinth zu
+  vermeiden, und erscheint nicht im Changelog.
+- Darunter eine flache Stichpunktliste, keine Unterabschnitte.
+- `CHANGELOG.md` ist direkt als Release-Text nutzbar (z. B. `changelog = file("CHANGELOG.md").readText()`).
+- Erkennung: die erste Überschrift beliebiger Ebene, die mit einer Version beginnt.
+- Kopf von `CHANGELOG_FULL.md` nur beim Neuanlegen: `# Changelog` (bestehende Dateien bleiben, wie sie sind).
 
 ## Claude-Integration
 
@@ -90,7 +88,7 @@ Kopf von `CHANGELOG_FULL.md`: `# Changelog` + eine Leerzeile, danach die Version
     Breaking Changes (`feat!:` / `BREAKING CHANGE:`) hervorheben, Sprache: Englisch,
   - optional der bisherige `CHANGELOG_FULL.md`-Anfang als Stilvorbild,
   - optional ein Abschnitt „Changelog“ aus der CLAUDE.md des Repos, falls vorhanden.
-- Antwort prüfen: muss mit `## <aktuelle Version>` beginnen; sonst Fehler anzeigen / Fallback anbieten.
+- Antwort prüfen: muss mit `#### v<aktuelle Version>` beginnen; sonst Entwurf mit Warnung in den Editor.
 
 ## UI-Skizze
 
@@ -106,7 +104,7 @@ Commits since: [v1.3.2 ▾]  → 12 commits (3 hidden)          [↻ Reload]
 └───┴─────────┴──────┴───────────────────────────────────────────┘
 [Generate with Claude]  [Generate without Claude]
 ┌ Editor ──────────────────────────┐┌ Preview ─────────────────────────┐
-│ ## 1.4.0 – Minecraft 1.21.1 …    ││ 1.4.0 – Minecraft 1.21.1 …       │
+│ #### v1.4.0                      ││ v1.4.0                           │
 └──────────────────────────────────┘└──────────────────────────────────┘
 CHANGELOG.md currently: 1.3.2 → will be moved to the top of CHANGELOG_FULL.md
 [Save]  [Save & open commit dialog]
@@ -154,9 +152,9 @@ Gesamt etwa 1 000–1 400 Zeilen inkl. `ClaudeRunner` und Tests.
 2. **Keine Git-Tags.** Die „letzte Version“ wird über die letzte Änderung an `CHANGELOG.md` bzw. an `mod_version`
    in `gradle.properties` erkannt (Details unter [Ablauf](#ablauf), Schritt 2); im Dialog immer änderbar.
 3. **Sprache und Ton:** Englisch, knappe Stichpunkte.
-4. **Kategorien:** Keep-a-Changelog – `Added`, `Changed`, `Fixed`, `Removed`, `Performance`. Interne Commits
-   (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `style`, Versions-Bumps) werden weggelassen.
-5. **Überschrift** mit Minecraft-Version und Datum: `## 1.4.0 – Minecraft 1.21.1 – 2026-10-17`.
+4. **Keine Kategorien** – flache Stichpunktliste im bisherigen Stil (geändert, siehe [Format](#format)). Interne
+   Commits (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `style`, Versions-Bumps) werden weggelassen.
+5. **Überschrift** `#### v<Mod-Version>` ohne Minecraft-Version und Datum (geändert, siehe [Format](#format)).
 6. **Kopf von `CHANGELOG_FULL.md`:** nur `# Changelog`.
 7. **Gleiche Version erneut generieren:** vorher nachfragen, dann überschreiben.
 8. **Mehrere MC-Versionen:** Changelog pro Worktree einzeln.

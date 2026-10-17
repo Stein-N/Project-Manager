@@ -31,7 +31,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -281,7 +280,7 @@ final class ChangelogTab extends JPanel {
     // ---------------------------------------------------------------- generating
 
     private String heading() {
-        return Changelog.heading(version, mcVersion(), LocalDate.now());
+        return Changelog.heading(version);
     }
 
     private boolean confirmReplaceDraft() {

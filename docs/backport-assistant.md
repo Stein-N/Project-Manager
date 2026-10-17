@@ -168,6 +168,25 @@ Stufe 1 ist für sich schon nutzbar (konfliktfreie Backports ohne KI).
    `--max-budget-usd` (Einstellung).
 10. **Gleichzeitigkeit:** höchstens ein Backport pro Ziel-Version.
 
+## Neue Anforderung: gleiche Mod-Version auf allen Minecraft-Versionen (17.10.2026)
+
+Alle Minecraft-Versionen einer Mod sollen immer **dieselbe Mod-Version** tragen; der Backport hebt die älteren
+Versionen auf die Version der Quelle an. Die MC-Angabe in `version` (z. B. `1.21.1-2.1.7`) dient nur dazu,
+Datei-Konflikte auf CurseForge/Modrinth zu vermeiden. Der Changelog nutzt deshalb nur `#### v<Mod-Version>`
+(siehe [Changelog-Assistent](changelog-assistant.md#format)).
+
+Folgen für den Backport:
+
+- Die Regel „Versionen nie portieren“ bleibt für Minecraft-, Loader- und Abhängigkeitsversionen bestehen.
+- Der **Mod-Teil** der Version wird gezielt angeglichen: in `gradle.properties` des Ziels nur der Mod-Teil ersetzen,
+  das MC-Präfix/-Suffix des Ziels bleibt (`1.20.1-2.1.6` → `1.20.1-2.1.7`). Erkennung des Mod-Teils wie
+  `Changelog.displayVersion`.
+- `CHANGELOG.md` der Quelle (gleiche Mod-Version) ins Ziel übernehmen, ältere Version dabei wie gewohnt nach
+  `CHANGELOG_FULL.md` verschieben (`Changelog.save`).
+- Beides als uncommittete Änderung zusammen mit dem Backport, im Ergebnis sichtbar.
+- **Vor Stufe 1 klären:** automatisch bei jedem Backport (Checkbox, standardmäßig an) oder als eigener Button
+  „Sync version + changelog“, auch ohne Commits?
+
 ## Einstieg für die neue Sitzung
 
 1. Dieses Dokument und `C:\Users\Nico\Desktop\CLAUDE.md` lesen.

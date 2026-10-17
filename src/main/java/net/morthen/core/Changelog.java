@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,8 +23,6 @@ public final class Changelog {
     public static final String FILE = "CHANGELOG.md";
     public static final String FULL_FILE = "CHANGELOG_FULL.md";
     public static final String FULL_HEADER = "# Changelog";
-    /** Keep-a-Changelog sections in output order. */
-    public static final List<String> SECTIONS = List.of("Added", "Changed", "Fixed", "Removed", "Performance");
 
     private static final Set<String> INTERNAL_TYPES = Set.of("chore", "ci", "docs", "refactor", "test", "build", "style");
     /** Housekeeping subjects: "bump versions", "Release 1.4.0", "1.4.0", "update changelog". */
@@ -53,25 +50,6 @@ public final class Changelog {
         public boolean hiddenByDefault() {
             return merge || message.type() != null && INTERNAL_TYPES.contains(message.type())
                     || VERSION_BUMP.matcher(message.subject()).matches();
-        }
-
-        /** Keep-a-Changelog section for the fallback generator. */
-        public String section() {
-            String subject = message.subject().toLowerCase(Locale.ROOT);
-            if (subject.startsWith("remove") || subject.startsWith("drop ") || "revert".equals(message.type())) {
-                return "Removed";
-            }
-            if (message.type() != null) {
-                return switch (message.type()) {
-                    case "feat" -> "Added";
-                    case "fix" -> "Fixed";
-                    case "perf" -> "Performance";
-                    default -> "Changed";
-                };
-            }
-            if (subject.startsWith("add") || subject.startsWith("support ")) return "Added";
-            if (subject.startsWith("fix")) return "Fixed";
-            return "Changed";
         }
     }
 
@@ -197,29 +175,25 @@ public final class Changelog {
 
     // ---------------------------------------------------------------- draft
 
-    /** {@code ## 1.4.0 – Minecraft 1.21.1 – 2026-10-17} */
-    public static String heading(String version, String mcVersion, LocalDate date) {
-        return "## " + version + (mcVersion == null || mcVersion.isBlank() ? "" : " – Minecraft " + mcVersion) + " – " + date;
+    /**
+     * {@code #### v2.1.7} – the mod version only: all Minecraft versions of a mod carry the same mod version, the
+     * Minecraft part in {@code version} just keeps the file names apart on CurseForge and Modrinth.
+     */
+    public static String heading(String version) {
+        return "#### v" + version;
     }
 
-    /** Draft without Claude: commit subjects grouped by Keep-a-Changelog section. */
+    /** Draft without Claude: one bullet per commit subject, oldest first, below the heading. */
     public static String fallback(String heading, List<Commit> commits) {
-        Map<String, List<String>> sections = new LinkedHashMap<>();
-        SECTIONS.forEach(s -> sections.put(s, new ArrayList<>()));
-        for (Commit c : commits.reversed()) { // oldest first reads more naturally
-            String subject = capitalize(c.message().subject());
-            if (subject.isEmpty()) continue;
-            sections.get(c.section()).add((c.message().breaking() ? "**Breaking:** " : "") + subject);
-        }
         StringBuilder sb = new StringBuilder(heading).append('\n');
-        sections.forEach((name, entries) -> {
-            if (entries.isEmpty()) return;
-            sb.append("\n### ").append(name).append('\n');
-            entries.forEach(e -> sb.append("- ").append(e).append('\n'));
-        });
-        if (sections.values().stream().allMatch(List::isEmpty)) {
-            sb.append("\n- No notable changes\n");
+        int entries = 0;
+        for (Commit c : commits.reversed()) {
+            String subject = c.message().subject().strip();
+            if (subject.isEmpty()) continue;
+            sb.append("- ").append(c.message().breaking() ? "**Breaking:** " : "").append(subject).append('\n');
+            entries++;
         }
+        if (entries == 0) sb.append("- no notable changes\n");
         return sb.toString();
     }
 
@@ -240,8 +214,9 @@ public final class Changelog {
                 - Answer with the Markdown entry only: no explanations, no code fences.
                 - The first line must be exactly:
                   %s
-                - Use these "### " sections in this order and leave out empty ones: Added, Changed, Fixed, Removed, Performance.
+                - Below it only a flat list of "- " bullet points: no sub-headings, no sections, no blank lines.
                 - English, short bullet points written for players and modpack authors, not for developers.
+                - Match the wording and style of the earlier entries if there are any.
                 - Merge duplicates and follow-up fixes of the same change into one bullet.
                 - Leave out internal changes (refactoring, CI, build scripts, docs, tests, version bumps).
                 - Mark breaking changes with a leading "**Breaking:**".
@@ -410,10 +385,5 @@ public final class Changelog {
 
     private static String abbrev(String sha) {
         return sha.length() > 7 ? sha.substring(0, 7) : sha;
-    }
-
-    private static String capitalize(String s) {
-        String t = s.strip();
-        return t.isEmpty() ? t : Character.toUpperCase(t.charAt(0)) + t.substring(1);
     }
 }

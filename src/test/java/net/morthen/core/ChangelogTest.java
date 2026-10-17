@@ -6,7 +6,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -109,30 +108,19 @@ class ChangelogTest {
     // ---------------------------------------------------------------- draft
 
     @Test
-    void fallbackGroupsBySection() {
+    void fallbackIsAFlatListInTheOldFormat() {
         List<Changelog.Commit> commits = List.of( // newest first, as from git log
                 commit("perf: faster chunk scanning"),
-                commit("fix: crash with empty slot"),
                 commit("feat!: new config format"),
-                commit("Remove legacy option"),
-                commit("feat: add config screen"));
-        String text = Changelog.fallback(Changelog.heading("1.4.0", "1.21.1", LocalDate.of(2026, 10, 17)), commits);
+                commit("adding Model Render Helper"));
+        assertEquals("#### v2.1.7", Changelog.heading("2.1.7"));
         assertEquals("""
-                ## 1.4.0 – Minecraft 1.21.1 – 2026-10-17
-
-                ### Added
-                - Add config screen
-                - **Breaking:** New config format
-
-                ### Fixed
-                - Crash with empty slot
-
-                ### Removed
-                - Remove legacy option
-
-                ### Performance
-                - Faster chunk scanning
-                """, text);
+                #### v2.1.7
+                - adding Model Render Helper
+                - **Breaking:** new config format
+                - faster chunk scanning
+                """, Changelog.fallback(Changelog.heading("2.1.7"), commits));
+        assertEquals("#### v2.1.7\n- no notable changes\n", Changelog.fallback("#### v2.1.7", List.of()));
     }
 
     @Test
