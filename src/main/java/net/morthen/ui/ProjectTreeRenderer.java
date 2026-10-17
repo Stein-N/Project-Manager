@@ -9,6 +9,12 @@ import javax.swing.tree.DefaultTreeCellRenderer;
 import java.awt.Component;
 
 final class ProjectTreeRenderer extends DefaultTreeCellRenderer {
+    private final java.util.function.Predicate<java.nio.file.Path> gradleRunning;
+
+    ProjectTreeRenderer(java.util.function.Predicate<java.nio.file.Path> gradleRunning) {
+        this.gradleRunning = gradleRunning;
+    }
+
     @Override
     public Component getTreeCellRendererComponent(JTree tree, Object value, boolean selected, boolean expanded,
                                                   boolean leaf, int row, boolean hasFocus) {
@@ -32,6 +38,9 @@ final class ProjectTreeRenderer extends DefaultTreeCellRenderer {
                 }
             } else {
                 sb.append("&nbsp;&nbsp;<font color='").append(muted).append("'>(no Git)</font>");
+            }
+            if (gradleRunning.test(p.path())) {
+                sb.append("&nbsp;<font color='#4caf50'>▶</font>");
             }
             if (p.versionMismatch()) {
                 sb.append("&nbsp;<font color='#e57373'>⚠</font>");

@@ -2,6 +2,7 @@ package net.morthen.ui;
 
 import net.morthen.core.Config;
 import net.morthen.core.Git;
+import net.morthen.core.GradleRunner;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
 import net.morthen.core.SystemActions;
@@ -64,9 +65,11 @@ public final class MainFrame extends JFrame {
     private static final Dimension WINDOW_SIZE = new Dimension(900, 560);
     private static final int LEFT_WIDTH = 290;
     private static final int LOG_HEIGHT = 120;
+    private static final int MAX_LOG_CHARS = 400_000;
 
     private final Config config;
     private final Git git;
+    private final GradleRunner gradle = new GradleRunner();
 
     private List<String> versions = List.of();
     private List<ModProject> projects = List.of();
@@ -88,7 +91,13 @@ public final class MainFrame extends JFrame {
         this.config = config;
         this.git = new Git(config.gitExecutable());
 
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                exitApplication();
+            }
+        });
         setSize(WINDOW_SIZE);
         setResizable(false);
         setLocationRelativeTo(null);
@@ -119,7 +128,7 @@ public final class MainFrame extends JFrame {
 
         tree.setRootVisible(true);
         tree.setShowsRootHandles(true);
-        tree.setCellRenderer(new ProjectTreeRenderer());
+        tree.setCellRenderer(new ProjectTreeRenderer(gradle::isRunning));
         tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
         tree.addTreeSelectionListener(e -> showDetails(selectedObject()));
         tree.addMouseListener(new MouseAdapter() {
@@ -419,6 +428,29 @@ public final class MainFrame extends JFrame {
         delete.setForeground(new java.awt.Color(0xE57373));
         actions.add(delete);
         stack.push(actions, 18);
+
+        if (GradleRunner.wrapper(p.path()).isPresent()) {
+            stack.push(Ui.heading("Gradle", "h4"), 6);
+            JPanel gradleActions = new JPanel(new GridLayout(0, 2, 8, 8));
+            String task = gradle.runningTask(p.path());
+            if (task != null) {
+                JButton stop = button("■ Stop " + task, () -> stopGradle(p));
+                stop.setForeground(new java.awt.Color(0xE57373));
+                gradleActions.add(stop);
+            } else {
+                gradleActions.add(button("Build", () -> runGradle(p, "build")));
+                gradleActions.add(button("Run client", () -> runGradle(p, "runClient")));
+                gradleActions.add(button("Run server", () -> runGradle(p, "runServer")));
+            }
+            gradleActions.add(button("Open build/libs", () -> openBuildLibs(p)));
+            long versionsOfMod = projects.stream()
+                    .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
+                    .count();
+            if (versionsOfMod > 1) {
+                gradleActions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
+            }
+            stack.push(gradleActions, 18);
+        }
 
         if (p.git()) {
             stack.push(Ui.heading("Switch branch", "h4"), 6);
@@ -999,6 +1031,89 @@ public final class MainFrame extends JFrame {
         });
     }
 
+    // =====================================================================  Gradle
+
+    private void runGradle(ModProject p, String task) {
+        String tag = "[" + p.mcVersion() + "/" + p.name() + "] ";
+        log("> gradlew " + task + "    (" + p.path() + ")");
+        try {
+            gradle.start(p.path(), task, line -> logAsync(tag + line), exit -> SwingUtilities.invokeLater(() -> {
+                log(exit == 0 ? "✔ " + tag + task + " finished" : "✖ " + tag + task + " ended (exit code " + exit + ")");
+                gradleStateChanged(p);
+            }));
+        } catch (Exception e) {
+            error("Gradle", e.getMessage());
+        }
+        gradleStateChanged(p);
+    }
+
+    private void stopGradle(ModProject p) {
+        log("Stopping " + gradle.runningTask(p.path()) + " in " + p.mcVersion() + "/" + p.name() + " …");
+        gradle.stop(p.path());
+    }
+
+    /** Repaints the tree and refreshes the details if they show {@code p}. */
+    private void gradleStateChanged(ModProject p) {
+        tree.repaint();
+        if (shownDetail instanceof ModProject shown && shown.path().equals(p.path())) {
+            showDetails(shown);
+        }
+    }
+
+    private void openBuildLibs(ModProject p) {
+        // Multiloader projects put their jars into <subproject>/build/libs
+        List<Path> candidates = new ArrayList<>(List.of(p.path().resolve("build/libs")));
+        for (String sub : List.of("fabric", "neoforge", "forge", "quilt", "common")) {
+            candidates.add(p.path().resolve(sub).resolve("build/libs"));
+        }
+        List<Path> existing = candidates.stream().filter(Files::isDirectory).toList();
+        if (existing.isEmpty()) {
+            error("No build output", "build/libs does not exist yet – run “Build” first.");
+        } else if (existing.size() == 1) {
+            run(() -> SystemActions.openExplorer(existing.getFirst()));
+        } else {
+            run(() -> SystemActions.openExplorer(p.path()));
+            log("Build output: " + String.join(", ", existing.stream().map(d -> p.path().relativize(d).toString()).toList()));
+        }
+    }
+
+    private void buildAllVersions(String modName) {
+        List<ModProject> targets = projects.stream()
+                .filter(o -> o.name().equals(modName) && GradleRunner.wrapper(o.path()).isPresent())
+                .filter(o -> !gradle.isRunning(o.path()))
+                .toList();
+        if (targets.isEmpty()) return;
+        background("Building " + targets.size() + " versions of " + modName + "…", () -> {
+            List<String> results = new ArrayList<>();
+            for (ModProject p : targets) {
+                String tag = "[" + p.mcVersion() + "/" + p.name() + "] ";
+                logAsync("> gradlew build    (" + p.path() + ")");
+                SwingUtilities.invokeLater(() -> gradleStateChanged(p));
+                int exit = gradle.run(p.path(), "build", line -> logAsync(tag + line));
+                SwingUtilities.invokeLater(() -> gradleStateChanged(p));
+                results.add((exit == 0 ? "✔ " : "✖ ") + p.mcVersion() + (exit == 0 ? "" : "  (exit code " + exit + ")"));
+            }
+            return results;
+        }, results -> {
+            results.forEach(this::log);
+            boolean allOk = results.stream().allMatch(r -> r.startsWith("✔"));
+            JOptionPane.showMessageDialog(this, String.join("\n", results), "Build results – " + modName,
+                    allOk ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+        });
+    }
+
+    private void exitApplication() {
+        int running = gradle.runningCount();
+        if (running > 0 && JOptionPane.showConfirmDialog(this,
+                running + " Gradle task(s) are still running. Stop them and exit?",
+                "Exit", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+            return;
+        }
+        gradle.stopAll();
+        dispose();
+        System.exit(0);
+    }
+
     // =====================================================================  Settings
 
     private void chooseMaster() {
@@ -1143,6 +1258,10 @@ public final class MainFrame extends JFrame {
     }
 
     private void log(String line) {
+        // Keep the log bounded – runClient can produce a lot of output
+        if (logArea.getDocument().getLength() > MAX_LOG_CHARS) {
+            logArea.replaceRange("", 0, logArea.getDocument().getLength() - MAX_LOG_CHARS / 2);
+        }
         logArea.append("[" + LocalTime.now().format(TIME) + "] " + line + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
     }
