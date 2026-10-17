@@ -91,6 +91,8 @@ public final class MainFrame extends JFrame {
     private javax.swing.Timer autoFetchTimer;
     private boolean autoFetchRunning;
     private Object shownDetail;
+    /** Title (first word) of the selected project tab, kept across rebuilds. */
+    private String selectedTab = "Overview";
     /** Latest dependency versions per project from "Check for updates" (session cache). */
     private final Map<Path, Map<String, String>> latestVersions = new java.util.HashMap<>();
 
@@ -367,10 +369,15 @@ public final class MainFrame extends JFrame {
     private void showDetails(Object obj) {
         shownDetail = obj;
         detailPanel.removeAll();
-        JComponent content;
         if (obj instanceof ModProject p) {
-            content = projectDetails(p);
-        } else if (obj instanceof VersionEntry v) {
+            // tabs bring their own scroll panes
+            detailPanel.add(projectDetails(p), BorderLayout.CENTER);
+            detailPanel.revalidate();
+            detailPanel.repaint();
+            return;
+        }
+        JComponent content;
+        if (obj instanceof VersionEntry v) {
             content = versionDetails(v);
         } else {
             content = overview();
@@ -384,91 +391,224 @@ public final class MainFrame extends JFrame {
         detailPanel.repaint();
     }
 
+    /** Header (always visible) + tabs. The selected tab is kept when the details are rebuilt. */
     private JComponent projectDetails(ModProject p) {
-        Ui.Stack stack = new Ui.Stack();
-        stack.setBorder(BorderFactory.createEmptyBorder(4, 12, 8, 12));
-
         ModMetadata meta = p.metadata();
         JPanel header = new JPanel(new BorderLayout(12, 0));
+        header.setBorder(BorderFactory.createEmptyBorder(4, 12, 10, 12));
         javax.swing.Icon headerIcon = meta != null ? Ui.modIcon(meta.icon(), 40) : null;
         if (headerIcon != null) header.add(new JLabel(headerIcon), BorderLayout.WEST);
         JPanel titles = new JPanel(new GridLayout(2, 1, 0, 2));
         titles.add(Ui.heading(p.name(), "h2"));
-        titles.add(Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")
-                + (meta != null && meta.id() != null ? "  ·  " + meta.id() : "")));
+        JLabel subtitle = Ui.muted("Minecraft " + p.mcVersion() + (p.loader() != null ? "  ·  " + p.loader() : "")
+                + (meta != null && meta.id() != null ? "  ·  " + meta.id() : ""));
+        subtitle.setToolTipText(subtitle.getText());
+        titles.add(subtitle);
         header.add(titles, BorderLayout.CENTER);
-        stack.push(header, 16);
-
-        JButton openIde = Ui.primary("  Open in IntelliJ  ");
+        JButton openIde = Ui.primary("Open in IntelliJ");
         openIde.addActionListener(e -> openInIntelliJ(p));
-        JPanel primaryRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        primaryRow.add(openIde);
-        stack.push(primaryRow, 18);
+        JPanel openRow = new JPanel(new java.awt.GridBagLayout()); // vertically centered
+        openRow.add(openIde);
+        header.add(openRow, BorderLayout.EAST);
 
+        javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
+        tabs.putClientProperty("JTabbedPane.tabHeight", 30);
+        tabs.addTab("Overview", scrollTab(overviewTab(p)));
+        if (p.git()) {
+            String gitTitle = "Git" + (p.changes() > 0 ? "  ●" + p.changes() : "") + (p.ahead() > 0 ? "  ↑" + p.ahead() : "")
+                    + (p.behind() > 0 ? "  ↓" + p.behind() : "");
+            tabs.addTab(gitTitle, scrollTab(gitTab(p)));
+        }
+        if (GradleRunner.wrapper(p.path()).isPresent()) {
+            tabs.addTab(gradle.isRunning(p.path()) ? "Gradle  ▶" : "Gradle", scrollTab(gradleTab(p)));
+        }
+        List<Dependencies.Entry> deps = Dependencies.read(p.path());
+        if (!deps.isEmpty() || (meta != null && !meta.dependencies().isEmpty())) {
+            tabs.addTab("Dependencies", scrollTab(dependenciesTab(p, deps)));
+        }
+        for (int i = 0; i < tabs.getTabCount(); i++) {
+            if (tabs.getTitleAt(i).startsWith(selectedTab)) tabs.setSelectedIndex(i);
+        }
+        tabs.addChangeListener(e -> {
+            String title = tabs.getTitleAt(tabs.getSelectedIndex());
+            selectedTab = title.contains(" ") ? title.substring(0, title.indexOf(' ')) : title;
+        });
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(tabs, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private static JScrollPane scrollTab(Ui.Stack content) {
+        content.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
+        JScrollPane scroll = new JScrollPane(content.finish(), JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(0));
+        return scroll;
+    }
+
+    private Ui.Stack overviewTab(ModProject p) {
+        Ui.Stack stack = new Ui.Stack();
+        ModMetadata meta = p.metadata();
         Ui.Form info = new Ui.Form();
         info.add("Path", Ui.copyable(p.path().toString()));
-        if (p.git()) {
-            info.add("Branch", Ui.copyable(p.branch()));
-            info.add("Upstream", Ui.copyable(p.upstream() == null ? "– (no tracking branch)" : p.upstream()));
-            info.add("Status", new JLabel(statusHtml(p)));
-            info.add("Remote", Ui.copyable(p.remoteUrl().isEmpty() ? "–" : p.remoteUrl()));
-            info.add("Repository", new JLabel(repoDescription(p)));
-            List<ModProject> siblings = siblings(p);
-            if (!siblings.isEmpty()) {
-                JPanel links = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-                for (ModProject s : siblings) {
-                    JButton link = new JButton(s.mcVersion() + (s.branch() != null ? "  ⎇ " + s.branch() : ""));
-                    link.putClientProperty("JButton.buttonType", "roundRect");
-                    link.setToolTipText(s.path().toString());
-                    link.addActionListener(e -> reselect(s.path()));
-                    links.add(link);
-                }
-                info.add("Other versions", links);
-            }
-        } else {
-            info.add("Git", new JLabel("Not a Git repository"));
-        }
-        if (p.modVersion() != null) info.add("Mod version", Ui.copyable(p.modVersion()));
+        if (meta != null && meta.name() != null) info.add("Name", Ui.copyable(meta.name()));
+        if (meta != null && meta.id() != null) info.add("Mod ID", Ui.copyable(meta.id()));
+        String version = meta != null && meta.version() != null ? meta.version() : p.modVersion();
+        if (version != null) info.add("Mod version", Ui.copyable(version));
         if (p.gradleMcVersion() != null) {
             String text = p.gradleMcVersion();
-            JLabel label = new JLabel(p.versionMismatch()
+            info.add("MC (gradle)", new JLabel(p.versionMismatch()
                     ? "<html>" + Ui.html(text) + " <font color='#d32f2f'>⚠ does not match folder “" + Ui.html(p.mcVersion()) + "”</font></html>"
-                    : text);
-            info.add("MC (gradle)", label);
+                    : text));
         }
-        stack.push(info, 18);
-
         if (meta != null) {
-            stack.push(Ui.heading("Mod", "h4"), 6);
-            Ui.Form mod = new Ui.Form();
-            if (meta.name() != null) mod.add("Name", Ui.copyable(meta.name()));
-            if (meta.id() != null) mod.add("Mod ID", Ui.copyable(meta.id()));
-            if (meta.version() != null) mod.add("Version", Ui.copyable(meta.version()));
-            if (!meta.authors().isEmpty()) mod.add("Authors", Ui.copyable(String.join(", ", meta.authors())));
+            if (!meta.authors().isEmpty()) info.add("Authors", Ui.copyable(String.join(", ", meta.authors())));
             if (meta.description() != null && !meta.description().isBlank()) {
                 String description = meta.description().strip().replaceAll("\\s+", " ");
-                if (description.length() > 160) description = description.substring(0, 157) + "…";
-                JLabel d = new JLabel("<html><body style='width:330px'>" + Ui.html(description) + "</body></html>");
+                if (description.length() > 200) description = description.substring(0, 197) + "…";
+                JLabel d = new JLabel("<html><body style='width:300px'>" + Ui.html(description) + "</body></html>");
                 d.setToolTipText(meta.description());
-                mod.add("Description", d);
+                info.add("Description", d);
             }
-            if (!meta.dependencies().isEmpty()) {
-                StringBuilder deps = new StringBuilder("<html>");
-                String muted = Ui.hex(UIManager.getColor("Label.disabledForeground"));
-                for (ModMetadata.Dependency d : meta.dependencies()) {
-                    deps.append("<b>").append(Ui.html(d.modId())).append("</b> ").append(Ui.html(d.version()))
-                            .append(d.required() ? "" : " <font color='" + muted + "'>(optional)</font>").append("<br>");
-                }
-                mod.add("Depends on", new JLabel(deps.append("</html>").toString()));
-            }
-            mod.add("File", Ui.copyable(meta.file()));
-            stack.push(mod, 18);
+            info.add("Metadata", Ui.copyable(meta.file()));
         }
+        stack.push(info, 14);
 
-        List<Dependencies.Entry> deps = Dependencies.read(p.path());
+        JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
+        actions.add(button("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
+        actions.add(button("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
+        actions.add(button("Move / rename…", () -> moveProject(p)));
+        JButton delete = button("Remove…", () -> deleteProject(p));
+        delete.setForeground(new java.awt.Color(0xD32F2F));
+        actions.add(delete);
+        stack.push(actions, 0);
+        return stack;
+    }
+
+    private Ui.Stack gitTab(ModProject p) {
+        Ui.Stack stack = new Ui.Stack();
+        Ui.Form info = new Ui.Form();
+        info.add("Branch", Ui.copyable(p.branch()));
+        info.add("Upstream", Ui.copyable(p.upstream() == null ? "– (no tracking branch)" : p.upstream()));
+        info.add("Status", new JLabel(statusHtml(p)));
+        info.add("Remote", Ui.copyable(p.remoteUrl().isEmpty() ? "–" : p.remoteUrl()));
+        info.add("Repository", new JLabel(repoDescription(p)));
+        List<ModProject> siblings = siblings(p);
+        if (!siblings.isEmpty()) {
+            // grid instead of a flow layout so the chips wrap inside the fixed width
+            JPanel links = new JPanel(new GridLayout(0, 3, 6, 6));
+            for (ModProject s : siblings) {
+                JButton link = new JButton(s.mcVersion() + (s.branch() != null && !s.branch().equals(s.mcVersion()) ? "  ⎇ " + s.branch() : ""));
+                link.putClientProperty("JButton.buttonType", "roundRect");
+                link.setToolTipText(s.path() + (s.branch() != null ? "  [" + s.branch() + "]" : ""));
+                link.addActionListener(e -> reselect(s.path()));
+                links.add(link);
+            }
+            info.add("Other versions", links);
+        }
+        stack.push(info, 14);
+
+        JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
+        actions.add(button("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
+        actions.add(button("Pull (fast-forward)", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
+        JButton commit = button(p.changes() > 0 ? "Commit (" + p.changes() + ")…" : "Commit…", () -> commitDialog(p));
+        commit.setEnabled(p.changes() > 0);
+        actions.add(commit);
+        boolean canPush = p.ahead() > 0 || (p.upstream() == null && !p.remoteUrl().isEmpty() && p.branch() != null);
+        JButton push = button(p.upstream() == null ? "Push (set upstream)" : "Push" + (p.ahead() > 0 ? " (" + p.ahead() + ")" : ""), () -> push(p));
+        push.setEnabled(canPush);
+        actions.add(push);
+        actions.add(button("Add version (worktree)…", () -> addWorktree(p)));
+        if (p.standaloneClone()) {
+            actions.add(button("Convert to shared repo…", () -> convertToShared(p)));
+        }
+        stack.push(actions, 16);
+
+        stack.push(Ui.heading("Switch branch", "h4"), 6);
+        JComboBox<String> branches = new JComboBox<>(new String[]{"Loading…"});
+        branches.setEnabled(false);
+        JButton checkout = new JButton("Checkout");
+        checkout.setEnabled(false);
+        checkout.addActionListener(e -> {
+            Object b = branches.getSelectedItem();
+            if (b != null && !b.toString().equals(p.branch())) {
+                if (p.changes() > 0 && JOptionPane.showConfirmDialog(this,
+                        "There are " + p.changes() + " uncommitted change(s). Switch anyway?",
+                        "Switch branch", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                    return;
+                }
+                gitTask("Checkout " + b, p.path(), "checkout", b.toString());
+            }
+        });
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.add(branches, BorderLayout.CENTER);
+        row.add(checkout, BorderLayout.EAST);
+        stack.push(row, 4);
+        stack.push(Ui.muted("Tip: for parallel versions, use “Add version (worktree)…” instead."), 0);
+
+        new SwingWorker<List<String>, Void>() {
+            @Override
+            protected List<String> doInBackground() {
+                return git.branches(p.path());
+            }
+
+            @Override
+            protected void done() {
+                if (shownDetail != p) return;
+                try {
+                    branches.removeAllItems();
+                    get().forEach(branches::addItem);
+                    branches.setSelectedItem(p.branch());
+                    branches.setEnabled(true);
+                    checkout.setEnabled(true);
+                } catch (Exception ignored) {
+                    branches.removeAllItems();
+                }
+            }
+        }.execute();
+        return stack;
+    }
+
+    private Ui.Stack gradleTab(ModProject p) {
+        Ui.Stack stack = new Ui.Stack();
+        String task = gradle.runningTask(p.path());
+        if (task != null) {
+            stack.push(new JLabel("<html><font color='#2e7d32'>▶</font> <b>" + Ui.html(task) + "</b> is running – output in the Git log below.</html>"), 10);
+        }
+        JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
+        if (task != null) {
+            JButton stop = button("■ Stop " + task, () -> stopGradle(p));
+            stop.setForeground(new java.awt.Color(0xD32F2F));
+            actions.add(stop);
+        } else {
+            actions.add(button("Build", () -> runGradle(p, "build")));
+            actions.add(button("Run client", () -> runGradle(p, "runClient")));
+            actions.add(button("Run server", () -> runGradle(p, "runServer")));
+        }
+        actions.add(button("Open build/libs", () -> openBuildLibs(p)));
+        long versionsOfMod = projects.stream()
+                .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
+                .count();
+        if (versionsOfMod > 1) {
+            actions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
+        }
+        stack.push(actions, 14);
+        Ui.Form info = new Ui.Form();
+        Dependencies.wrapperVersion(p.path()).ifPresent(v -> info.add("Gradle wrapper", Ui.copyable(v)));
+        info.add("Wrapper", Ui.copyable(GradleRunner.wrapper(p.path()).map(Path::toString).orElse("–")));
+        stack.push(info, 0);
+        return stack;
+    }
+
+    private Ui.Stack dependenciesTab(ModProject p, List<Dependencies.Entry> deps) {
+        Ui.Stack stack = new Ui.Stack();
         if (!deps.isEmpty()) {
             JPanel depHeader = new JPanel(new BorderLayout());
-            depHeader.add(Ui.heading("Dependencies", "h4"), BorderLayout.WEST);
+            depHeader.add(Ui.heading("Versions (gradle.properties)", "h4"), BorderLayout.WEST);
             JButton check = button("Check for updates", () -> checkUpdates(p, deps));
             check.putClientProperty("JButton.buttonType", "toolBarButton");
             depHeader.add(check, BorderLayout.EAST);
@@ -486,8 +626,7 @@ public final class MainFrame extends JFrame {
                         failed.setToolTipText(l.substring(1));
                         status.add(failed);
                     } else if (Dependencies.isNewer(l, d.value())) {
-                        JLabel newer = new JLabel("<html><font color='#c77800'>⬆ " + Ui.html(l) + "</font></html>");
-                        status.add(newer);
+                        status.add(new JLabel("<html><font color='#c77800'>⬆ " + Ui.html(l) + "</font></html>"));
                         if (d.updatable()) {
                             JButton update = button("Update", () -> updateDependency(p, d, l));
                             update.putClientProperty("JButton.buttonType", "roundRect");
@@ -500,101 +639,20 @@ public final class MainFrame extends JFrame {
                 }
                 form.add(d.label(), row);
             }
-            stack.push(form, 18);
+            stack.push(form, 16);
         }
-
-        stack.push(Ui.heading("Actions", "h4"), 6);
-        JPanel actions = new JPanel(new GridLayout(0, 2, 8, 8));
-        actions.add(button("Open in Explorer", () -> run(() -> SystemActions.openExplorer(p.path()))));
-        actions.add(button("Open terminal", () -> run(() -> SystemActions.openTerminal(p.path()))));
-        if (p.git()) {
-            actions.add(button("Fetch", () -> gitTask("Fetch " + p.name(), p.path(), "fetch", "--all", "--prune")));
-            actions.add(button("Pull (fast-forward)", () -> gitTask("Pull " + p.name(), p.path(), "pull", "--ff-only")));
-            if (p.changes() > 0) {
-                actions.add(button("Commit…", () -> commitDialog(p)));
+        ModMetadata meta = p.metadata();
+        if (meta != null && !meta.dependencies().isEmpty()) {
+            stack.push(Ui.heading("Declared in " + Path.of(meta.file()).getFileName(), "h4"), 4);
+            Ui.Form form = new Ui.Form();
+            for (ModMetadata.Dependency d : meta.dependencies()) {
+                form.add(d.modId(), new JLabel("<html>" + Ui.html(d.version())
+                        + (d.required() ? "" : " <font color='" + Ui.hex(UIManager.getColor("Label.disabledForeground")) + "'>(optional)</font>")
+                        + "</html>"));
             }
-            if (p.ahead() > 0 || (p.upstream() == null && !p.remoteUrl().isEmpty() && p.branch() != null)) {
-                actions.add(button(p.upstream() == null ? "Push (set upstream)" : "Push (" + p.ahead() + ")", () -> push(p)));
-            }
-            actions.add(button("Add version (worktree)…", () -> addWorktree(p)));
-            if (p.standaloneClone()) {
-                actions.add(button("Convert to shared repo…", () -> convertToShared(p)));
-            }
+            stack.push(form, 0);
         }
-        actions.add(button("Move / rename…", () -> moveProject(p)));
-        JButton delete = button("Remove…", () -> deleteProject(p));
-        delete.setForeground(new java.awt.Color(0xD32F2F));
-        actions.add(delete);
-        stack.push(actions, 18);
-
-        if (GradleRunner.wrapper(p.path()).isPresent()) {
-            stack.push(Ui.heading("Gradle", "h4"), 6);
-            JPanel gradleActions = new JPanel(new GridLayout(0, 2, 8, 8));
-            String task = gradle.runningTask(p.path());
-            if (task != null) {
-                JButton stop = button("■ Stop " + task, () -> stopGradle(p));
-                stop.setForeground(new java.awt.Color(0xD32F2F));
-                gradleActions.add(stop);
-            } else {
-                gradleActions.add(button("Build", () -> runGradle(p, "build")));
-                gradleActions.add(button("Run client", () -> runGradle(p, "runClient")));
-                gradleActions.add(button("Run server", () -> runGradle(p, "runServer")));
-            }
-            gradleActions.add(button("Open build/libs", () -> openBuildLibs(p)));
-            long versionsOfMod = projects.stream()
-                    .filter(o -> o.name().equals(p.name()) && GradleRunner.wrapper(o.path()).isPresent())
-                    .count();
-            if (versionsOfMod > 1) {
-                gradleActions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
-            }
-            stack.push(gradleActions, 18);
-        }
-
-        if (p.git()) {
-            stack.push(Ui.heading("Switch branch", "h4"), 6);
-            JComboBox<String> branches = new JComboBox<>(new String[]{"Loading…"});
-            branches.setEnabled(false);
-            JButton checkout = new JButton("Checkout");
-            checkout.setEnabled(false);
-            checkout.addActionListener(e -> {
-                Object b = branches.getSelectedItem();
-                if (b != null && !b.toString().equals(p.branch())) {
-                    if (p.changes() > 0 && JOptionPane.showConfirmDialog(this,
-                            "There are " + p.changes() + " uncommitted change(s). Switch anyway?",
-                            "Switch branch", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
-                        return;
-                    }
-                    gitTask("Checkout " + b, p.path(), "checkout", b.toString());
-                }
-            });
-            JPanel row = new JPanel(new BorderLayout(8, 0));
-            row.add(branches, BorderLayout.CENTER);
-            row.add(checkout, BorderLayout.EAST);
-            stack.push(row, 4);
-            stack.push(Ui.muted("Tip: for parallel versions, use “Add version (worktree)…” instead."), 0);
-
-            new SwingWorker<List<String>, Void>() {
-                @Override
-                protected List<String> doInBackground() {
-                    return git.branches(p.path());
-                }
-
-                @Override
-                protected void done() {
-                    if (shownDetail != p) return;
-                    try {
-                        branches.removeAllItems();
-                        get().forEach(branches::addItem);
-                        branches.setSelectedItem(p.branch());
-                        branches.setEnabled(true);
-                        checkout.setEnabled(true);
-                    } catch (Exception ignored) {
-                        branches.removeAllItems();
-                    }
-                }
-            }.execute();
-        }
-        return stack.finish();
+        return stack;
     }
 
     private static String statusHtml(ModProject p) {

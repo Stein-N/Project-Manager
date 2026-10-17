@@ -46,6 +46,8 @@ final class Ui {
         field.setBorder(null);
         field.setOpaque(false);
         field.setCaretPosition(0);
+        // never scroll the surrounding view to the caret
+        if (field.getCaret() instanceof javax.swing.text.DefaultCaret caret) caret.setUpdatePolicy(javax.swing.text.DefaultCaret.NEVER_UPDATE);
         field.setToolTipText(text == null || text.isEmpty() ? null : text);
         return field;
     }
