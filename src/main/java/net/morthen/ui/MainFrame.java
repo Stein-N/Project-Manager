@@ -1,6 +1,7 @@
 package net.morthen.ui;
 
 import net.morthen.core.Config;
+import net.morthen.core.Dependencies;
 import net.morthen.core.Git;
 import net.morthen.core.GitChanges;
 import net.morthen.core.GradleRunner;
@@ -89,6 +90,8 @@ public final class MainFrame extends JFrame {
     private javax.swing.Timer autoFetchTimer;
     private boolean autoFetchRunning;
     private Object shownDetail;
+    /** Latest dependency versions per project from "Check for updates" (session cache). */
+    private final Map<Path, Map<String, String>> latestVersions = new java.util.HashMap<>();
 
     public MainFrame(Config config) {
         super("MC Mod Project Manager");
@@ -449,6 +452,44 @@ public final class MainFrame extends JFrame {
             }
             mod.add("File", Ui.copyable(meta.file()));
             stack.push(mod, 18);
+        }
+
+        List<Dependencies.Entry> deps = Dependencies.read(p.path());
+        if (!deps.isEmpty()) {
+            JPanel depHeader = new JPanel(new BorderLayout());
+            depHeader.add(Ui.heading("Dependencies", "h4"), BorderLayout.WEST);
+            JButton check = button("Check for updates", () -> checkUpdates(p, deps));
+            check.putClientProperty("JButton.buttonType", "toolBarButton");
+            depHeader.add(check, BorderLayout.EAST);
+            stack.push(depHeader, 4);
+            Map<String, String> latest = latestVersions.getOrDefault(p.path(), Map.of());
+            Ui.Form form = new Ui.Form();
+            for (Dependencies.Entry d : deps) {
+                JPanel row = new JPanel(new BorderLayout(8, 0));
+                row.add(Ui.copyable(d.value()), BorderLayout.CENTER);
+                String l = latest.get(dependencyKey(d));
+                if (l != null) {
+                    JPanel status = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+                    if (l.startsWith("!")) {
+                        JLabel failed = Ui.muted("? lookup failed");
+                        failed.setToolTipText(l.substring(1));
+                        status.add(failed);
+                    } else if (Dependencies.isNewer(l, d.value())) {
+                        JLabel newer = new JLabel("<html><font color='#c77800'>⬆ " + Ui.html(l) + "</font></html>");
+                        status.add(newer);
+                        if (d.updatable()) {
+                            JButton update = button("Update", () -> updateDependency(p, d, l));
+                            update.putClientProperty("JButton.buttonType", "roundRect");
+                            status.add(update);
+                        }
+                    } else {
+                        status.add(new JLabel("<html><font color='#2e7d32'>✔ latest</font></html>"));
+                    }
+                    row.add(status, BorderLayout.EAST);
+                }
+                form.add(d.label(), row);
+            }
+            stack.push(form, 18);
         }
 
         stack.push(Ui.heading("Actions", "h4"), 6);
@@ -1146,6 +1187,47 @@ public final class MainFrame extends JFrame {
             log("✔ Pushed");
             reloadAndSelect(path, null);
         });
+    }
+
+    // =====================================================================  Dependencies
+
+    private static String dependencyKey(Dependencies.Entry d) {
+        return d.key() != null ? d.key() : "gradle-wrapper";
+    }
+
+    /** Looks up the latest versions; results (or "!error") are kept per project for this session. */
+    private void checkUpdates(ModProject p, List<Dependencies.Entry> deps) {
+        String mc = p.gradleMcVersion() != null ? p.gradleMcVersion() : p.mcVersion();
+        String parchmentMc = Dependencies.parchmentMinecraft(p.path());
+        background("Checking for updates…", () -> {
+            Map<String, String> result = new LinkedHashMap<>();
+            for (Dependencies.Entry d : deps) {
+                if (!d.checkable()) continue;
+                try {
+                    Dependencies.latest(d, mc, parchmentMc).ifPresent(v -> result.put(dependencyKey(d), v));
+                } catch (Exception e) {
+                    result.put(dependencyKey(d), "!" + e.getMessage());
+                }
+            }
+            return result;
+        }, result -> {
+            latestVersions.put(p.path(), result);
+            long updates = deps.stream()
+                    .filter(d -> Dependencies.isNewer(result.getOrDefault(dependencyKey(d), "!"), d.value()))
+                    .count();
+            log(p.mcVersion() + "/" + p.name() + ": " + (updates == 0 ? "all dependencies up to date" : updates + " update(s) available"));
+            if (shownDetail instanceof ModProject shown && shown.path().equals(p.path())) showDetails(shown);
+        });
+    }
+
+    private void updateDependency(ModProject p, Dependencies.Entry d, String version) {
+        try {
+            Dependencies.update(p.path(), d.key(), version);
+            log("Updated " + d.key() + ": " + d.value() + " → " + version + "  (" + p.mcVersion() + "/" + p.name() + ")");
+            reloadAndSelect(p.path(), null);
+        } catch (Exception e) {
+            error("Update failed", e.getMessage());
+        }
     }
 
     // =====================================================================  Gradle
