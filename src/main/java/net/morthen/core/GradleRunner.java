@@ -69,7 +69,13 @@ public final class GradleRunner {
      * (on a background thread).
      */
     public void start(Path project, String task, Consumer<String> out, IntConsumer done) throws IOException {
-        Process process = launch(project, task);
+        start(project, task, Map.of(), out, done);
+    }
+
+    /** Like {@link #start(Path, String, Consumer, IntConsumer)} with additional environment variables. */
+    public void start(Path project, String task, Map<String, String> env, Consumer<String> out, IntConsumer done)
+            throws IOException {
+        Process process = launch(project, task, env);
         Thread reader = new Thread(() -> done.accept(pump(project, task, process, out)), "gradle-" + task);
         reader.setDaemon(true);
         reader.start();
@@ -77,7 +83,7 @@ public final class GradleRunner {
 
     /** Runs {@code task} and blocks until it has finished. */
     public int run(Path project, String task, Consumer<String> out) throws IOException {
-        return pump(project, task, launch(project, task), out);
+        return pump(project, task, launch(project, task, Map.of()), out);
     }
 
     /** Stops one task including all child processes (e.g. a running Minecraft client). */
@@ -99,7 +105,7 @@ public final class GradleRunner {
                 .count();
     }
 
-    private synchronized Process launch(Path project, String task) throws IOException {
+    private synchronized Process launch(Path project, String task, Map<String, String> env) throws IOException {
         if (isRunning(project, task)) {
             throw new IOException(task + " is already running.");
         }
@@ -114,10 +120,11 @@ public final class GradleRunner {
         command.add(wrapper.toAbsolutePath().toString());
         command.addAll(List.of(task.trim().split("\\s+"))); // e.g. "tasks --all"
         command.add("--console=plain");
-        Process process = new ProcessBuilder(command)
+        ProcessBuilder builder = new ProcessBuilder(command)
                 .directory(project.toFile())
-                .redirectErrorStream(true)
-                .start();
+                .redirectErrorStream(true);
+        builder.environment().putAll(env); // Gradle forwards the client environment to the daemon
+        Process process = builder.start();
         process.getOutputStream().close();
         running.put(new Key(project, task), new Running(process));
         return process;

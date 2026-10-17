@@ -2,6 +2,7 @@ package net.morthen.ui;
 
 import net.morthen.core.Config;
 import net.morthen.core.Dependencies;
+import net.morthen.core.EnvFile;
 import net.morthen.core.Git;
 import net.morthen.core.GitChanges;
 import net.morthen.core.GradleRunner;
@@ -607,6 +608,16 @@ public final class MainFrame extends JFrame {
         for (GradleTasks.Group group : groups) {
             boolean general = group.name().equals("General");
             stack.push(Ui.heading(general ? "General" : group.name() + " · game tests", "h4"), 6);
+            if (general) {
+                int envCount = envVariables().size();
+                JPanel envRow = new JPanel(new BorderLayout(8, 0));
+                envRow.add(Ui.muted(envCount == 0 ? "Publish tasks: no environment variables set (.env)"
+                        : "Publish tasks use " + envCount + " variable(s) from .env"), BorderLayout.CENTER);
+                JButton editEnv = button("Edit .env…", this::editEnvironment);
+                editEnv.putClientProperty("JButton.buttonType", "toolBarButton");
+                envRow.add(editEnv, BorderLayout.EAST);
+                stack.push(envRow, 6);
+            }
             JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
             for (GradleTasks.RunTask t : group.tasks()) {
                 JButton b = gradleButton(p, t.path(), t.label());
@@ -783,6 +794,7 @@ public final class MainFrame extends JFrame {
         actions.add(button("Import local project…", () -> importProject(null)));
         actions.add(button("New Minecraft version…", this::createVersion));
         actions.add(button("Open master folder", () -> run(() -> SystemActions.openExplorer(master.get()))));
+        actions.add(button("Environment variables (.env)…", this::editEnvironment));
         stack.push(actions, 24);
 
         stack.push(Ui.heading("Shared repositories (" + Worktrees.REPOS_DIR + ")", "h3"), 4);
@@ -1356,16 +1368,25 @@ public final class MainFrame extends JFrame {
 
     private void runGradle(ModProject p, String task) {
         String name = task.substring(task.lastIndexOf(':') + 1);
-        if ((name.equals("publish") || name.equals("publishMods")) && JOptionPane.showConfirmDialog(this,
-                "<html><b>gradlew " + Ui.html(task) + "</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for "
-                        + Ui.html(p.mcVersion() + "/" + p.name()) + ".<br><br>Run it now?</html>",
-                "Publish", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
-            return;
+        boolean publish = name.equals("publish") || name.equals("publishMods");
+        Map<String, String> env = Map.of();
+        if (publish) {
+            env = envVariables();
+            String vars = env.isEmpty()
+                    ? "<font color='#c77800'>No variables in <tt>.env</tt> – tokens may be missing.</font>"
+                    : "Environment from <tt>.env</tt>: " + Ui.html(String.join(", ", env.keySet()));
+            if (JOptionPane.showConfirmDialog(this,
+                    "<html><b>gradlew " + Ui.html(task) + "</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for "
+                            + Ui.html(p.mcVersion() + "/" + p.name()) + ".<br>" + vars + "<br><br>Run it now?</html>",
+                    "Publish", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+                return;
+            }
         }
         String tag = "[" + p.mcVersion() + "/" + p.name() + "] ";
-        log("> gradlew " + task + "    (" + p.path() + ")");
+        // only the names are logged – values usually are secrets
+        log("> gradlew " + task + (env.isEmpty() ? "" : "  (with " + env.size() + " variable(s) from .env)") + "    (" + p.path() + ")");
         try {
-            gradle.start(p.path(), task, line -> logAsync(tag + line), exit -> SwingUtilities.invokeLater(() -> {
+            gradle.start(p.path(), task, env, line -> logAsync(tag + line), exit -> SwingUtilities.invokeLater(() -> {
                 log(exit == 0 ? "✔ " + tag + task + " finished" : "✖ " + tag + task + " ended (exit code " + exit + ")");
                 gradleStateChanged(p);
             }));
@@ -1373,6 +1394,25 @@ public final class MainFrame extends JFrame {
             error("Gradle", e.getMessage());
         }
         gradleStateChanged(p);
+    }
+
+    /** Variables from {@code <master>/.env}; empty if there is none or it cannot be read. */
+    private Map<String, String> envVariables() {
+        Optional<Path> master = config.masterPath();
+        if (master.isEmpty()) return Map.of();
+        try {
+            return EnvFile.load(master.get());
+        } catch (Exception e) {
+            log("✖ Could not read .env: " + e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private void editEnvironment() {
+        requireMaster().ifPresent(master -> {
+            EnvDialog.show(this, master, this::log);
+            if (shownDetail != null) showDetails(shownDetail);
+        });
     }
 
     /** Root tasks: "General" for multiloader builds, otherwise the loader of the project. */
