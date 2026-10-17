@@ -608,27 +608,26 @@ public final class MainFrame extends JFrame {
         if (versionsOfMod > 1) {
             actions.add(button("Build all " + versionsOfMod + " versions", () -> buildAllVersions(p.name())));
         }
+        boolean detectingNow = detectingTasks.contains(p.path());
+        JButton refreshTasks = button(detectingNow ? "Refreshing Gradle tasks…" : "↻ Refresh Gradle tasks", () -> detectTasks(p));
+        refreshTasks.setToolTipText("Reads the available tasks again (gradlew tasks --all)");
+        refreshTasks.setEnabled(!detectingNow && gradle.canStart(p.path(), "tasks --all"));
+        actions.add(refreshTasks);
         stack.push(actions, 16);
 
-        // --- run configurations, grouped by loader
+        // --- build, game test and publish tasks, grouped by loader
         Optional<GradleTasks.Cached> cached = GradleTasks.cached(p.path());
         boolean detecting = detectingTasks.contains(p.path());
-        JPanel runHeader = new JPanel(new BorderLayout());
-        runHeader.add(Ui.heading("Run configurations", "h4"), BorderLayout.WEST);
-        JButton detect = button(detecting ? "Detecting…" : cached.isPresent() ? "↻ Refresh" : "Detect", () -> detectTasks(p));
-        detect.putClientProperty("JButton.buttonType", "toolBarButton");
-        detect.setEnabled(!detecting && gradle.canStart(p.path(), "tasks --all"));
-        runHeader.add(detect, BorderLayout.EAST);
-        stack.push(runHeader, 6);
+        stack.push(Ui.heading("Gradle tasks per loader", "h4"), 6);
 
         if (cached.isEmpty()) {
             stack.push(Ui.muted(detecting
-                    ? "<html>Asking Gradle for the available run tasks… (output in the log)</html>"
-                    : "<html>Run configurations are read from Gradle (<tt>gradlew tasks --all</tt>). The first run of a "
-                    + "fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
+                    ? "<html>Asking Gradle for the available tasks… (output in the log)</html>"
+                    : "<html>Build, game test and publish tasks are read from Gradle – click “Refresh Gradle tasks”. "
+                    + "The first run of a fresh project can take a while because Loom/NeoForge set up Minecraft.</html>"), 14);
         } else {
             List<GradleTasks.Group> groups = GradleTasks.group(cached.get().tasks(), rootTaskGroupName(p));
-            if (groups.isEmpty()) stack.push(Ui.muted("No run tasks found."), 14);
+            if (groups.isEmpty()) stack.push(Ui.muted("No build, game test or publish tasks found in the subprojects."), 14);
             for (GradleTasks.Group group : groups) {
                 stack.push(Ui.heading(group.name(), "semibold"), 4);
                 JPanel buttons = new JPanel(new GridLayout(0, 3, 6, 6));
@@ -643,7 +642,8 @@ public final class MainFrame extends JFrame {
             String when = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
                     .format(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(cached.get().detected()),
                             java.time.ZoneId.systemDefault()));
-            stack.push(Ui.muted(cached.get().tasks().size() + " run tasks · detected " + when
+            int offered = groups.stream().mapToInt(g -> g.tasks().size()).sum();
+            stack.push(Ui.muted(offered + " tasks · detected " + when
                     + (cached.get().stale() ? " · build files changed since" : "")), 14);
         }
         // detect automatically when it is cheap (project was configured before) and nothing is known yet / outdated
@@ -1357,6 +1357,13 @@ public final class MainFrame extends JFrame {
     // =====================================================================  Gradle
 
     private void runGradle(ModProject p, String task) {
+        String name = task.substring(task.lastIndexOf(':') + 1);
+        if ((name.equals("publish") || name.equals("publishMods")) && JOptionPane.showConfirmDialog(this,
+                "<html><b>gradlew " + Ui.html(task) + "</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for "
+                        + Ui.html(p.mcVersion() + "/" + p.name()) + ".<br><br>Run it now?</html>",
+                "Publish", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+            return;
+        }
         String tag = "[" + p.mcVersion() + "/" + p.name() + "] ";
         log("> gradlew " + task + "    (" + p.path() + ")");
         try {

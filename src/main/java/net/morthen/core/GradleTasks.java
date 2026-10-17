@@ -21,12 +21,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Detects the run tasks (runClient, runServer, testmod and gametest runs, data generation …) of a Gradle project
- * and groups them by loader subproject. Results are cached on disk until a build file changes.
+ * Detects the Gradle tasks the tool offers – build, game tests, publish and publishMods – and groups them by loader
+ * subproject. Client/server runs are intentionally not offered. Results are cached on disk until a build file changes.
  */
 public final class GradleTasks {
     /**
-     * @param path task path, always absolute (":runClient", ":fabric:runClient") so only that project's task runs
+     * @param path task path. Subproject tasks are absolute (":fabric:build") so only that loader runs; root
+     *             publish tasks are stored by name ("publishMods") so Gradle runs them in every subproject.
      */
     public record RunTask(String path, String description) {
         /** Subproject name ("" for the root project). */
@@ -39,26 +40,28 @@ public final class GradleTasks {
             return path.substring(path.lastIndexOf(':') + 1);
         }
 
-        /** "runTestmodClient" → "Testmod client". */
+        /** "runGameTestServer" → "Game test server", "publishMods" → "Publish mods". */
         public String label() {
-            String rest = name().startsWith("run") ? name().substring(3) : name();
+            String n = name();
+            String rest = n.length() > 3 && n.startsWith("run") && Character.isUpperCase(n.charAt(3)) ? n.substring(3) : n;
             String words = rest.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replaceAll("([A-Z]+)([A-Z][a-z])", "$1 $2");
-            if (words.isBlank()) return name();
+            if (words.isBlank()) return n;
             String lower = words.toLowerCase(Locale.ROOT);
             return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
         }
 
-        /** Sort order inside a group: client, server, testmod, gametest, data, rest. */
+        /** Uploads something (Maven, Modrinth, CurseForge …) – the UI asks before running it. */
+        public boolean publishes() {
+            return isPublish(name());
+        }
+
+        /** Sort order inside a group: build, game tests, publish, publishMods. */
         int rank() {
-            String n = name().toLowerCase(Locale.ROOT);
-            if (n.contains("testmod")) return n.contains("server") ? 3 : 2;
-            if (n.contains("gametest")) return 4;
-            if (n.contains("data")) return 5;
-            if (n.equals("runclient")) return 0;
-            if (n.equals("runserver")) return 1;
-            if (n.contains("client")) return 0;
-            if (n.contains("server")) return 1;
-            return 6;
+            String n = name();
+            if (n.equals("build")) return 0;
+            if (n.toLowerCase(Locale.ROOT).contains("gametest")) return 1;
+            if (n.equals("publish")) return 2;
+            return 3;
         }
     }
 
@@ -69,8 +72,6 @@ public final class GradleTasks {
     }
 
     private static final Pattern TASK_LINE = Pattern.compile("^([A-Za-z0-9_.\\-]+(?::[A-Za-z0-9_.\\-]+)*)(?:\\s+-\\s+(.*))?$");
-    /** IDE helper tasks that start with "run" but are not run configurations. */
-    private static final Pattern IDE_SYNC = Pattern.compile("run(Ide|Idea|Eclipse|VsCode)\\w*");
     private static final List<String> LOADER_ORDER = List.of("common", "fabric", "quilt", "forge", "neoforge");
     private static final Path CACHE_FILE = Path.of(System.getProperty("user.home"), ".mc-project-manager", "gradle-tasks.json");
     private static final Gson GSON = new Gson();
@@ -79,9 +80,18 @@ public final class GradleTasks {
     private GradleTasks() {
     }
 
+    /** Tasks the tool may run: build, publish, publishMods and every game test task. */
+    public static boolean isAllowed(String name) {
+        return name.equals("build") || isPublish(name) || name.toLowerCase(Locale.ROOT).contains("gametest");
+    }
+
+    static boolean isPublish(String name) {
+        return name.equals("publish") || name.equals("publishMods");
+    }
+
     // ---------------------------------------------------------------- detection
 
-    /** Runs "gradlew tasks --all" and stores the run tasks in the cache. */
+    /** Runs "gradlew tasks --all" and stores the offered tasks in the cache. */
     public static List<RunTask> detect(GradleRunner runner, Path project, Consumer<String> log) throws IOException {
         StringBuilder out = new StringBuilder();
         int exit = runner.run(project, "tasks --all", line -> {
@@ -94,7 +104,7 @@ public final class GradleTasks {
         return tasks;
     }
 
-    /** Extracts the run tasks from the output of "gradlew tasks --all". */
+    /** Extracts the offered tasks from the output of "gradlew tasks --all". */
     static List<RunTask> parse(String output) {
         Set<String> seen = new LinkedHashSet<>();
         List<RunTask> tasks = new ArrayList<>();
@@ -102,7 +112,7 @@ public final class GradleTasks {
         String previous = "";
         for (String raw : output.lines().toList()) {
             String line = raw.strip();
-            if (line.matches("-{3,}")) { // underline of a group header ("Application tasks")
+            if (line.matches("-{3,}")) { // underline of a group header ("Build tasks")
                 inTaskList = previous.endsWith("tasks");
                 previous = line;
                 continue;
@@ -112,17 +122,14 @@ public final class GradleTasks {
             Matcher m = TASK_LINE.matcher(line);
             if (!m.matches()) continue;
             String path = m.group(1);
+            boolean root = !path.contains(":");
             String name = path.substring(path.lastIndexOf(':') + 1);
-            if (!isRunTask(name)) continue;
-            String absolute = ":" + path;
-            if (seen.add(absolute)) tasks.add(new RunTask(absolute, m.group(2) == null ? "" : m.group(2).strip()));
+            if (!isAllowed(name)) continue;
+            if (root && name.equals("build")) continue; // the general "Build" button builds everything
+            String stored = root && isPublish(name) ? name : ":" + path;
+            if (seen.add(stored)) tasks.add(new RunTask(stored, m.group(2) == null ? "" : m.group(2).strip()));
         }
         return tasks;
-    }
-
-    private static boolean isRunTask(String name) {
-        return name.length() > 3 && name.startsWith("run") && Character.isUpperCase(name.charAt(3))
-                && !IDE_SYNC.matcher(name).matches();
     }
 
     // ---------------------------------------------------------------- grouping
@@ -133,7 +140,7 @@ public final class GradleTasks {
      */
     public static List<Group> group(List<RunTask> tasks, String rootLabel) {
         Map<String, List<RunTask>> byProject = new LinkedHashMap<>();
-        for (RunTask t : tasks) byProject.computeIfAbsent(t.project(), k -> new ArrayList<>()).add(t);
+        for (RunTask t : tasks) if (isAllowed(t.name()) && !(t.project().isEmpty() && t.name().equals("build"))) byProject.computeIfAbsent(t.project(), k -> new ArrayList<>()).add(t);
         List<String> order = new ArrayList<>(byProject.keySet());
         order.sort(Comparator.comparingInt((String p) -> p.isEmpty() ? -1
                 : LOADER_ORDER.contains(p.toLowerCase(Locale.ROOT)) ? LOADER_ORDER.indexOf(p.toLowerCase(Locale.ROOT))
