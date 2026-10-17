@@ -68,9 +68,14 @@ public final class Changelog {
 
     /** Commits in {@code start..HEAD} (all commits for a null start), newest first. */
     public static List<Commit> commits(Git git, Path repo, String startSha) throws IOException {
+        return log(git, repo, startSha == null ? "HEAD" : startSha + "..HEAD");
+    }
+
+    /** {@code git log} with the given options/revisions (e.g. {@code --reverse}, {@code a..b}), parsed. */
+    static List<Commit> log(Git git, Path repo, String... revisions) throws IOException {
         List<String> args = new ArrayList<>(List.of("log", "--format=%H" + FIELD + "%h" + FIELD + "%an" + FIELD + "%as"
                 + FIELD + "%P" + FIELD + "%B" + RECORD));
-        args.add(startSha == null ? "HEAD" : startSha + "..HEAD");
+        args.addAll(List.of(revisions));
         String output = git.runOrThrow(repo, null, args.toArray(String[]::new)).output();
         List<Commit> commits = new ArrayList<>();
         for (String record : output.split(RECORD)) {
