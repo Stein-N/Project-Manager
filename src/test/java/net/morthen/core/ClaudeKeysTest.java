@@ -164,9 +164,10 @@ class ClaudeKeysTest {
         Files.writeString(script, String.join("\n",
                 "#!/bin/sh",
                 "case \"$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN\" in",
-                "  bad*) echo '" + AUTH_ERROR + "'; echo '" + AUTH_RESULT + "'; exit 1;;",
-                "  broken*) echo '" + BAD_REQUEST + "'; exit 1;;",
-                "  *) if [ -n \"$CLAUDE_CODE_OAUTH_TOKEN\" ]; then echo '" + OK_OAUTH + "'; else echo '" + OK_API_KEY + "'; fi;;",
+                // printf, not echo: dash (/bin/sh on Ubuntu) interprets backslashes with echo
+                "  bad*) printf '%s\\n' '" + AUTH_ERROR + "'; printf '%s\\n' '" + AUTH_RESULT + "'; exit 1;;",
+                "  broken*) printf '%s\\n' '" + BAD_REQUEST + "'; exit 1;;",
+                "  *) if [ -n \"$CLAUDE_CODE_OAUTH_TOKEN\" ]; then printf '%s\\n' '" + OK_OAUTH + "'; else printf '%s\\n' '" + OK_API_KEY + "'; fi;;",
                 "esac", ""));
         script.toFile().setExecutable(true);
         return script;

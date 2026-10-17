@@ -146,7 +146,8 @@ class ClaudeRunnerTest {
         boolean windows = SystemActions.isWindows();
         Path script = tmp.resolve(windows ? "claude.cmd" : "claude");
         String body = String.join(windows ? "\r\n" : "\n", java.util.Arrays.stream(lines)
-                .map(l -> windows || !l.startsWith("echo ") ? l : "echo '" + l.substring(5) + "'")
+                // printf, not echo: dash (/bin/sh on Ubuntu) turns the \\ in the JSON into \ with echo
+                .map(l -> windows || !l.startsWith("echo ") ? l : "printf '%s\\n' '" + l.substring(5) + "'")
                 .toList());
         Files.writeString(script, windows ? "@echo off\r\n" + body + "\r\n" : "#!/bin/sh\n" + body + "\n");
         script.toFile().setExecutable(true);
