@@ -362,6 +362,29 @@ public final class Backport {
     }
 
     /**
+     * What a conflicted file looks like (nothing is staged): the diff with the conflict markers, or for a file that
+     * one side deleted an explanation plus the change of the original commit.
+     */
+    public static String conflictDiff(Git git, Path workDir, String path, String sha) {
+        String status = git.run(workDir, "status", "--porcelain", "--", path).output();
+        String code = status.length() >= 2 ? status.substring(0, 2) : "";
+        String original = git.run(workDir, "show", "--format=", sha, "--", path).output();
+        return switch (code) {
+            case "DU" -> "The file was deleted in the target but changed by the commit.\n"
+                    + "Keep it (it is in the work folder as in the commit) or delete it, then click Continue.\n\n"
+                    + "Change of the original commit:\n" + original;
+            case "UD" -> "The commit deletes the file but the target changed it.\n"
+                    + "Delete it or keep the target's version, then click Continue.\n\n"
+                    + "Change of the original commit:\n" + original;
+            case "AU", "UA" -> "Added on one side only with a conflict:\n\n" + git.run(workDir, "diff", "--", path).output();
+            default -> {
+                String diff = git.run(workDir, "diff", "--", path).output();
+                yield diff.isBlank() ? status : diff;
+            }
+        };
+    }
+
+    /**
      * Applies the changes of the work worktree to {@code targetProject} as uncommitted (staged) changes with
      * {@code git apply --3way}, then resets the work worktree.
      *

@@ -141,6 +141,30 @@ public final class Config {
         props.setProperty("claudeTimeoutMinutes", Integer.toString(Math.max(1, minutes)));
     }
 
+    /**
+     * Commit types that are backported from {@code mod} into {@code target}; empty set = all types,
+     * empty Optional = not configured yet.
+     */
+    public Optional<java.util.Set<String>> backportTypes(String mod, String target) {
+        String value = props.getProperty(backportKey(mod, target));
+        if (value == null) return Optional.empty();
+        if (value.isBlank() || value.trim().equals("*")) return Optional.of(java.util.Set.of());
+        java.util.Set<String> types = new java.util.LinkedHashSet<>();
+        for (String t : value.split(",")) {
+            if (!t.isBlank()) types.add(t.trim());
+        }
+        return Optional.of(types);
+    }
+
+    /** @param types empty = all types */
+    public void setBackportTypes(String mod, String target, java.util.Collection<String> types) {
+        props.setProperty(backportKey(mod, target), types.isEmpty() ? "*" : String.join(",", types));
+    }
+
+    private static String backportKey(String mod, String target) {
+        return "backport.types." + mod.replaceAll("[^\\w.-]", "_") + "." + target.replaceAll("[^\\w.-]", "_");
+    }
+
     private void setString(String key, String value) {
         if (value == null || value.isBlank()) {
             props.remove(key);

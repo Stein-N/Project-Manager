@@ -182,6 +182,11 @@ final class CommitDialog extends JDialog {
     }
 
     private void renderDiff(String diff) {
+        renderDiff(diffPane, diff);
+    }
+
+    /** Colored unified diff (added green, removed red, hunk headers purple); also used by the Backport tab. */
+    static void renderDiff(JTextPane diffPane, String diff) {
         StyledDocument doc = diffPane.getStyledDocument();
         SimpleAttributeSet plain = new SimpleAttributeSet();
         SimpleAttributeSet added = new SimpleAttributeSet();

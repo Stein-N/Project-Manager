@@ -81,6 +81,64 @@ public final class MainFrame extends JFrame {
     private final TrayManager tray = new TrayManager(this, this::openInIntelliJ, this::exitApplication);
     /** Changelog tabs keep their draft (and a running Claude call) while the details are rebuilt. */
     private final Map<Path, ChangelogTab> changelogTabs = new java.util.HashMap<>();
+    /** Backport tabs keep a backport in progress (e.g. waiting for a conflict) while the details are rebuilt. */
+    private final Map<Path, BackportTab> backportTabs = new java.util.HashMap<>();
+    private final BackportTab.Host backportHost = new BackportTab.Host() {
+        @Override
+        public Git git() {
+            return git;
+        }
+
+        @Override
+        public Config config() {
+            return config;
+        }
+
+        @Override
+        public GradleRunner gradle() {
+            return gradle;
+        }
+
+        @Override
+        public Optional<Path> master() {
+            return config.masterPath().filter(Files::isDirectory);
+        }
+
+        @Override
+        public List<ModProject> siblings(ModProject project) {
+            return MainFrame.this.siblings(project);
+        }
+
+        @Override
+        public String mainBranch(ModProject project) {
+            return MainFrame.this.mainBranch(project);
+        }
+
+        @Override
+        public void log(String line) {
+            MainFrame.this.log(line);
+        }
+
+        @Override
+        public void error(String title, String message) {
+            MainFrame.this.error(title, message);
+        }
+
+        @Override
+        public void filesChanged(ModProject project) {
+            refresh();
+        }
+
+        @Override
+        public void openCommitDialog(ModProject project, String message) {
+            commitDialog(project, message);
+        }
+
+        @Override
+        public void openInIde(Path folder, String name) {
+            openInIntelliJ(folder, name);
+        }
+    };
     /** Main branch per repo (common git dir), "" = none; see {@link Git#defaultBranch}. */
     private final Map<Path, String> mainBranches = new java.util.HashMap<>();
     private final ChangelogTab.Host changelogHost = new ChangelogTab.Host() {
@@ -479,6 +537,17 @@ public final class MainFrame extends JFrame {
                 changelog.update(p);
             }
             tabs.addTab("Changelog", changelog);
+        }
+        // Backports go from the main branch (or another version) into the older versions
+        if (p.git() && mainBranch != null && !mainBranch.equals(p.branch()) && !siblings(p).isEmpty()) {
+            BackportTab backport = backportTabs.get(p.path());
+            if (backport == null) {
+                backport = new BackportTab(backportHost, p);
+                backportTabs.put(p.path(), backport);
+            } else {
+                backport.update(p);
+            }
+            tabs.addTab("Backport", backport);
         }
         List<Dependencies.Entry> deps = Dependencies.read(p.path());
         if (!deps.isEmpty() || (meta != null && !meta.dependencies().isEmpty())) {
@@ -946,6 +1015,10 @@ public final class MainFrame extends JFrame {
     // =====================================================================  Actions
 
     private void openInIntelliJ(ModProject p) {
+        openInIntelliJ(p.path(), p.name());
+    }
+
+    private void openInIntelliJ(Path folder, String name) {
         Optional<Path> ide = ideaPath();
         if (ide.isEmpty()) {
             JOptionPane.showMessageDialog(this,
@@ -955,8 +1028,8 @@ public final class MainFrame extends JFrame {
             openSettings();
             return;
         }
-        log("Opening " + p.name() + " in IntelliJ …");
-        run(() -> SystemActions.openInIntelliJ(ide.get(), p.path()));
+        log("Opening " + name + " in IntelliJ …");
+        run(() -> SystemActions.openInIntelliJ(ide.get(), folder));
     }
 
     private Optional<Path> ideaPath() {
