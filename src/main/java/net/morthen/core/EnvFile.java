@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
  */
 public final class EnvFile {
     public static final String FILE_NAME = ".env";
+    /** Variables the publish setup of the mods expects (Maven repository, CurseForge, Modrinth). */
+    public static final List<String> EXPECTED = List.of("MAVEN_URL", "MAVEN_USER", "MAVEN_PASSWORD", "CURSEFORGE_API", "MODRINTH_API");
     private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Pattern ENTRY = Pattern.compile("^\\s*(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=(.*)$");
 

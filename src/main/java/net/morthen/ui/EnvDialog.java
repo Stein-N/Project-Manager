@@ -35,8 +35,7 @@ import java.util.function.Consumer;
  * Editor for {@code <master>/.env}. Values are hidden unless "Show values" is checked.
  */
 final class EnvDialog extends JDialog {
-    /** Names used by common publishing setups (mod-publish-plugin, Minotaur, CurseGradle, GitHub releases). */
-    private static final List<String> PRESETS = List.of("MODRINTH_TOKEN", "CURSEFORGE_TOKEN", "CURSEFORGE_API_KEY", "GITHUB_TOKEN");
+    private static final List<String> PRESETS = EnvFile.EXPECTED;
 
     private final Path master;
     private final Consumer<String> log;
@@ -74,7 +73,7 @@ final class EnvDialog extends JDialog {
 
         JLabel info = new JLabel("<html><body style='width:540px'>Stored as <tt>.env</tt> in the master folder and passed to the "
                 + "<b>publish</b> and <b>publishMods</b> tasks – read them in the build script with "
-                + "<tt>providers.environmentVariable(\"MODRINTH_TOKEN\")</tt>.</body></html>");
+                + "<tt>providers.environmentVariable(\"MODRINTH_API\")</tt>.</body></html>");
         info.setToolTipText(EnvFile.path(master).toString());
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
 
@@ -83,6 +82,12 @@ final class EnvDialog extends JDialog {
         JButton presets = new JButton("Add common ▾");
         presets.addActionListener(e -> {
             JPopupMenu menu = new JPopupMenu();
+            List<String> missing = PRESETS.stream().filter(p -> model.rows.stream().noneMatch(r -> r[0].equals(p))).toList();
+            JMenuItem all = new JMenuItem("Add all missing (" + missing.size() + ")");
+            all.setEnabled(!missing.isEmpty());
+            all.addActionListener(ev -> missing.forEach(this::addRow));
+            menu.add(all);
+            menu.addSeparator();
             for (String preset : PRESETS) {
                 JMenuItem item = new JMenuItem(preset);
                 item.setEnabled(model.rows.stream().noneMatch(r -> r[0].equals(preset)));

@@ -1372,9 +1372,11 @@ public final class MainFrame extends JFrame {
         Map<String, String> env = Map.of();
         if (publish) {
             env = envVariables();
-            String vars = env.isEmpty()
-                    ? "<font color='#c77800'>No variables in <tt>.env</tt> – tokens may be missing.</font>"
-                    : "Environment from <tt>.env</tt>: " + Ui.html(String.join(", ", env.keySet()));
+            Map<String, String> vars0 = env;
+            List<String> missing = EnvFile.EXPECTED.stream().filter(k -> vars0.getOrDefault(k, "").isBlank()).toList();
+            String vars = (env.isEmpty() ? "No variables in <tt>.env</tt>."
+                    : "Environment from <tt>.env</tt>: " + Ui.html(String.join(", ", env.keySet())))
+                    + (missing.isEmpty() ? "" : "<br><font color='#c77800'>Missing or empty: " + Ui.html(String.join(", ", missing)) + "</font>");
             if (JOptionPane.showConfirmDialog(this,
                     "<html><b>gradlew " + Ui.html(task) + "</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for "
                             + Ui.html(p.mcVersion() + "/" + p.name()) + ".<br>" + vars + "<br><br>Run it now?</html>",
