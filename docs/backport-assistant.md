@@ -207,6 +207,27 @@ Folgen für den Backport:
 - Praxisbefund: 26.1/26.2 enthalten `main` bereits (Merge); bei 1.21.1 fehlen viele Dateien (z. B. Forge-Teil,
   Fabric-Hauptklasse) → viele modify/delete-Konflikte. Für solche Backports ist Stufe 2 (Claude) gedacht.
 
+## Plan Stufe 2 (Claude) – Entscheidungen vom 17.10.2026
+
+- **Regeln eingebaut:** Die Mods haben keine `CLAUDE.md`. Das Tool bringt die Backport-Regeln aus der Vorlage selbst mit
+  (Verhalten des Commits erhalten, an die Ziel-API anpassen, „Nie portieren“-Liste, nicht committen, im Zweifel
+  `skip`); eine `CLAUDE.md` im Repo ergänzt sie, wenn vorhanden. Ersetzt Entscheidung 8 (kein Sperren mehr).
+- **Umfang: Konflikte + Build.**
+  - „Resolve with Claude“ bei einem Konflikt; optional Checkbox „Resolve conflicts with Claude“ für den ganzen Lauf
+    (hält nur noch an, wenn Claude `skip` meldet oder scheitert).
+  - „Fix build with Claude“ nach einem fehlgeschlagenen `gradlew build` im Arbeitsordner.
+  - Claude antwortet je Aufgabe mit `backport`/`skip` und Notizen („Was wurde angepasst“ / „Bitte prüfen“).
+  - Zwischenstand vor jedem Commit (`git write-tree`), damit `skip` genau diesen Commit zurücknehmen kann (auch als
+    Button „Skip this commit“ ohne Claude).
+- **Modell: Opus 5.5** als Standard für Backports (eigene Einstellung „Backport model“, Standard `claude-opus-5-5`);
+  der Changelog bleibt bei Sonnet. Mit dem Pro-Token getestet: Opus 5.5 ist verfügbar.
+- **Werkzeuge:** Lesen/Bearbeiten im Arbeitsordner, `git status/diff/log/show`, `gradlew build`; alles andere wird
+  automatisch abgelehnt (`--permission-mode dontAsk`), insbesondere `git commit/push/checkout/switch/branch/reset/
+  rebase/worktree`. Nach jedem Lauf: HEAD des Arbeitsordners und alle Branches unverändert, sonst verwerfen.
+  Genaue CLI-Optionen vor der Umsetzung gegen die echte CLI prüfen.
+- **Tests:** Fake-CLI (Ablauf, Abbruch, Verstoß gegen die Sperren) und ein echter Lauf an einer Kopie von
+  Resource-Library (Ziel 1.21.1).
+
 ## Einstieg für die neue Sitzung
 
 1. Dieses Dokument und `C:\Users\Nico\Desktop\CLAUDE.md` lesen.
