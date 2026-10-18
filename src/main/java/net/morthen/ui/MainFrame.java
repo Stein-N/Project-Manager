@@ -221,7 +221,7 @@ public final class MainFrame extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
-                exitApplication();
+                closeRequested();
             }
 
             @Override
@@ -1747,6 +1747,32 @@ public final class MainFrame extends JFrame {
         else tray.uninstall();
     }
 
+    /** Close button: asks once whether to minimize or exit, then remembers the answer (changeable in the settings). */
+    private void closeRequested() {
+        Config.CloseAction action = config.closeAction();
+        if (action == Config.CloseAction.ASK) {
+            JCheckBox remember = new JCheckBox("Remember my choice (can be changed in the settings)", true);
+            Object[] message = {"Should the Project Manager keep running in the background\nor exit completely?", remember};
+            int choice = JOptionPane.showOptionDialog(this, message, "Close Project Manager",
+                    JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                    new String[]{"Minimize", "Exit", "Cancel"}, "Minimize");
+            if (choice != 0 && choice != 1) return;
+            action = choice == 0 ? Config.CloseAction.MINIMIZE : Config.CloseAction.EXIT;
+            if (remember.isSelected()) {
+                config.setCloseAction(action);
+                config.save();
+            }
+        }
+        if (action == Config.CloseAction.EXIT) {
+            exitApplication();
+        } else if (TrayManager.supported()) {
+            tray.hideToTray();
+            if (!tray.installed()) setExtendedState(ICONIFIED);
+        } else {
+            setExtendedState(ICONIFIED);
+        }
+    }
+
     private void exitApplication() {
         int running = gradle.runningCount();
         if (running > 0 && JOptionPane.showConfirmDialog(this,
@@ -1798,6 +1824,9 @@ public final class MainFrame extends JFrame {
         fetchRow.add(Ui.muted("minutes (0 = off)"));
         JCheckBox tray = new JCheckBox("Minimize to system tray", config.minimizeToTray());
 
+        JComboBox<String> closeAction = new JComboBox<>(new String[]{"Ask", "Minimize", "Exit"});
+        closeAction.setSelectedIndex(config.closeAction().ordinal());
+
         JCheckBox autostart = new JCheckBox("Start minimized with the system", config.autostart());
         autostart.setEnabled(Autostart.supported());
         if (!Autostart.supported()) {
@@ -1837,6 +1866,7 @@ public final class MainFrame extends JFrame {
                 .add("Git executable", gitField)
                 .add("Auto-fetch every", fetchRow)
                 .add("", tray)
+                .add("On close", closeAction)
                 .add("", autostart)
                 .add("Claude Code CLI", claudeField, claudeDetect)
                 .add("Changelog model", claudeModel)
@@ -1859,6 +1889,7 @@ public final class MainFrame extends JFrame {
         git.setExecutable(config.gitExecutable());
         config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
         config.setMinimizeToTray(tray.isSelected());
+        config.setCloseAction(Config.CloseAction.values()[closeAction.getSelectedIndex()]);
         if (autostart.isEnabled()) {
             try {
                 Autostart.apply(autostart.isSelected());

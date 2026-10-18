@@ -93,6 +93,21 @@ public final class Config {
         props.setProperty("minimizeToTray", Boolean.toString(value));
     }
 
+    /** What the window's close button does: ask (first time), minimize or exit. */
+    public enum CloseAction { ASK, MINIMIZE, EXIT }
+
+    public CloseAction closeAction() {
+        try {
+            return CloseAction.valueOf(props.getProperty("closeAction", "ASK").trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return CloseAction.ASK;
+        }
+    }
+
+    public void setCloseAction(CloseAction action) {
+        props.setProperty("closeAction", action.name());
+    }
+
     public boolean autostart() {
         return Boolean.parseBoolean(props.getProperty("autostart", "false"));
     }
