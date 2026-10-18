@@ -116,6 +116,24 @@ public final class Config {
         props.setProperty("autostart", Boolean.toString(value));
     }
 
+    /** Whether the start looks for a newer release on GitHub. */
+    public boolean checkUpdates() {
+        return Boolean.parseBoolean(props.getProperty("checkUpdates", "true"));
+    }
+
+    public void setCheckUpdates(boolean value) {
+        props.setProperty("checkUpdates", Boolean.toString(value));
+    }
+
+    /** Release the user chose not to be asked about again (empty = none). */
+    public String skippedVersion() {
+        return props.getProperty("skippedVersion", "").trim();
+    }
+
+    public void setSkippedVersion(String version) {
+        setString("skippedVersion", version);
+    }
+
     /** Path of the Claude Code CLI; empty = search the PATH. */
     public String claudeExecutable() {
         return props.getProperty("claude", "").trim();

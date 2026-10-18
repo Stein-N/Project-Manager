@@ -18,6 +18,7 @@ import net.morthen.core.ProjectScanner;
 import net.morthen.core.Readme;
 import net.morthen.core.SystemActions;
 import net.morthen.core.Tags;
+import net.morthen.core.UpdateChecker;
 import net.morthen.core.Worktrees;
 
 import javax.swing.BorderFactory;
@@ -358,6 +359,108 @@ public final class MainFrame extends JFrame {
             chooseMaster();
         }
         refresh();
+        if (config.checkUpdates()) checkForUpdate(false);
+    }
+
+    // =====================================================================  Updates
+
+    /**
+     * Looks for a newer release. At start (manual = false) it stays silent unless there is one that was not
+     * skipped; from the settings (manual = true) it always answers.
+     */
+    private void checkForUpdate(boolean manual) {
+        String current = UpdateChecker.currentVersion();
+        if (current == null) { // started from the IDE
+            if (manual) {
+                JOptionPane.showMessageDialog(this, "Running from the IDE – no version to compare.", "Update",
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+            return;
+        }
+        new SwingWorker<Optional<UpdateChecker.Release>, Void>() {
+            @Override
+            protected Optional<UpdateChecker.Release> doInBackground() throws Exception {
+                return UpdateChecker.check(current);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    Optional<UpdateChecker.Release> release = get();
+                    if (release.isEmpty()) {
+                        if (manual) {
+                            JOptionPane.showMessageDialog(MainFrame.this, "You are up to date (" + current + ").", "Update",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        }
+                        return;
+                    }
+                    if (manual || !release.get().version().equals(config.skippedVersion())) {
+                        offerUpdate(release.get(), current);
+                    }
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    log("Update check failed: " + cause.getMessage());
+                    if (manual) error("Update check failed", String.valueOf(cause.getMessage()));
+                }
+            }
+        }.execute();
+    }
+
+    private void offerUpdate(UpdateChecker.Release release, String current) {
+        Optional<Path> jar = UpdateChecker.runningJar();
+        boolean canInstall = jar.isPresent() && release.downloadUrl() != null;
+        List<String> options = new ArrayList<>();
+        if (canInstall) options.add("Update now");
+        options.add("Release page");
+        options.add("Skip this version");
+        options.add("Later");
+        int choice = JOptionPane.showOptionDialog(this,
+                "<html>Version <b>" + Ui.html(release.version()) + "</b> is available (you have " + Ui.html(current) + ").</html>",
+                "Update available", JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null,
+                options.toArray(), options.getFirst());
+        if (choice < 0) return;
+        switch (options.get(choice)) {
+            case "Update now" -> installUpdate(release, jar.get());
+            case "Release page" -> {
+                try {
+                    SystemActions.openUri(java.net.URI.create(release.pageUrl() != null ? release.pageUrl()
+                            : "https://github.com/" + UpdateChecker.REPO + "/releases/latest"));
+                } catch (Exception e) {
+                    error("Release page", e.getMessage());
+                }
+            }
+            case "Skip this version" -> {
+                config.setSkippedVersion(release.version());
+                config.save();
+            }
+            default -> {
+            }
+        }
+    }
+
+    /** Downloads the jar next to the running one, then restarts with it (the old jar is removed afterwards). */
+    private void installUpdate(UpdateChecker.Release release, Path jar) {
+        log("Downloading " + release.fileName() + "…");
+        background("Downloading update…", () -> UpdateChecker.download(release, jar), downloaded -> {
+            log("✔ Downloaded " + downloaded);
+            int running = gradle.runningCount();
+            if (JOptionPane.showConfirmDialog(this, "<html>Version " + Ui.html(release.version()) + " is ready.<br>Restart now?"
+                            + (running > 0 ? "<br><b>" + running + " Gradle task(s) are still running and will be stopped.</b>" : "") + "</html>",
+                    "Update", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                log("Update downloaded, start " + downloaded.getFileName() + " to use it.");
+                return;
+            }
+            try {
+                UpdateChecker.startAndReplace(downloaded, jar);
+            } catch (java.io.IOException e) {
+                error("Could not start the new version", e.getMessage());
+                return;
+            }
+            gradle.stopAll();
+            tray.uninstall();
+            dispose();
+            System.exit(0);
+        });
     }
 
     // =====================================================================  Data & tree
@@ -1877,6 +1980,9 @@ public final class MainFrame extends JFrame {
         JComboBox<String> closeAction = new JComboBox<>(new String[]{"Ask", "Minimize", "Exit"});
         closeAction.setSelectedIndex(config.closeAction().ordinal());
 
+        JCheckBox updates = new JCheckBox("Check for updates on start", config.checkUpdates());
+        JButton checkNow = new JButton("Check now");
+        checkNow.addActionListener(e -> checkForUpdate(true));
         JCheckBox autostart = new JCheckBox("Start minimized with the system", config.autostart());
         autostart.setEnabled(Autostart.supported());
         if (!Autostart.supported()) {
@@ -1918,6 +2024,7 @@ public final class MainFrame extends JFrame {
                 .add("", tray)
                 .add("On close", closeAction)
                 .add("", autostart)
+                .add("", updates, checkNow)
                 .add("Claude Code CLI", claudeField, claudeDetect)
                 .add("Changelog model", claudeModel)
                 .add("Backport model", backportModelRow)
@@ -1940,6 +2047,7 @@ public final class MainFrame extends JFrame {
         config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
         config.setMinimizeToTray(tray.isSelected());
         config.setCloseAction(Config.CloseAction.values()[closeAction.getSelectedIndex()]);
+        config.setCheckUpdates(updates.isSelected());
         if (autostart.isEnabled()) {
             try {
                 Autostart.apply(autostart.isSelected());
