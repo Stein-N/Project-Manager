@@ -47,6 +47,7 @@ application {
 
 // Fat jar: runnable via double-click or "javaw -jar"
 tasks.jar {
+    archiveFileName = "Project-Manager.jar" // fixed name: the updater replaces the file in place, autostart and shortcuts keep working
     manifest {
         attributes["Main-Class"] = "net.morthen.Main"
         attributes["Implementation-Title"] = "MC Mod Project Manager"

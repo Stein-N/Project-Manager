@@ -15,7 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -103,19 +102,27 @@ public final class UpdateChecker {
 
     /** The running jar, empty when not started from a jar file (IDE). */
     public static Optional<Path> runningJar() {
+        return codeSource().filter(jar -> Files.isRegularFile(jar) && jar.getFileName().toString().endsWith(".jar"));
+    }
+
+    /** Where this code was loaded from, whatever the file is called (the pending update is {@code *.jar.new}). */
+    private static Optional<Path> codeSource() {
         try {
-            Path jar = Path.of(UpdateChecker.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            return Files.isRegularFile(jar) && jar.getFileName().toString().endsWith(".jar") ? Optional.of(jar) : Optional.empty();
+            return Optional.of(Path.of(UpdateChecker.class.getProtectionDomain().getCodeSource().getLocation().toURI()));
         } catch (Exception e) {
             return Optional.empty();
         }
     }
 
-    /** Downloads the release jar into the folder of the running jar. */
+    /** Argument of the new jar: replace {@code <target>} with myself, then start it. */
+    public static final String APPLY_FLAG = "--apply-update";
+    private static final String PENDING_SUFFIX = ".new";
+
+    /** Downloads the release jar next to the running one as {@code <name>.new} (the running file is locked on Windows). */
     public static Path download(Release release, Path runningJar) throws IOException {
         if (release.downloadUrl() == null) throw new IOException("The release has no jar file.");
-        Path target = runningJar.toAbsolutePath().resolveSibling(release.fileName());
-        Path part = target.resolveSibling(release.fileName() + ".part");
+        Path pending = pendingFile(runningJar);
+        Path part = pending.resolveSibling(pending.getFileName() + ".part");
         HttpRequest request = HttpRequest.newBuilder(URI.create(release.downloadUrl()))
                 .timeout(Duration.ofMinutes(5)).header("User-Agent", "mc-project-manager").build();
         try {
@@ -124,8 +131,8 @@ public final class UpdateChecker {
             try (InputStream in = response.body()) {
                 Files.copy(in, part, StandardCopyOption.REPLACE_EXISTING);
             }
-            Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
-            return target;
+            Files.move(part, pending, StandardCopyOption.REPLACE_EXISTING);
+            return pending;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted");
@@ -134,18 +141,70 @@ public final class UpdateChecker {
         }
     }
 
-    /** Starts the new jar and removes the old one once this process has ended. */
-    public static void startAndReplace(Path newJar, Path oldJar) throws IOException {
-        Path java = Path.of(System.getProperty("java.home"), "bin", SystemActions.isWindows() ? "javaw.exe" : "java");
-        new ProcessBuilder(java.toString(), "-jar", newJar.toString()).start();
-        if (newJar.equals(oldJar.toAbsolutePath())) return;
-        List<String> cleanup = SystemActions.isWindows()
-                ? List.of("cmd", "/c", "ping -n 6 127.0.0.1 >nul & del /f /q \"" + oldJar + "\"")
-                : List.of("sh", "-c", "sleep 5; rm -f '" + oldJar + "'");
-        try {
-            new ProcessBuilder(cleanup).start();
-        } catch (IOException ignored) {
-            // the old jar stays, harmless
+    static Path pendingFile(Path jar) {
+        return jar.toAbsolutePath().resolveSibling(jar.getFileName() + PENDING_SUFFIX);
+    }
+
+    /**
+     * Starts the downloaded jar in "apply" mode and returns; the caller then exits. The new jar waits until the old
+     * one is free, copies itself over it (same path, so autostart and shortcuts stay valid) and starts it.
+     */
+    public static void startAndReplace(Path pending, Path oldJar) throws IOException {
+        new ProcessBuilder(javaExecutable(), "-jar", pending.toString(), APPLY_FLAG, oldJar.toAbsolutePath().toString())
+                .start();
+    }
+
+    private static String javaExecutable() {
+        return Path.of(System.getProperty("java.home"), "bin", SystemActions.isWindows() ? "javaw.exe" : "java").toString();
+    }
+
+    /** Runs in the new jar ({@link #APPLY_FLAG}): replaces {@code target} with this jar and starts it. */
+    public static void applyPending(Path target) throws IOException {
+        Path self = codeSource().filter(Files::isRegularFile).orElseThrow(() -> new IOException("Not running from a jar."));
+        IOException last = null;
+        for (int i = 0; i < 40; i++) { // the old process needs a moment to end and release the file
+            try {
+                Files.copy(self, target, StandardCopyOption.REPLACE_EXISTING);
+                last = null;
+                break;
+            } catch (IOException e) {
+                last = e;
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
+        if (last != null) throw last;
+        new ProcessBuilder(javaExecutable(), "-jar", target.toString()).start();
+    }
+
+    /**
+     * Removes a leftover {@code <name>.new} from an update. The process that applied it may still hold the file for a
+     * moment, so this retries in the background.
+     */
+    public static void cleanUpPending() {
+        runningJar().ifPresent(jar -> {
+            Path pending = pendingFile(jar);
+            if (!Files.exists(pending)) return;
+            Thread t = new Thread(() -> {
+                for (int i = 0; i < 20; i++) {
+                    try {
+                        Files.deleteIfExists(pending);
+                        return;
+                    } catch (IOException e) {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException ie) {
+                            return;
+                        }
+                    }
+                }
+            }, "update-cleanup");
+            t.setDaemon(true);
+            t.start();
+        });
     }
 }

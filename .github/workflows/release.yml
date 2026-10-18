@@ -67,7 +67,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          jar="build/libs/Project-Manager-$VERSION.jar"
+          jar="build/libs/Project-Manager.jar"
           if [ ! -f "$jar" ]; then
             echo "::error::$jar was not built"
             ls -la build/libs

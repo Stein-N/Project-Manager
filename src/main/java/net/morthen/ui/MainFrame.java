@@ -447,7 +447,8 @@ public final class MainFrame extends JFrame {
             if (JOptionPane.showConfirmDialog(this, "<html>Version " + Ui.html(release.version()) + " is ready.<br>Restart now?"
                             + (running > 0 ? "<br><b>" + running + " Gradle task(s) are still running and will be stopped.</b>" : "") + "</html>",
                     "Update", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
-                log("Update downloaded, start " + downloaded.getFileName() + " to use it.");
+                UpdateChecker.cleanUpPending();
+                log("Update postponed (downloaded file removed again).");
                 return;
             }
             try {
