@@ -67,7 +67,7 @@ Lokale Voraussetzungen (Stand 17.10.2026): Claude Code CLI ist installiert
 
 1. **Auswahl:** Ziel = das im Baum gewählte Projekt (z. B. `1.20.1/Mod`), Quelle = andere Version derselben Mod
    (Auswahl unter den Geschwister-Worktrees, Standard: neueste Version / `main`).
-2. **Kandidaten:** Commits, die in der Quelle, aber nicht im Ziel sind (`git log <ziel>..<quelle>`), mit
+2. **Kandidaten:** Commits, die in der Quelle, aber nicht im Ziel sind (`git log <ziel>..<quelle>`), mit Ist in der Quelle ein Release-Tag vorhanden (`git describe --tags`), werden nur Commits seit diesem Tag angeboten (`<tag>..<quelle>`); Tags erstellt und pusht man im Git-Tab (“Create tag…”).
    - Conventional-Commit-Typ und Filter pro Ziel,
    - Marker `[no-backport]` / `[no-backport: <ziel>]`,
    - Status „bereits portiert“ (Trailer `(cherry picked from commit <sha>)` im Ziel und `git cherry` / Patch-ID).

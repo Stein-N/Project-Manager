@@ -63,7 +63,17 @@ public final class Backport {
      */
     public static List<Candidate> candidates(Git git, Path repo, String sourceRef, String targetRef, Set<String> targetNames,
                                              Set<String> types) throws IOException {
-        List<Changelog.Commit> commits = Changelog.log(git, repo, "--reverse", targetRef + ".." + sourceRef);
+        return candidates(git, repo, sourceRef, targetRef, null, targetNames, types);
+    }
+
+    /**
+     * Like above, but with {@code sinceRef} (the last release tag of the source) only the commits after it are
+     * offered; older ones were released already. Null = everything the target does not have.
+     */
+    public static List<Candidate> candidates(Git git, Path repo, String sourceRef, String targetRef, String sinceRef,
+                                             Set<String> targetNames, Set<String> types) throws IOException {
+        List<Changelog.Commit> commits = Changelog.log(git, repo, "--reverse",
+                (sinceRef != null ? sinceRef : targetRef) + ".." + sourceRef);
         Set<String> trailers = portedTrailers(git, repo, targetRef);
         Set<String> samePatch = samePatch(git, repo, sourceRef, targetRef);
         List<Candidate> result = new ArrayList<>();

@@ -81,6 +81,18 @@ class BackportTest {
                 .findFirst().orElseThrow().state(), "no type rules = all types");
     }
 
+
+    @Test
+    void onlyCommitsSinceLastTagAreOffered() throws IOException {
+        write(main, "src/T1.java", "class T1 {}\n");
+        commit(main, "fix: released");
+        sh(main, "tag", "v1.0.0");
+        write(main, "src/T2.java", "class T2 {}\n");
+        commit(main, "fix: new");
+        assertEquals("v1.0.0", Tags.latest(git, main, "main").orElseThrow());
+        List<Backport.Candidate> list = Backport.candidates(git, target, "main", "1.20.1", "v1.0.0", Set.of("1.20.1"), Set.of());
+        assertEquals(List.of("new"), list.stream().map(c -> c.commit().message().subject()).toList());
+    }
     @Test
     void samePatchCountsAsPorted() throws IOException {
         write(main, "src/S.java", "class S {}\n");

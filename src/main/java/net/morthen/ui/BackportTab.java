@@ -10,6 +10,7 @@ import net.morthen.core.GradleRunner;
 import net.morthen.core.ModProject;
 import net.morthen.core.Readme;
 import net.morthen.core.SystemActions;
+import net.morthen.core.Tags;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -104,6 +105,8 @@ final class BackportTab extends JPanel {
     private final CandidateModel candidates = new CandidateModel();
     private final JTable table = new JTable(candidates);
     private final JLabel countLabel = Ui.muted(" ");
+    /** Last release tag of the source; only commits after it are offered (null = no tag yet). */
+    private String sinceTag;
     private final JCheckBox syncBox = new JCheckBox("Take over version and CHANGELOG.md", true);
     private final JCheckBox claudeBox = new JCheckBox("Resolve conflicts with Claude");
     private final JButton portButton = Ui.primary("Port selected");
@@ -409,11 +412,17 @@ final class BackportTab extends JPanel {
         if (p.gradleMcVersion() != null) names.add(p.gradleMcVersion());
         Set<String> types = types();
         countLabel.setText("Loading…");
-        background(() -> Backport.candidates(host.git(), p.path(), s.branch(), p.branch(), names, types),
-                list -> {
-                    candidates.set(list);
-                    updateButtons();
-                });
+        background(() -> {
+            String tag = Tags.latest(host.git(), p.path(), s.branch()).orElse(null);
+            return new Loaded(tag, Backport.candidates(host.git(), p.path(), s.branch(), p.branch(), tag, names, types));
+        }, loaded -> {
+            sinceTag = loaded.tag();
+            candidates.set(loaded.list());
+            updateButtons();
+        });
+    }
+
+    private record Loaded(String tag, List<Backport.Candidate> list) {
     }
 
     // ---------------------------------------------------------------- porting
@@ -931,7 +940,9 @@ final class BackportTab extends JPanel {
 
     private void updateButtons() {
         long selected = candidates.selected().size();
-        countLabel.setText(candidates.rows.isEmpty() ? "Nothing to port" : candidates.rows.size() + " commit(s), " + selected + " selected");
+        String since = sinceTag == null ? "" : " since " + sinceTag;
+        countLabel.setText(candidates.rows.isEmpty() ? "Nothing to port" + since
+                : candidates.rows.size() + " commit(s)" + since + ", " + selected + " selected");
         steps.setTitleAt(0, "Commits (" + selected + ")");
         boolean waiting = conflictCommit != null;
         boolean claudeRunning = claudeRun != null;

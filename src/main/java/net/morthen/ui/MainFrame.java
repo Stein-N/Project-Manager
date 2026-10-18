@@ -17,6 +17,7 @@ import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
 import net.morthen.core.Readme;
 import net.morthen.core.SystemActions;
+import net.morthen.core.Tags;
 import net.morthen.core.Worktrees;
 
 import javax.swing.BorderFactory;
@@ -710,6 +711,7 @@ public final class MainFrame extends JFrame {
         push.setEnabled(canPush);
         actions.add(push);
         actions.add(button("Add version (worktree)…", Icons.ADD, () -> addWorktree(p)));
+        actions.add(button("Create tag…", Icons.ADD, () -> tagDialog(p)));
         if (p.standaloneClone()) {
             actions.add(button("Convert to shared repo…", Icons.MERGE, () -> convertToShared(p)));
         }
@@ -1499,6 +1501,54 @@ public final class MainFrame extends JFrame {
                 log(req.push() ? "✔ Committed and pushed" : "✔ Committed");
                 reloadAndSelect(path, null);
             });
+        });
+    }
+
+    /** Creates a tag at HEAD of the project and optionally pushes it; the backport continues from the newest tag. */
+    private void tagDialog(ModProject p) {
+        String mc = p.gradleMcVersion() != null ? p.gradleMcVersion() : p.mcVersion();
+        JTextField name = new JTextField(Tags.suggest(p.modVersion(), mc), 24);
+        JTextField message = new JTextField(24);
+        JCheckBox push = new JCheckBox("Push the tag to origin", !p.remoteUrl().isEmpty());
+        push.setEnabled(!p.remoteUrl().isEmpty());
+        JLabel last = Ui.muted("Latest tag: …");
+        JPanel panel = new JPanel(new GridLayout(0, 1, 0, 6));
+        panel.add(last);
+        panel.add(new JLabel("Tag name"));
+        panel.add(name);
+        panel.add(new JLabel("Message (optional, makes it an annotated tag)"));
+        panel.add(message);
+        panel.add(push);
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() {
+                return Tags.latest(git, p.path(), "HEAD")
+                        .map(t -> t + "  (+" + Tags.commitsSince(git, p.path(), t, "HEAD") + " commit(s))")
+                        .orElse("none yet");
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    last.setText("Latest tag: " + get());
+                } catch (Exception ignored) {
+                    last.setText("Latest tag: unknown");
+                }
+            }
+        }.execute();
+        if (JOptionPane.showConfirmDialog(this, panel, "Create tag – " + p.mcVersion() + "/" + p.name(),
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
+        String tag = name.getText().strip();
+        boolean doPush = push.isSelected();
+        String msg = message.getText();
+        log("Tag " + tag + " at " + p.branch() + (doPush ? " and pushing" : ""));
+        background(doPush ? "Tagging and pushing…" : "Tagging…", () -> {
+            Tags.create(git, p.path(), tag, msg, this::logAsync);
+            if (doPush) Tags.push(git, p.path(), tag, this::logAsync);
+            return p.path();
+        }, path -> {
+            log(doPush ? "✔ Tag " + tag + " created and pushed" : "✔ Tag " + tag + " created");
+            reloadAndSelect(path, null);
         });
     }
 
