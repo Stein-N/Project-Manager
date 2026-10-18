@@ -42,7 +42,10 @@ public final class Autostart {
         switch (SystemActions.os()) {
             case WINDOWS -> {
                 String value = String.join(" ", command.stream().map(Autostart::quoteWindows).toList());
-                run("reg", "add", RUN_KEY, "/v", NAME, "/t", "REG_SZ", "/d", value, "/f");
+                // Java would escape the inner quotes in a way reg.exe rejects; an argument that is already
+                // wrapped in quotes is passed through verbatim, so escape them the way reg's parser expects.
+                String quoted = "\"" + value.replace("\"", "\\\"") + "\"";
+                run("reg", "add", RUN_KEY, "/v", NAME, "/t", "REG_SZ", "/d", quoted, "/f");
             }
             case LINUX -> {
                 Path file = desktopFile(System.getenv(), Path.of(System.getProperty("user.home")));
