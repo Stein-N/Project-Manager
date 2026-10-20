@@ -47,6 +47,8 @@ final class GithubRepoDialog extends JDialog {
     private final JLabel status = Ui.muted(" ");
     private final JButton select = Ui.primary("Select");
 
+    private final java.util.Set<String> mods = new java.util.HashSet<>();
+    private int checked = -1;
     private GithubRepos.Repo result;
 
     private GithubRepoDialog(Window owner, String token) {
@@ -120,21 +122,40 @@ final class GithubRepoDialog extends JDialog {
     private void load() {
         status.setForeground(UIManager.getColor("Label.disabledForeground"));
         status.setText("Loading repositories from GitHub …");
-        new SwingWorker<List<GithubRepos.Repo>, Void>() {
+        mods.clear();
+        model.set(List.of());
+        new SwingWorker<Void, Object[]>() {
             @Override
-            protected List<GithubRepos.Repo> doInBackground() throws Exception {
-                return GithubRepos.fetchAll(token);
+            protected Void doInBackground() throws Exception {
+                List<GithubRepos.Repo> repos = GithubRepos.fetchAll(token);
+                publish(new Object[]{repos, 0, null});
+                GithubRepos.detectMods(token, repos, (checked, mod) -> publish(new Object[]{null, checked, mod}));
+                return null;
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            protected void process(List<Object[]> chunks) {
+                for (Object[] chunk : chunks) {
+                    if (chunk[0] != null) {
+                        model.set((List<GithubRepos.Repo>) chunk[0]);
+                        Object current = ownerBox.getSelectedItem();
+                        ownerBox.removeAllItems();
+                        ownerBox.addItem(ALL_OWNERS);
+                        new TreeSet<>(model.repos.stream().map(GithubRepos.Repo::owner).toList()).forEach(ownerBox::addItem);
+                        if (current != null) ownerBox.setSelectedItem(current);
+                    }
+                    if (chunk[2] != null) mods.add(((GithubRepos.Repo) chunk[2]).fullName());
+                    checked = (Integer) chunk[1];
+                }
+                applyFilter();
             }
 
             @Override
             protected void done() {
                 try {
-                    model.set(get());
-                    Object current = ownerBox.getSelectedItem();
-                    ownerBox.removeAllItems();
-                    ownerBox.addItem(ALL_OWNERS);
-                    new TreeSet<>(model.repos.stream().map(GithubRepos.Repo::owner).toList()).forEach(ownerBox::addItem);
-                    if (current != null) ownerBox.setSelectedItem(current);
+                    get();
+                    checked = -1;
                     applyFilter();
                 } catch (Exception e) {
                     String msg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
@@ -152,7 +173,7 @@ final class GithubRepoDialog extends JDialog {
             @Override
             public boolean include(Entry<? extends RepoModel, ? extends Integer> entry) {
                 GithubRepos.Repo repo = model.repos.get(entry.getIdentifier());
-                if (modsOnly.isSelected() && !repo.mod()) return false;
+                if (modsOnly.isSelected() && !mods.contains(repo.fullName())) return false;
                 if (hideForks.isSelected() && (repo.fork() || repo.archived())) return false;
                 if (owner != null && !ALL_OWNERS.equals(owner) && !owner.equals(repo.owner())) return false;
                 return text.isEmpty() || repo.fullName().toLowerCase(Locale.ROOT).contains(text)
@@ -161,7 +182,8 @@ final class GithubRepoDialog extends JDialog {
         });
         if (!model.repos.isEmpty()) {
             status.setForeground(UIManager.getColor("Label.disabledForeground"));
-            status.setText(table.getRowCount() + " of " + model.repos.size() + " repositories");
+            status.setText(table.getRowCount() + " of " + model.repos.size() + " repositories"
+                    + (checked >= 0 ? " · checking gradle.properties " + checked + "/" + model.repos.size() + " …" : ""));
         }
     }
 

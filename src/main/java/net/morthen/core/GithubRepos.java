@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -13,23 +14,29 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Lists every repository the signed-in GitHub account can see – its own, those of its organizations and the ones it
- * collaborates on – and recognizes which of them are Minecraft mods.
+ * collaborates on – and recognizes which of them are Minecraft mods: their {@code gradle.properties} has {@value #MOD_PROPERTY}.
  */
 public final class GithubRepos {
     /** Variable with the personal access token (.env in the master folder, then the system environment). */
     public static final String VARIABLE = "GITHUB_TOKEN";
+    /** A repository whose gradle.properties defines this is a Minecraft mod. */
+    public static final String MOD_PROPERTY = "minecraft_version";
 
     /** @param owner user or organization */
     public record Repo(String fullName, String owner, String name, String description, String cloneUrl, String pageUrl,
-                       boolean isPrivate, boolean fork, boolean archived, String pushedAt, boolean mod) {
+                       boolean isPrivate, boolean fork, boolean archived, String pushedAt) {
     }
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -38,12 +45,9 @@ public final class GithubRepos {
             .build();
     private static final Pattern NEXT = Pattern.compile("<([^>]+)>;\\s*rel=\"next\"");
     private static final int MAX_PAGES = 50;
-
-    private static final Set<String> MOD_TOPICS = Set.of("minecraft", "minecraft-mod", "minecraft-mods", "minecraft-forge",
-            "minecraft-fabric", "minecraft-neoforge", "fabric", "fabric-mod", "fabricmc", "fabric-api", "neoforge",
-            "neoforged", "neoforge-mod", "forge", "forge-mod", "forge-mods", "minecraftforge", "quilt", "quilt-mod",
-            "quiltmc", "modrinth", "curseforge");
-    private static final Pattern MOD_TEXT = Pattern.compile("(?i)minecraft|fabric|neoforge|quilt(?:mc)?|\\bforge\\b");
+    private static final int THREADS = 8;
+    /** Answers per repository and last push, so a reload only checks what changed. */
+    private static final Map<String, Boolean> MOD_CACHE = new ConcurrentHashMap<>();
 
     private GithubRepos() {
     }
@@ -63,25 +67,89 @@ public final class GithubRepos {
         String url = "https://api.github.com/user/repos?per_page=100&sort=pushed"
                 + "&affiliation=owner,collaborator,organization_member";
         for (int page = 0; url != null && page < MAX_PAGES; page++) {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(30))
-                    .header("Accept", "application/vnd.github+json")
-                    .header("Authorization", "Bearer " + token.strip())
-                    .header("X-GitHub-Api-Version", "2022-11-28")
-                    .header("User-Agent", "mc-project-manager")
-                    .build();
-            try {
-                HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() == 401) throw new IOException("GitHub rejected the token (401).");
-                if (response.statusCode() != 200) throw new IOException("GitHub answered " + response.statusCode());
-                repos.addAll(parse(response.body()));
-                url = next(response.headers().firstValue("Link").orElse(null));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("interrupted");
-            }
+            HttpResponse<String> response = get(url, token, "application/vnd.github+json");
+            check(response);
+            repos.addAll(parse(response.body()));
+            url = next(response.headers().firstValue("Link").orElse(null));
         }
         return repos;
+    }
+
+    /**
+     * Checks the repositories' {@code gradle.properties} in parallel and reports each mod as soon as it is known.
+     *
+     * @param progress called with (repositories checked so far, repository if it is a mod else null); from worker threads
+     */
+    public static void detectMods(String token, List<Repo> repos, BiConsumer<Integer, Repo> progress) throws IOException {
+        ExecutorService pool = Executors.newFixedThreadPool(THREADS);
+        try {
+            List<Future<Boolean>> futures = new ArrayList<>();
+            for (Repo repo : repos) futures.add(pool.submit(() -> isMod(token, repo)));
+            for (int i = 0; i < repos.size(); i++) {
+                boolean mod = futures.get(i).get();
+                progress.accept(i + 1, mod ? repos.get(i) : null);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted");
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw e.getCause() instanceof IOException io ? io : new IOException(e.getCause());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static boolean isMod(String token, Repo repo) throws IOException {
+        String key = repo.fullName() + "@" + repo.pushedAt();
+        Boolean cached = MOD_CACHE.get(key);
+        if (cached != null) return cached;
+        HttpResponse<String> response = get("https://api.github.com/repos/" + repo.fullName() + "/contents/gradle.properties",
+                token, "application/vnd.github.raw+json");
+        boolean mod;
+        if (response.statusCode() == 200) {
+            mod = definesModProperty(response.body());
+        } else if (response.statusCode() == 404) { // no gradle.properties (or an empty repository)
+            mod = false;
+        } else {
+            check(response);
+            mod = false;
+        }
+        MOD_CACHE.put(key, mod);
+        return mod;
+    }
+
+    /** Whether the gradle.properties text defines {@value #MOD_PROPERTY}. */
+    static boolean definesModProperty(String text) {
+        try {
+            Properties props = new Properties();
+            props.load(new StringReader(text));
+            return props.containsKey(MOD_PROPERTY);
+        } catch (IOException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static HttpResponse<String> get(String url, String token, String accept) throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .header("Accept", accept)
+                .header("Authorization", "Bearer " + token.strip())
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("User-Agent", "mc-project-manager")
+                .build();
+        try {
+            return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted");
+        }
+    }
+
+    private static void check(HttpResponse<?> response) throws IOException {
+        int status = response.statusCode();
+        if (status == 401) throw new IOException("GitHub rejected the token (401).");
+        if (status == 403 || status == 429) throw new IOException("GitHub refused the request (" + status + ") – rate limit reached?");
+        if (status != 200) throw new IOException("GitHub answered " + status);
     }
 
     static String next(String linkHeader) {
@@ -96,27 +164,15 @@ public final class GithubRepos {
             JsonArray array = JsonParser.parseString(json).getAsJsonArray();
             for (JsonElement e : array) {
                 JsonObject o = e.getAsJsonObject();
-                String name = string(o, "name");
-                String description = string(o, "description");
                 JsonObject owner = o.has("owner") && o.get("owner").isJsonObject() ? o.getAsJsonObject("owner") : new JsonObject();
-                List<String> topics = new ArrayList<>();
-                if (o.get("topics") instanceof JsonArray t) t.forEach(x -> topics.add(x.getAsString()));
-                repos.add(new Repo(string(o, "full_name"), string(owner, "login"), name, description,
+                repos.add(new Repo(string(o, "full_name"), string(owner, "login"), string(o, "name"), string(o, "description"),
                         string(o, "clone_url"), string(o, "html_url"), bool(o, "private"), bool(o, "fork"),
-                        bool(o, "archived"), string(o, "pushed_at"), isMod(name, description, topics)));
+                        bool(o, "archived"), string(o, "pushed_at")));
             }
             return repos;
         } catch (RuntimeException e) {
             throw new IOException("Unexpected answer from GitHub: " + e.getMessage());
         }
-    }
-
-    /** A Minecraft mod if a topic says so or the name/description mentions Minecraft or a mod loader. */
-    static boolean isMod(String name, String description, List<String> topics) {
-        for (String topic : topics) {
-            if (MOD_TOPICS.contains(topic.toLowerCase(Locale.ROOT))) return true;
-        }
-        return MOD_TEXT.matcher(name == null ? "" : name).find() || MOD_TEXT.matcher(description == null ? "" : description).find();
     }
 
     private static String string(JsonObject o, String key) {

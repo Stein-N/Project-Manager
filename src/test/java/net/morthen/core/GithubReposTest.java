@@ -13,32 +13,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GithubReposTest {
     @Test
-    void parsesReposAndDetectsMods() throws IOException {
+    void parsesRepos() throws IOException {
         List<GithubRepos.Repo> repos = GithubRepos.parse("""
                 [{"name":"cool-mod","full_name":"me/cool-mod","description":"Adds things","private":true,"fork":false,
                   "archived":false,"clone_url":"https://github.com/me/cool-mod.git","html_url":"https://github.com/me/cool-mod",
-                  "pushed_at":"2026-01-01T00:00:00Z","owner":{"login":"me"},"topics":["fabric-mod"]},
+                  "pushed_at":"2026-01-01T00:00:00Z","owner":{"login":"me"}},
                  {"name":"website","full_name":"org/website","description":null,"private":false,"fork":true,
-                  "archived":true,"clone_url":"https://github.com/org/website.git","owner":{"login":"org"},"topics":[]}]""");
+                  "archived":true,"clone_url":"https://github.com/org/website.git","owner":{"login":"org"}}]""");
         assertEquals(2, repos.size());
-        GithubRepos.Repo mod = repos.get(0);
-        assertEquals("me/cool-mod", mod.fullName());
-        assertEquals("me", mod.owner());
-        assertTrue(mod.mod());
-        assertTrue(mod.isPrivate());
+        GithubRepos.Repo first = repos.get(0);
+        assertEquals("me/cool-mod", first.fullName());
+        assertEquals("me", first.owner());
+        assertTrue(first.isPrivate());
         GithubRepos.Repo other = repos.get(1);
-        assertFalse(other.mod());
         assertTrue(other.fork());
         assertTrue(other.archived());
         assertNull(other.description());
     }
 
     @Test
-    void detectsModsByNameAndDescription() {
-        assertTrue(GithubRepos.isMod("x", "A Minecraft mod", List.of()));
-        assertTrue(GithubRepos.isMod("my-neoforge-thing", null, List.of()));
-        assertTrue(GithubRepos.isMod("x", null, List.of("Minecraft")));
-        assertFalse(GithubRepos.isMod("dotfiles", "my config", List.of("linux")));
+    void modIsRecognizedByGradleProperty() {
+        assertTrue(GithubRepos.definesModProperty("mod_id=x\nminecraft_version=1.21.1\n"));
+        assertTrue(GithubRepos.definesModProperty("minecraft_version = 26.1"));
+        assertFalse(GithubRepos.definesModProperty("# minecraft_version=1.21\norg.gradle.jvmargs=-Xmx2G"));
+        assertFalse(GithubRepos.definesModProperty(""));
     }
 
     @Test
