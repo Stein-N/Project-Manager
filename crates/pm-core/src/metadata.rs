@@ -59,7 +59,7 @@ fn fabric(project: &Path, resources: &Path, file: &Path, gradle: &BTreeMap<Strin
         version: str(&json["version"]),
         description: str(&json["description"]),
         authors,
-        icon: icon(resources, icon_path(&json["icon"]).as_deref()),
+        icon: icon(project, resources, icon_path(&json["icon"]).as_deref()),
         dependencies: deps,
         file: relative(project, file),
     })
@@ -98,7 +98,7 @@ fn quilt(project: &Path, resources: &Path, file: &Path, gradle: &BTreeMap<String
         version: str(&loader["version"]),
         description: str(&meta["description"]),
         authors,
-        icon: icon(resources, icon_path(&meta["icon"]).as_deref()),
+        icon: icon(project, resources, icon_path(&meta["icon"]).as_deref()),
         dependencies: deps,
         file: relative(project, file),
     })
@@ -200,7 +200,7 @@ fn toml(project: &Path, resources: &Path, file: &Path, gradle: &BTreeMap<String,
         version: m.get("version").cloned(),
         description: m.get("description").cloned(),
         authors: m.get("authors").cloned().into_iter().collect(),
-        icon: icon(resources, m.get("logoFile").map(String::as_str)),
+        icon: icon(project, resources, m.get("logoFile").map(String::as_str)),
         dependencies,
         file: relative(project, file),
     })
@@ -245,10 +245,33 @@ pub fn expand(text: &str, gradle: &BTreeMap<String, String>) -> String {
         .into_owned()
 }
 
-fn icon(resources: &Path, relative: Option<&str>) -> Option<std::path::PathBuf> {
-    let rel = relative.filter(|r| !r.trim().is_empty() && !r.contains("${"))?;
-    let icon = resources.join(rel.replace('\\', "/"));
-    icon.is_file().then_some(icon)
+/// The icon next to the mod file, or – in multiloader projects, where Gradle merges the resources of `common` into
+/// each loader – in the resources of another subproject.
+fn icon(project: &Path, resources: &Path, relative: Option<&str>) -> Option<std::path::PathBuf> {
+    let rel = relative.filter(|r| !r.trim().is_empty() && !r.contains("${"))?.replace('\\', "/");
+    let rel = rel.trim_start_matches('/');
+    std::iter::once(resources.to_path_buf()).chain(resource_dirs(project)).map(|r| r.join(rel)).find(|i| i.is_file())
+}
+
+/// `src/main/resources` of the project and of its direct subprojects: the root first, then `common`, then the others
+/// alphabetically.
+pub(crate) fn resource_dirs(project: &Path) -> Vec<std::path::PathBuf> {
+    let mut subs: Vec<_> = fs::read_dir(project)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            !name.starts_with('.') && name != "build" && p.is_dir()
+        })
+        .collect();
+    subs.sort_by_key(|p| (!p.ends_with("common"), p.clone()));
+    std::iter::once(project.to_path_buf())
+        .chain(subs)
+        .map(|b| b.join("src/main/resources"))
+        .filter(|r| r.is_dir())
+        .collect()
 }
 
 fn str(v: &Value) -> Option<String> {
@@ -312,6 +335,22 @@ mod tests {
         assert!(m.dependencies[0].required);
         assert!(!m.dependencies[1].required);
         assert!(m.file.replace('\\', "/").ends_with("neoforge/src/main/resources/META-INF/neoforge.mods.toml"));
+    }
+
+    #[test]
+    fn icon_from_common_resources() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path();
+        fs::create_dir_all(p.join("fabric/src/main/resources")).unwrap();
+        fs::write(
+            p.join("fabric/src/main/resources/fabric.mod.json"),
+            r#"{"id": "${mod_id}", "icon": "${mod_id}.png"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(p.join("common/src/main/resources")).unwrap();
+        fs::write(p.join("common/src/main/resources/demo.png"), [1]).unwrap();
+        let m = read(p, &props(&[("mod_id", "demo")])).unwrap();
+        assert_eq!(m.icon, Some(p.join("common/src/main/resources/demo.png")));
     }
 
     #[test]

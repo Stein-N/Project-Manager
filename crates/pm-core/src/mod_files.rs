@@ -2,7 +2,7 @@
 //! the root and in subprojects like `fabric/` or `neoforge/`) and the version declarations of their dependencies,
 //! which can be changed in place without touching the rest of the file.
 
-use crate::metadata::{expand, strip_comment, unquote};
+use crate::metadata::{self, expand, strip_comment, unquote};
 use crate::{dependencies, util};
 use anyhow::{Context, Result, bail};
 use pm_types::{DeclaredDependency, DependencyKind, ModFile, ModLoader, VersionConstraint};
@@ -28,8 +28,7 @@ pub fn read(project: &Path) -> Vec<ModFile> {
     let gradle = util::read_properties(&project.join("gradle.properties"));
     let suggest = Suggestions::new(project, &gradle);
     let mut files = Vec::new();
-    for base in bases(project) {
-        let resources = base.join("src/main/resources");
+    for resources in metadata::resource_dirs(project) {
         for (name, loader) in FILES {
             let file = resources.join(name);
             let Ok(text) = fs::read_to_string(&file) else { continue };
@@ -62,22 +61,6 @@ pub fn read(project: &Path) -> Vec<ModFile> {
         }
     }
     files
-}
-
-/// The project and its direct subprojects with resources (root first, then alphabetically).
-fn bases(project: &Path) -> Vec<std::path::PathBuf> {
-    let mut subs: Vec<_> = fs::read_dir(project)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            let name = util::file_name(p);
-            !name.starts_with('.') && name != "build" && p.join("src/main/resources").is_dir()
-        })
-        .collect();
-    subs.sort();
-    std::iter::once(project.to_path_buf()).filter(|p| p.join("src/main/resources").is_dir()).chain(subs).collect()
 }
 
 /// Sets how the version of `raw_id` in `file` is evaluated; returns the previous declaration.
