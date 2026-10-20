@@ -176,9 +176,10 @@ pub fn options(
     fitting
 }
 
-/// The newest stable version among the options.
+/// The newest stable version among the options; the newest pre-release if there is no stable one (NeoForge for a new
+/// Minecraft version is beta for a while).
 pub fn latest(options: &[String]) -> Option<String> {
-    options.iter().find(|v| is_stable(v)).cloned()
+    options.iter().find(|v| is_stable(v)).or(options.first()).cloned()
 }
 
 #[cfg(test)]
@@ -192,7 +193,7 @@ mod tests {
         lists.insert("fabric-api".into(), l(&["0.104.0+1.21.1", "0.105.0+1.21.1", "0.164.0+26.3", "0.110.0+1.21.4"]));
         lists.insert("yarn".into(), l(&["1.21.1+build.3", "1.21.1+build.10", "1.21.11+build.6"]));
         lists.insert("forge".into(), l(&["1.20.1-47.3.0", "1.20.1-47.4.1", "1.21.1-52.1.20"]));
-        lists.insert("neoforge".into(), l(&["21.1.264", "21.1.300-beta", "26.3.0.95", "21.10.5"]));
+        lists.insert("neoforge".into(), l(&["21.1.264", "21.1.300-beta", "26.3.0.95", "26.3.1.12", "21.10.5"]));
         lists.insert("neoform".into(), l(&["1.21.1-20240808.144430", "1.21.1-20240613.152323", "26.4-snapshot-5-1"]));
         lists.insert("gradle".into(), l(&["8.10.2", "9.8.2", "9.9.0-rc-1"]));
         Catalog { fetched_at: 1, lists, errors: BTreeMap::new() }
@@ -215,6 +216,7 @@ mod tests {
         assert_eq!(latest(&options(&c, NeoForge, "1.21.1", None, "")).as_deref(), Some("21.1.264"));
         assert_eq!(latest(&options(&c, Gradle, "1.21.1", None, "8.10.2")).as_deref(), Some("9.8.2"));
         assert_eq!(latest(&options(&c, FabricLoader, "1.21.1", None, "")).as_deref(), Some("0.20.1"));
+        assert_eq!(latest(&["21.2.5-beta".to_string(), "21.2.1-beta".to_string()]).as_deref(), Some("21.2.5-beta"));
     }
 
     #[test]

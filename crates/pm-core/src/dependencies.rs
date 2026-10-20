@@ -57,16 +57,25 @@ pub fn read(project: &Path) -> Vec<DependencyEntry> {
     entries
 }
 
+/// What a property is, independent of how the build names it: `fabric_loader`, `fabric_loader_version`,
+/// `fabricLoaderVersion` and `loader_version` are all the Fabric Loader.
 fn kind(key: &str, value: &str) -> Option<DependencyKind> {
     use DependencyKind::*;
-    match key {
-        "loader_version" | "fabric_loader_version" => value.starts_with("0.").then_some(FabricLoader),
-        "fabric_version" | "fabric_api_version" => Some(FabricApi),
-        "yarn_mappings" => Some(Yarn),
-        "neo_version" | "neoforge_version" => Some(NeoForge),
-        "forge_version" => Some(Forge),
-        "neo_form_version" | "neoform_version" => Some(NeoForm),
-        "parchment_mappings_version" | "parchment_version" => Some(Parchment),
+    let mut k: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
+    for suffix in ["version", "mappings"] {
+        if let Some(rest) = k.strip_suffix(suffix).filter(|r| !r.is_empty()) {
+            k = rest.to_string();
+        }
+    }
+    match k.as_str() {
+        // Forge projects have a loader_version too (the FML version, not 0.x)
+        "loader" | "fabricloader" => value.starts_with("0.").then_some(FabricLoader),
+        "fabric" | "fabricapi" => Some(FabricApi),
+        "yarn" => Some(Yarn),
+        "neo" | "neoforge" => Some(NeoForge),
+        "forge" | "minecraftforge" => Some(Forge),
+        "neoform" => Some(NeoForm),
+        "parchment" | "parchmentmappings" => Some(Parchment),
         _ => None,
     }
 }
@@ -95,7 +104,11 @@ pub fn wrapper_version(project: &Path) -> Option<String> {
 pub fn neoforge_prefix(mc: &str) -> String {
     let parts: Vec<&str> = mc.split('.').collect();
     if parts.len() >= 2 && parts[0] == "1" {
+        // 1.21.1 → 21.1.x, 1.21 → 21.0.x
         format!("{}.{}.", parts[1], parts.get(2).unwrap_or(&"0"))
+    } else if parts.len() == 2 {
+        // 26.1 → 26.1.0.x (26.1.2.x belongs to Minecraft 26.1.2)
+        format!("{mc}.0.")
     } else {
         format!("{mc}.")
     }
@@ -199,10 +212,32 @@ mod tests {
     fn neoforge_prefix_and_newer_check() {
         assert_eq!(neoforge_prefix("1.21.1"), "21.1.");
         assert_eq!(neoforge_prefix("1.21"), "21.0.");
-        assert_eq!(neoforge_prefix("26.1"), "26.1.");
+        assert_eq!(neoforge_prefix("26.1"), "26.1.0.");
+        assert_eq!(neoforge_prefix("26.1.2"), "26.1.2.");
         assert!(is_newer("0.105.0+1.21.1", "0.104.0+1.21.1"));
         assert!(!is_newer("0.16.5", "0.16.5"));
         assert!(!is_newer("0.16.4", "0.16.5"));
+    }
+
+    #[test]
+    fn keys_without_version_suffix() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("gradle.properties"), "minecraft_version=26.1\nneoform=26.1-1\nneoforge=26.1.0.19-beta\n\
+            fabric_api=0.145.1+26.1\nfabric_loader=0.19.5\nforge=62.0.9\nfabricLoaderVersion=0.19.5\nparchment_mappings=2024.11.17\n").unwrap();
+        let kinds: Vec<(String, DependencyKind)> =
+            read(tmp.path()).into_iter().map(|e| (e.key.unwrap(), e.kind)).collect();
+        use DependencyKind::*;
+        for (key, kind) in [
+            ("fabric_loader", FabricLoader),
+            ("fabricLoaderVersion", FabricLoader),
+            ("fabric_api", FabricApi),
+            ("neoforge", NeoForge),
+            ("neoform", NeoForm),
+            ("forge", Forge),
+            ("parchment_mappings", Parchment),
+        ] {
+            assert!(kinds.contains(&(key.to_string(), kind)), "{key}: {kinds:?}");
+        }
     }
 
     #[test]
