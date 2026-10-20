@@ -1,0 +1,11 @@
+The SVG icons in this folder are taken from the IntelliJ Platform (JetBrains/intellij-community,
+platform/icons/src/expui and plugins/terminal/resources/icons/expui).
+
+Copyright 2000-2025 JetBrains s.r.o. and contributors.
+Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Source: https://github.com/JetBrains/intellij-community
+
+Some files were renamed (e.g. general/download.svg -> clone.svg, toolwindows/vcs.svg -> branch.svg);
+their content is unchanged.
+
+log.svg is not from the IntelliJ Platform; it is a simple icon made for this project in the same style.

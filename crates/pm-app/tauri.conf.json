@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MC Mod Project Manager",
+  "mainBinaryName": "project-manager",
+  "identifier": "net.morthen.projectmanager",
+  "build": {
+    "beforeDevCommand": { "script": "trunk serve", "cwd": "../pm-ui", "wait": false },
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": { "script": "trunk build --release", "cwd": "../pm-ui" },
+    "frontendDist": "../pm-ui/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "MC Mod Project Manager",
+        "width": 900,
+        "height": 600,
+        "minWidth": 900,
+        "minHeight": 560,
+        "visible": false,
+        "center": true
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "appimage"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"],
+    "category": "DeveloperTool",
+    "shortDescription": "Manage Minecraft mod projects, versions and backports"
+  }
+}
