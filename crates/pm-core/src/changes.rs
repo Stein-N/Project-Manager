@@ -65,17 +65,11 @@ pub fn commit(
     with_pathspec(&removed, |spec| {
         git.run_ok(repo, log, &["rm", "--cached", "-q", "--ignore-unmatch", spec, "--pathspec-file-nul"]).map(drop)
     })?;
-    let file = temp_file("mcpm-message");
+    let file = crate::util::temp_file("mcpm-message", "txt");
     std::fs::write(&file, format!("{}\n", message.trim()))?;
     let result = git.run_ok(repo, log, &["commit", "-F", &file.to_string_lossy()]);
     let _ = std::fs::remove_file(&file);
     result.map(drop)
-}
-
-fn temp_file(prefix: &str) -> std::path::PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    std::env::temp_dir().join(format!("{prefix}-{}-{}.txt", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)))
 }
 
 /// Passes the paths via a NUL-separated file (no command line length limits, no quoting issues).
@@ -83,7 +77,7 @@ fn with_pathspec(paths: &[String], action: impl FnOnce(&str) -> Result<()>) -> R
     if paths.is_empty() {
         return Ok(());
     }
-    let file = temp_file("mcpm-pathspec");
+    let file = crate::util::temp_file("mcpm-pathspec", "txt");
     std::fs::write(&file, format!("{}\0", paths.join("\0"))).context("Could not write the path list")?;
     let result = action(&format!("--pathspec-from-file={}", file.display()));
     let _ = std::fs::remove_file(&file);

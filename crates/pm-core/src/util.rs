@@ -229,6 +229,13 @@ pub fn subdirs(dir: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// A file name in the temp folder no other call (thread or process) gets: `<prefix>-<pid>-<n>.<ext>`.
+pub fn temp_file(prefix: &str, ext: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    std::env::temp_dir().join(format!("{prefix}-{}-{}.{ext}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)))
+}
+
 pub fn read_or_empty(file: &Path) -> String {
     fs::read(file).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
 }

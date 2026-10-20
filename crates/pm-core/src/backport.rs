@@ -398,7 +398,7 @@ pub fn conflict_diff(git: &Git, work: &Path, path: &str, sha: &str) -> String {
 /// `git apply --3way`, then resets the work worktree. Returns the files with conflicts in the target.
 pub fn apply(git: &Git, work: &Path, target_project: &Path, log: Log) -> Result<Vec<String>> {
     git.output(work, &["add", "-A"])?;
-    let patch = std::env::temp_dir().join(format!("backport-{}.patch", std::process::id()));
+    let patch = util::temp_file("backport", "patch");
     let result = (|| -> Result<Vec<String>> {
         // --output keeps the bytes as they are (CRLF files, other encodings)
         let output = format!("--output={}", patch.display());

@@ -228,19 +228,13 @@ fn launch(executable: &Path, request: &Request, token: Option<&str>, log: Log, c
     if cancel.is_cancelled() {
         return ClaudeOutcome::failed(ClaudeStatus::Cancelled, "Cancelled.");
     }
-    let mcp = std::env::temp_dir().join(format!("claude-mcp-{}-{}.json", std::process::id(), unique()));
+    let mcp = util::temp_file("claude-mcp", "json");
     if let Err(e) = std::fs::write(&mcp, r#"{"mcpServers":{}}"#) {
         return ClaudeOutcome::failed(ClaudeStatus::Error, format!("Could not start Claude: {e}"));
     }
     let outcome = execute(executable, request, token, &mcp, log, cancel);
     let _ = std::fs::remove_file(&mcp);
     outcome
-}
-
-fn unique() -> u64 {
-    use std::sync::atomic::AtomicU64;
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    NEXT.fetch_add(1, Ordering::SeqCst)
 }
 
 fn execute(

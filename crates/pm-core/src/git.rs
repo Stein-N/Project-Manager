@@ -239,6 +239,9 @@ pub(crate) mod testing {
         let dir = parent.join(name);
         std::fs::create_dir_all(&dir).unwrap();
         sh(&dir, &["init", "-q"]);
+        // commands of the code under test (annotated tags, commits) need an identity; CI runners have none
+        sh(&dir, &["config", "user.name", "Test"]);
+        sh(&dir, &["config", "user.email", "test@example.com"]);
         commit(&dir, "README.md", "hello\n", "initial");
         dir
     }
