@@ -136,6 +136,7 @@ fn main() {
             commands::gradle::env_save,
             commands::extras::dependencies,
             commands::extras::set_dependency,
+            commands::extras::set_declared_dependency,
             commands::extras::refresh_versions,
             commands::extras::cleanup_scan,
             commands::extras::dir_size,

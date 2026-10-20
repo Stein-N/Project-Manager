@@ -594,6 +594,23 @@ pub async fn set_dependency(s: Store, p: ModProject, entry: DependencyEntry, ver
     }
 }
 
+/// Changes how a dependency declared in a mod file is evaluated (the change stays uncommitted).
+pub async fn set_declared_dependency(
+    s: Store,
+    p: ModProject,
+    file: String,
+    dep: DeclaredDependency,
+    new: String,
+    constraint: VersionConstraint,
+) {
+    let label = format!("{} ({})", dep.mod_id, file.rsplit('/').next().unwrap_or(&file));
+    let call = api::set_declared_dependency(p.path.clone(), file, dep.raw_id, constraint);
+    if let Some(old) = s.bg("Updating…", call).await {
+        s.version_changes.update(|c| c.entry(p.path.clone()).or_default().push((label, old, new)));
+        s.reload_and_select(p.path).await;
+    }
+}
+
 /// Every entry to its newest stable version.
 pub async fn update_all_dependencies(s: Store, p: ModProject, rows: Vec<DependencyRow>) {
     let updates: Vec<(DependencyEntry, String)> = rows

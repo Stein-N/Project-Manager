@@ -18,6 +18,7 @@ pub mod github;
 pub mod gradle;
 pub mod http;
 pub mod metadata;
+pub mod mod_files;
 pub mod proc;
 pub mod readme;
 pub mod scanner;

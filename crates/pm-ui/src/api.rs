@@ -93,6 +93,7 @@ commands! {
     // dependencies, cleanup, GitHub
     dependencies(project: PathBuf) -> DependenciesInfo;
     set_dependency(project: PathBuf, entry: DependencyEntry, version: String) -> ();
+    set_declared_dependency(project: PathBuf, file: String, raw_id: String, constraint: VersionConstraint) -> String;
     refresh_versions() -> ();
     cleanup_scan() -> (PathBuf, Vec<CacheItem>);
     dir_size(path: PathBuf) -> u64;

@@ -263,9 +263,8 @@ pub struct DependenciesInfo {
     pub versions_loaded_at: Option<i64>,
     /// Lists that could not be loaded this time.
     pub versions_errors: Vec<String>,
-    /// Metadata file the declared dependencies come from.
-    pub declared_in: Option<String>,
-    pub declared: Vec<ModDependency>,
+    /// The mod files of every loader (fabric.mod.json, mods.toml, …) with their declared dependencies.
+    pub mod_files: Vec<ModFile>,
 }
 
 /// A changelog draft by Claude.
@@ -669,6 +668,165 @@ pub struct DependencyRow {
     pub latest: Option<String>,
 }
 
+// ---------------------------------------------------------------- declared dependencies
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModLoader {
+    Fabric,
+    Quilt,
+    Forge,
+    NeoForge,
+}
+
+impl ModLoader {
+    pub fn label(self) -> &'static str {
+        match self {
+            ModLoader::Fabric => "Fabric",
+            ModLoader::Quilt => "Quilt",
+            ModLoader::Forge => "Forge",
+            ModLoader::NeoForge => "NeoForge",
+        }
+    }
+
+    /// Fabric and Quilt write `>=1.0 <2.0`, (Neo)Forge Maven ranges like `[1.0,2.0)`.
+    pub fn maven_ranges(self) -> bool {
+        matches!(self, ModLoader::Forge | ModLoader::NeoForge)
+    }
+}
+
+/// How a declared version is evaluated. Versions may be placeholders like `${fabric_loader}`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VersionConstraint {
+    Any,
+    Exact(String),
+    AtLeast(String),
+    Range {
+        min: String,
+        max: String,
+        max_inclusive: bool,
+    },
+    /// Anything else (`~1.21`, `^1.0`, alternatives, …), kept as written.
+    Custom(String),
+}
+
+impl VersionConstraint {
+    /// Reads a declaration in the syntax of the loader.
+    pub fn parse(loader: ModLoader, text: &str) -> VersionConstraint {
+        let t = text.trim();
+        if t.is_empty() || t == "*" {
+            return VersionConstraint::Any;
+        }
+        let custom = || VersionConstraint::Custom(t.to_string());
+        let plain = |v: &str| !v.is_empty() && !v.contains(|c: char| " ,[]()<>=~^*|".contains(c)) && !v.ends_with(".x");
+        if loader.maven_ranges() {
+            let Some(inner) = t.strip_prefix('[') else { return custom() };
+            if let Some(v) = inner.strip_suffix(']').filter(|v| plain(v)) {
+                return VersionConstraint::Exact(v.to_string());
+            }
+            let (body, max_inclusive) = match (inner.strip_suffix(')'), inner.strip_suffix(']')) {
+                (Some(b), _) => (b, false),
+                (_, Some(b)) => (b, true),
+                _ => return custom(),
+            };
+            let Some((min, max)) = body.split_once(',') else { return custom() };
+            let (min, max) = (min.trim(), max.trim());
+            if !plain(min) {
+                return custom();
+            }
+            match max {
+                "" if !max_inclusive => VersionConstraint::AtLeast(min.to_string()),
+                m if plain(m) => VersionConstraint::Range { min: min.into(), max: m.into(), max_inclusive },
+                _ => custom(),
+            }
+        } else {
+            let parts: Vec<&str> = t.split_whitespace().collect();
+            match parts.as_slice() {
+                [v] if plain(v.strip_prefix('=').unwrap_or(v)) => {
+                    VersionConstraint::Exact(v.strip_prefix('=').unwrap_or(v).to_string())
+                }
+                [v] => match v.strip_prefix(">=").filter(|v| plain(v)) {
+                    Some(min) => VersionConstraint::AtLeast(min.to_string()),
+                    None => custom(),
+                },
+                [a, b] => {
+                    let min = a.strip_prefix(">=").filter(|v| plain(v));
+                    let max = match b.strip_prefix("<=") {
+                        Some(m) => Some((m, true)),
+                        None => b.strip_prefix('<').map(|m| (m, false)),
+                    };
+                    match (min, max) {
+                        (Some(min), Some((max, max_inclusive))) if plain(max) => {
+                            VersionConstraint::Range { min: min.into(), max: max.into(), max_inclusive }
+                        }
+                        _ => custom(),
+                    }
+                }
+                _ => custom(),
+            }
+        }
+    }
+
+    /// Writes it in the syntax of the loader.
+    pub fn format(&self, loader: ModLoader) -> String {
+        use VersionConstraint::*;
+        let maven = loader.maven_ranges();
+        match self {
+            Any => "*".into(),
+            Exact(v) if maven => format!("[{v}]"),
+            Exact(v) => v.clone(),
+            AtLeast(v) if maven => format!("[{v},)"),
+            AtLeast(v) => format!(">={v}"),
+            Range { min, max, max_inclusive } if maven => {
+                format!("[{min},{max}{}", if *max_inclusive { ']' } else { ')' })
+            }
+            Range { min, max, max_inclusive } => format!(">={min} <{}{max}", if *max_inclusive { "=" } else { "" }),
+            Custom(t) => t.clone(),
+        }
+    }
+
+    /// Readable form, e.g. "≥ 0.19.5" or "≥ 1.0 and < 2.0".
+    pub fn describe(&self) -> String {
+        use VersionConstraint::*;
+        match self {
+            Any => "any version".into(),
+            Exact(v) => format!("exactly {v}"),
+            AtLeast(v) => format!("{v} or newer"),
+            Range { min, max, max_inclusive } => {
+                format!("from {min} up to {max} ({})", if *max_inclusive { "inclusive" } else { "exclusive" })
+            }
+            Custom(t) => t.clone(),
+        }
+    }
+}
+
+/// A dependency declared in a mod file.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeclaredDependency {
+    /// Mod id as written in the file (may be a placeholder); identifies the entry when it is changed.
+    pub raw_id: String,
+    /// Mod id with placeholders resolved.
+    pub mod_id: String,
+    /// The declaration as written (with placeholders).
+    pub raw: String,
+    pub constraint: VersionConstraint,
+    /// The constraint with placeholders resolved from gradle.properties.
+    pub resolved: String,
+    pub required: bool,
+    /// Versions offered for it: the matching gradle.properties placeholders and their values.
+    pub suggestions: Vec<String>,
+}
+
+/// A mod file of one loader.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModFile {
+    pub loader: ModLoader,
+    /// Path relative to the project.
+    pub file: String,
+    pub dependencies: Vec<DeclaredDependency>,
+    /// The tool can write the declarations (not for Quilt).
+    pub editable: bool,
+}
+
 // ---------------------------------------------------------------- cleanup
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -807,4 +965,35 @@ pub struct GithubProgress {
     pub checked: usize,
     /// Full name of a repository that is a mod.
     pub mod_repo: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constraints_round_trip_in_both_syntaxes() {
+        use VersionConstraint::*;
+        let range = |min: &str, max: &str, max_inclusive| Range { min: min.into(), max: max.into(), max_inclusive };
+        for (loader, text, constraint) in [
+            (ModLoader::Fabric, "*", Any),
+            (ModLoader::Fabric, "0.19.5", Exact("0.19.5".into())),
+            (ModLoader::Fabric, ">=${fabric_loader}", AtLeast("${fabric_loader}".into())),
+            (ModLoader::Fabric, ">=1.0 <2.0", range("1.0", "2.0", false)),
+            (ModLoader::Fabric, ">=1.0 <=2.0", range("1.0", "2.0", true)),
+            (ModLoader::Fabric, "~${minecraft_version}", Custom("~${minecraft_version}".into())),
+            (ModLoader::NeoForge, "*", Any),
+            (ModLoader::NeoForge, "[26.1]", Exact("26.1".into())),
+            (ModLoader::NeoForge, "[${neoforge_version},)", AtLeast("${neoforge_version}".into())),
+            (ModLoader::Forge, "[62,63)", range("62", "63", false)),
+            (ModLoader::Forge, "[1.0,2.0]", range("1.0", "2.0", true)),
+            (ModLoader::Forge, "(1.0,)", Custom("(1.0,)".into())),
+        ] {
+            assert_eq!(VersionConstraint::parse(loader, text), constraint, "{text}");
+            assert_eq!(constraint.format(loader), text);
+        }
+        assert_eq!(VersionConstraint::parse(ModLoader::Fabric, "=1.2"), Exact("1.2".into()));
+        assert_eq!(VersionConstraint::parse(ModLoader::Fabric, "1.21.x"), Custom("1.21.x".into()));
+        assert_eq!(VersionConstraint::parse(ModLoader::Forge, "1.0"), Custom("1.0".into()));
+    }
 }

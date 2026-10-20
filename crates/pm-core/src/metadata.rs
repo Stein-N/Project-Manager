@@ -206,7 +206,7 @@ fn toml(project: &Path, resources: &Path, file: &Path, gradle: &BTreeMap<String,
     })
 }
 
-fn strip_comment(line: &str) -> &str {
+pub(crate) fn strip_comment(line: &str) -> &str {
     let mut quote = None;
     for (i, c) in line.char_indices() {
         match quote {
@@ -220,7 +220,7 @@ fn strip_comment(line: &str) -> &str {
     line
 }
 
-fn unquote(value: &str) -> String {
+pub(crate) fn unquote(value: &str) -> String {
     let quoted = value.len() >= 2
         && ((value.starts_with('"') && value.ends_with('"')) || (value.starts_with('\'') && value.ends_with('\'')));
     if quoted { value[1..value.len() - 1].to_string() } else { value.to_string() }
@@ -236,6 +236,9 @@ pub fn expand(text: &str, gradle: &BTreeMap<String, String>) -> String {
             gradle
                 .get(key)
                 .or_else(|| if key == "version" || key == "file.jarVersion" { gradle.get("mod_version") } else { None })
+                // builds that map `neoforge` to `${neoforge_version}` (or the other way round)
+                .or_else(|| key.strip_suffix("_version").and_then(|k| gradle.get(k)))
+                .or_else(|| gradle.get(&format!("{key}_version")))
                 .cloned()
                 .unwrap_or_else(|| c[0].to_string())
         })

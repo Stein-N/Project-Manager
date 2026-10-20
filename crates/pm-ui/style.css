@@ -171,6 +171,12 @@ textarea.input { height: auto; padding: 6px 8px; resize: vertical; }
 .notice { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; padding: 8px 10px; border: 1px solid #b5cbf8; border-radius: var(--radius); background: #f2f6ff; }
 .version-select { width: 260px; flex: none; }
 .version-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.declared { gap: 2px; }
+.mod-file-heading { align-items: baseline; margin-top: 8px; }
+.mod-file-heading h4.section { margin-bottom: 6px; }
+.mode-select { width: 130px; flex: none; }
+.bound-select { width: 90px; flex: none; }
+.version-input { width: 200px; flex: none; }
 .conflict { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid #f2c55c; border-radius: var(--radius); background: var(--orange-bg); }
 .notes { padding: 4px 6px; }
 

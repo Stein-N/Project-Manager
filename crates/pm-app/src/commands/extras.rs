@@ -1,8 +1,10 @@
 //! Dependencies tab, the cleanup dialog and the GitHub repository list.
 
 use crate::state::{self, AppState, CmdResult, run};
-use pm_core::{cleanup, dependencies, github, util, versions};
-use pm_types::{CacheItem, DependenciesInfo, DependencyEntry, DependencyRow, GithubProgress, GithubRepo, events};
+use pm_core::{cleanup, dependencies, github, mod_files, util, versions};
+use pm_types::{
+    CacheItem, DependenciesInfo, DependencyEntry, DependencyRow, GithubProgress, GithubRepo, VersionConstraint, events,
+};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager};
@@ -11,7 +13,6 @@ use tauri::{AppHandle, Emitter, Manager};
 pub async fn dependencies(app: AppHandle, project: PathBuf) -> CmdResult<DependenciesInfo> {
     run(app, move |_, st| {
         let p = st.project(&project)?;
-        let meta = p.metadata.clone().unwrap_or_default();
         let catalog = st.versions.read().unwrap().clone();
         let parchment = dependencies::parchment_minecraft(&project);
         let rows = dependencies::read(&project)
@@ -30,8 +31,7 @@ pub async fn dependencies(app: AppHandle, project: PathBuf) -> CmdResult<Depende
             versions_errors: catalog
                 .map(|c| c.errors.into_iter().map(|(k, e)| format!("{k}: {e}")).collect())
                 .unwrap_or_default(),
-            declared_in: p.metadata.as_ref().map(|m| util::file_name(std::path::Path::new(&m.file))),
-            declared: meta.dependencies,
+            mod_files: mod_files::read(&project),
         })
     })
     .await
@@ -50,6 +50,24 @@ pub async fn set_dependency(
         let label = st.project(&project).map(|p| p.label()).unwrap_or_default();
         state::log(app, &format!("[{label}] {}: {} → {version}", entry.label, entry.value));
         Ok(())
+    })
+    .await
+}
+
+/// Sets how a dependency declared in a mod file is evaluated; returns the previous declaration.
+#[tauri::command]
+pub async fn set_declared_dependency(
+    app: AppHandle,
+    project: PathBuf,
+    file: String,
+    raw_id: String,
+    constraint: VersionConstraint,
+) -> CmdResult<String> {
+    run(app, move |app, st| {
+        let old = mod_files::set(&project, &file, &raw_id, &constraint)?;
+        let label = st.project(&project).map(|p| p.label()).unwrap_or_default();
+        state::log(app, &format!("[{label}] {raw_id} in {file}: {old} → {}", constraint.describe()));
+        Ok(old)
     })
     .await
 }
