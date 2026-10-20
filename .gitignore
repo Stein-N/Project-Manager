@@ -43,3 +43,7 @@ bin/
 .DS_Store
 
 .env
+### Rust ###
+/target/
+/crates/pm-ui/dist/
+/crates/pm-app/gen/
