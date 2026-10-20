@@ -10,6 +10,7 @@ import net.morthen.core.Dependencies;
 import net.morthen.core.EnvFile;
 import net.morthen.core.Git;
 import net.morthen.core.GitChanges;
+import net.morthen.core.GithubRepos;
 import net.morthen.core.GradleRunner;
 import net.morthen.core.GradleTasks;
 import net.morthen.core.ModMetadata;
@@ -1169,7 +1170,7 @@ public final class MainFrame extends JFrame {
     private void cloneDialog(String url, String name, String version) {
         Optional<Path> master = requireMaster();
         if (master.isEmpty()) return;
-        CloneDialog.show(this, git, master.get(), versions, url, name, version).ifPresent(req -> {
+        CloneDialog.show(this, git, master.get(), versions, url, name, version, this::githubToken).ifPresent(req -> {
             Path versionDir = master.get().resolve(req.version());
             Path target = versionDir.resolve(req.name());
             Path repo = Worktrees.sharedRepo(master.get(), req.name());
@@ -1763,6 +1764,11 @@ public final class MainFrame extends JFrame {
         return ClaudeKeys.resolve(envVariables(), System.getenv());
     }
 
+    /** GitHub token from {@code GITHUB_TOKEN} (.env, then system environment); empty = none. */
+    private String githubToken() {
+        return GithubRepos.token(envVariables(), System.getenv());
+    }
+
     /** For the settings: which credentials Claude runs use. */
     private String claudeSignIn() {
         List<String> keys = claudeApiKeys();
@@ -1775,6 +1781,7 @@ public final class MainFrame extends JFrame {
     private Map<String, String> publishEnvironment() {
         Map<String, String> env = new LinkedHashMap<>(envVariables());
         env.remove(ClaudeKeys.VARIABLE);
+        env.remove(GithubRepos.VARIABLE);
         return env;
     }
 

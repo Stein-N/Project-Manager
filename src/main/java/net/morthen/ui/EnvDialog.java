@@ -2,6 +2,7 @@ package net.morthen.ui;
 
 import net.morthen.core.ClaudeKeys;
 import net.morthen.core.EnvFile;
+import net.morthen.core.GithubRepos;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultCellEditor;
@@ -37,7 +38,7 @@ import java.util.function.Consumer;
  */
 final class EnvDialog extends JDialog {
     private static final List<String> PRESETS = java.util.stream.Stream.concat(EnvFile.EXPECTED.stream(),
-            java.util.stream.Stream.of(ClaudeKeys.VARIABLE)).toList();
+            java.util.stream.Stream.of(ClaudeKeys.VARIABLE, GithubRepos.VARIABLE)).toList();
 
     private final Path master;
     private final Consumer<String> log;
@@ -77,7 +78,7 @@ final class EnvDialog extends JDialog {
                 + "<b>publish</b> and <b>publishMods</b> tasks – read them in the build script with "
                 + "<tt>providers.environmentVariable(\"MODRINTH_API\")</tt>. "
                 + "<tt>CLAUDE_API</tt> holds Claude tokens from <tt>claude setup-token</tt> (Pro/Max; API keys <tt>sk-ant-api…</tt> work too), several separated by <tt>;</tt> – the next one is "
-                + "used when a token fails. It is not passed to Gradle.</body></html>");
+                + "used when a token fails. It is not passed to Gradle. <tt>GITHUB_TOKEN</tt> (personal access token) lets the clone dialog list your GitHub and organization repositories; it is not passed to Gradle either.</body></html>");
         info.setToolTipText(EnvFile.path(master).toString());
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
 

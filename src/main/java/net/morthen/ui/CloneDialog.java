@@ -2,6 +2,7 @@ package net.morthen.ui;
 
 import net.morthen.core.BranchMatcher;
 import net.morthen.core.Git;
+import net.morthen.core.GithubRepos;
 import net.morthen.core.Worktrees;
 
 import javax.swing.BorderFactory;
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Dialog: clone a Git repository into {@code <master>/<version>/<name>} with the chosen branch.
@@ -35,6 +37,8 @@ final class CloneDialog extends JDialog {
     private final Path master;
     private final JTextField urlField = new JTextField(36);
     private final JButton loadButton = new JButton("Load branches");
+    private final JButton browseButton = new JButton("Browse GitHub…");
+    private final Supplier<String> githubToken;
     private final JComboBox<String> branchBox = new JComboBox<>();
     private final JComboBox<String> versionBox;
     private final JTextField nameField = new JTextField();
@@ -50,10 +54,11 @@ final class CloneDialog extends JDialog {
     private Request result;
 
     private CloneDialog(Window owner, Git git, Path master, List<String> versions,
-                        String presetUrl, String presetName, String presetVersion) {
+                        String presetUrl, String presetName, String presetVersion, Supplier<String> githubToken) {
         super(owner, "Clone project", ModalityType.APPLICATION_MODAL);
         this.git = git;
         this.master = master;
+        this.githubToken = githubToken;
 
         versionBox = new JComboBox<>(versions.toArray(String[]::new));
         versionBox.setEditable(true);
@@ -73,7 +78,7 @@ final class CloneDialog extends JDialog {
         }
 
         Ui.Form form = new Ui.Form()
-                .add("Git-URL", urlField, loadButton)
+                .add("Git-URL", urlField, buttonRow())
                 .add("Minecraft version", versionBox)
                 .add("Branch", branchBox)
                 .add("Project name", nameField)
@@ -95,6 +100,7 @@ final class CloneDialog extends JDialog {
         getRootPane().setDefaultButton(okButton);
 
         loadButton.addActionListener(e -> loadBranches());
+        browseButton.addActionListener(e -> browseGithub());
         cancel.addActionListener(e -> dispose());
         okButton.addActionListener(e -> submit());
         worktreeBox.addActionListener(e -> updateTarget());
@@ -123,10 +129,34 @@ final class CloneDialog extends JDialog {
     }
 
     static Optional<Request> show(Window owner, Git git, Path master, List<String> versions,
-                                  String presetUrl, String presetName, String presetVersion) {
-        CloneDialog dialog = new CloneDialog(owner, git, master, versions, presetUrl, presetName, presetVersion);
+                                  String presetUrl, String presetName, String presetVersion, Supplier<String> githubToken) {
+        CloneDialog dialog = new CloneDialog(owner, git, master, versions, presetUrl, presetName, presetVersion, githubToken);
         dialog.setVisible(true);
         return Optional.ofNullable(dialog.result);
+    }
+
+    private JPanel buttonRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        row.add(browseButton);
+        row.add(loadButton);
+        return row;
+    }
+
+    /** Lets the user pick one of their GitHub repositories (own and organizations) instead of typing the URL. */
+    private void browseGithub() {
+        String token = githubToken.get();
+        if (token == null || token.isBlank()) {
+            JOptionPane.showMessageDialog(this, "<html><body style='width:380px'>Set a GitHub personal access token as <tt>"
+                    + GithubRepos.VARIABLE + "</tt> in the environment variables (.env) to list your repositories.<br>"
+                    + "A classic token with the <tt>repo</tt> and <tt>read:org</tt> scopes (or a fine-grained token with "
+                    + "read access to the repositories) is enough.</body></html>", "GitHub token missing", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        GithubRepoDialog.show(this, token).ifPresent(repo -> {
+            nameEdited = false;
+            urlField.setText(repo.cloneUrl());
+            loadBranches();
+        });
     }
 
     private void urlChanged() {
