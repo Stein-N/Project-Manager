@@ -168,6 +168,9 @@ textarea.input { height: auto; padding: 6px 8px; resize: vertical; }
 .repo-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .quick .btn:first-child { flex: 1; justify-content: flex-start; }
 .status-line { color: var(--text-secondary); min-height: 18px; }
+.notice { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; padding: 8px 10px; border: 1px solid #b5cbf8; border-radius: var(--radius); background: #f2f6ff; }
+.version-select { width: 260px; flex: none; }
+.version-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conflict { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid #f2c55c; border-radius: var(--radius); background: var(--orange-bg); }
 .notes { padding: 4px 6px; }
 

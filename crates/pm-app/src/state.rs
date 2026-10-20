@@ -33,6 +33,9 @@ pub struct AppState {
     /// Backports per target project; they survive switching between projects.
     pub backports: Mutex<HashMap<PathBuf, Arc<BackportSlot>>>,
     pub auto_fetch_running: AtomicBool,
+    /// Available dependency versions (official repositories), loaded at start and cached on disk.
+    pub versions: RwLock<Option<pm_core::versions::Catalog>>,
+    pub versions_loading: AtomicBool,
 }
 
 /// One backport: the session plus what can be read while a step runs.
@@ -61,6 +64,8 @@ impl AppState {
             changelog_runs: Mutex::default(),
             backports: Mutex::default(),
             auto_fetch_running: AtomicBool::new(false),
+            versions: RwLock::new(pm_core::versions::load_cached()),
+            versions_loading: AtomicBool::new(false),
         }
     }
 

@@ -258,7 +258,11 @@ pub struct PublishCheck {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DependenciesInfo {
-    pub entries: Vec<DependencyEntry>,
+    pub rows: Vec<DependencyRow>,
+    /// When the available versions were loaded (milliseconds since the epoch); None while they are loading.
+    pub versions_loaded_at: Option<i64>,
+    /// Lists that could not be loaded this time.
+    pub versions_errors: Vec<String>,
     /// Metadata file the declared dependencies come from.
     pub declared_in: Option<String>,
     pub declared: Vec<ModDependency>,
@@ -627,6 +631,7 @@ pub enum DependencyKind {
     FabricApi,
     Yarn,
     NeoForge,
+    NeoForm,
     Forge,
     Parchment,
     Gradle,
@@ -643,14 +648,9 @@ pub struct DependencyEntry {
 }
 
 impl DependencyEntry {
-    /// Whether a "latest version" lookup is available.
-    pub fn checkable(&self) -> bool {
-        self.kind != DependencyKind::Other
-    }
-
-    /// Whether the value can be updated in gradle.properties by the tool.
+    /// Whether the tool offers versions for it (gradle.properties or the Gradle wrapper).
     pub fn updatable(&self) -> bool {
-        self.key.is_some() && self.kind != DependencyKind::Other && self.kind != DependencyKind::Gradle
+        self.kind != DependencyKind::Other
     }
 
     /// Key of the lookup result.
@@ -659,11 +659,14 @@ impl DependencyEntry {
     }
 }
 
-/// Result of a latest-version lookup.
+/// An entry with the versions it can be set to.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Latest {
-    Version(String),
-    Failed(String),
+pub struct DependencyRow {
+    pub entry: DependencyEntry,
+    /// Versions that fit the project, newest first (the current one included); empty if unknown.
+    pub options: Vec<String>,
+    /// Newest stable version among the options.
+    pub latest: Option<String>,
 }
 
 // ---------------------------------------------------------------- cleanup
@@ -776,6 +779,8 @@ pub mod events {
     pub const ACTION: &str = "action";
     /// Mod detection in the GitHub dialog (payload: [`GithubProgress`](super::GithubProgress)).
     pub const GITHUB: &str = "github";
+    /// The available dependency versions were loaded (payload: none).
+    pub const VERSIONS: &str = "versions";
     /// A backport step ended outside of a command, e.g. its build (payload: the target path).
     pub const BACKPORT: &str = "backport";
 }

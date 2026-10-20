@@ -5,7 +5,7 @@ use crate::dialogs::Dialogs;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use pm_types::*;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +15,9 @@ pub enum Selection {
     Version(String),
     Project(PathBuf),
 }
+
+/// A version changed in the Dependencies tab: (label, old version, new version).
+pub type VersionChange = (String, String, String);
 
 #[derive(Clone, Copy)]
 pub struct Store {
@@ -33,8 +36,8 @@ pub struct Store {
     pub log_unread: RwSignal<bool>,
     /// Mod icons as data URLs.
     pub icons: RwSignal<HashMap<PathBuf, Option<String>>>,
-    /// Latest dependency versions per project (session cache of "Check for updates").
-    pub latest: RwSignal<HashMap<PathBuf, BTreeMap<String, Latest>>>,
+    /// Version changes made in the Dependencies tab and not committed yet, per project: (label, old, new).
+    pub version_changes: RwSignal<HashMap<PathBuf, Vec<VersionChange>>>,
     /// Projects whose Gradle tasks were detected automatically this session.
     pub auto_detected: RwSignal<HashSet<PathBuf>>,
     /// Changelog drafts per project; they survive switching between projects.
@@ -64,7 +67,7 @@ impl Store {
             settings: RwSignal::new(Settings::default()),
             log_unread: RwSignal::new(false),
             icons: RwSignal::new(HashMap::new()),
-            latest: RwSignal::new(HashMap::new()),
+            version_changes: RwSignal::new(HashMap::new()),
             auto_detected: RwSignal::new(HashSet::new()),
             drafts: RwSignal::new(HashMap::new()),
             github: RwSignal::new((0, Vec::new())),

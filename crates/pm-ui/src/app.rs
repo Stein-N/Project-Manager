@@ -31,6 +31,7 @@ pub fn App() -> impl IntoView {
         AppAction::AskClose => spawn(actions::ask_close(s)),
         AppAction::ConfirmExit => spawn(actions::exit(s)),
     });
+    listen(events::VERSIONS, move |_: ()| s.tick.update(|t| *t += 1));
     listen(events::GITHUB, move |p: GithubProgress| {
         s.github.update(|g| {
             g.0 = p.checked;

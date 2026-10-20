@@ -25,4 +25,5 @@ pub mod system;
 pub mod tags;
 pub mod update;
 pub mod util;
+pub mod versions;
 pub mod worktrees;

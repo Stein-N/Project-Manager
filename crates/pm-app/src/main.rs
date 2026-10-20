@@ -55,6 +55,9 @@ fn main() {
                     }
                 }
             }
+            // the available dependency versions are asked for once per start
+            let versions = handle.clone();
+            std::thread::spawn(move || commands::extras::load_versions(&versions));
             start_auto_fetch(handle);
             debug_script(app);
             Ok(())
@@ -132,8 +135,8 @@ fn main() {
             commands::gradle::env_load,
             commands::gradle::env_save,
             commands::extras::dependencies,
-            commands::extras::check_dependencies,
-            commands::extras::update_dependency,
+            commands::extras::set_dependency,
+            commands::extras::refresh_versions,
             commands::extras::cleanup_scan,
             commands::extras::dir_size,
             commands::extras::cleanup_delete,

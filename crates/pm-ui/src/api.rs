@@ -3,7 +3,6 @@
 use crate::tauri::invoke;
 use pm_types::*;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// `name(arg: Type, …) -> Result;` becomes an async function that calls the command `name` (arguments in camelCase,
@@ -93,8 +92,8 @@ commands! {
     env_save(vars: Vec<(String, String)>) -> ();
     // dependencies, cleanup, GitHub
     dependencies(project: PathBuf) -> DependenciesInfo;
-    check_dependencies(project: PathBuf) -> BTreeMap<String, Latest>;
-    update_dependency(project: PathBuf, key: String, old: String, version: String) -> ();
+    set_dependency(project: PathBuf, entry: DependencyEntry, version: String) -> ();
+    refresh_versions() -> ();
     cleanup_scan() -> (PathBuf, Vec<CacheItem>);
     dir_size(path: PathBuf) -> u64;
     cleanup_delete(paths: Vec<PathBuf>) -> Vec<String>;

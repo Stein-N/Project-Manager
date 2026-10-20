@@ -24,7 +24,7 @@ pub fn ProjectDetails(path: PathBuf) -> impl IntoView {
         spawn(async move {
             let branch = api::main_branch(p.clone()).await.ok().flatten();
             let deps =
-                api::dependencies(p).await.map(|d| !d.entries.is_empty() || !d.declared.is_empty()).unwrap_or(false);
+                api::dependencies(p).await.map(|d| !d.rows.is_empty() || !d.declared.is_empty()).unwrap_or(false);
             let _ = extras.try_set(Some((branch, deps)));
         });
     });

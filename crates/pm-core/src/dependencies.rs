@@ -1,13 +1,12 @@
-//! Dependency versions from gradle.properties (and the Gradle wrapper) plus lookup of the latest versions.
+//! Dependency versions in gradle.properties and the Gradle wrapper: reading and changing them. The available
+//! versions come from [`crate::versions`].
 
-use crate::http;
-use crate::util::{self, compare_versions};
-use anyhow::{Result, anyhow, bail};
+use crate::{http, util};
+use anyhow::{Context, Result, bail};
 use pm_types::{DependencyEntry, DependencyKind};
 use regex::Regex;
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 const SKIP: [&str; 8] = [
     "mod_version",
@@ -19,12 +18,8 @@ const SKIP: [&str; 8] = [
     "parchment_minecraft",
     "java_version",
 ];
-static MAVEN_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<version>([^<]+)</version>").unwrap());
-static MAVEN_RELEASE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<release>([^<]+)</release>").unwrap());
 static WRAPPER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"gradle-([^-/]+(?:-rc-\d+|-milestone-\d+)?)-(bin|all)\.zip").unwrap());
-/// Answers per URL for this session.
-static CACHE: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
 
 pub fn read(project: &Path) -> Vec<DependencyEntry> {
     let props = util::read_properties(&project.join("gradle.properties"));
@@ -70,6 +65,7 @@ fn kind(key: &str, value: &str) -> Option<DependencyKind> {
         "yarn_mappings" => Some(Yarn),
         "neo_version" | "neoforge_version" => Some(NeoForge),
         "forge_version" => Some(Forge),
+        "neo_form_version" | "neoform_version" => Some(NeoForm),
         "parchment_mappings_version" | "parchment_version" => Some(Parchment),
         _ => None,
     }
@@ -83,6 +79,7 @@ fn label(key: &str, kind: Option<DependencyKind>) -> String {
         Some(Yarn) => "Yarn mappings".into(),
         Some(NeoForge) => "NeoForge".into(),
         Some(Forge) => "Forge".into(),
+        Some(NeoForm) => "NeoForm".into(),
         Some(Parchment) => "Parchment".into(),
         _ => key.into(),
     }
@@ -92,52 +89,6 @@ pub fn wrapper_version(project: &Path) -> Option<String> {
     let props = util::read_properties(&project.join("gradle/wrapper/gradle-wrapper.properties"));
     let url = props.get("distributionUrl")?;
     WRAPPER.captures(url).map(|m| m[1].to_string())
-}
-
-// ---------------------------------------------------------------- latest versions
-
-/// Looks up the latest version for `entry` (network, cached per session). `parchment_mc` is the Minecraft version
-/// Parchment is published for, if it differs.
-pub fn latest(entry: &DependencyEntry, mc: &str, parchment_mc: Option<&str>) -> Result<Option<String>> {
-    use DependencyKind::*;
-    Ok(match entry.kind {
-        FabricLoader => first_json("https://meta.fabricmc.net/v2/versions/loader", true)?,
-        Yarn => first_json(&format!("https://meta.fabricmc.net/v2/versions/yarn/{mc}"), false)?,
-        FabricApi => {
-            max_maven("https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml", |v| {
-                v.ends_with(&format!("+{mc}"))
-            })?
-        }
-        NeoForge => {
-            let url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
-            let prefix = neoforge_prefix(mc);
-            match max_maven(url, |v| v.starts_with(&prefix) && !v.contains("beta"))? {
-                Some(stable) => Some(stable),
-                None => max_maven(url, |v| v.starts_with(&prefix))?,
-            }
-        }
-        Forge => {
-            let promos: serde_json::Value = serde_json::from_str(&fetch(
-                "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json",
-            )?)?;
-            promos["promos"][format!("{mc}-latest")].as_str().map(|latest| {
-                // keep the format of the current value ("47.3.0" or "1.20.1-47.3.0")
-                if entry.value.starts_with(&format!("{mc}-")) { format!("{mc}-{latest}") } else { latest.to_string() }
-            })
-        }
-        Parchment => {
-            let mc = parchment_mc.unwrap_or(mc);
-            let text = fetch(&format!(
-                "https://maven.parchmentmc.org/org/parchmentmc/data/parchment-{mc}/maven-metadata.xml"
-            ))?;
-            MAVEN_RELEASE.captures(&text).map(|m| m[1].trim().to_string())
-        }
-        Gradle => {
-            let v: serde_json::Value = serde_json::from_str(&fetch("https://services.gradle.org/versions/current")?)?;
-            v["version"].as_str().map(str::to_string)
-        }
-        Other => None,
-    })
 }
 
 /// NeoForge versions encode the MC version: 1.21.1 → "21.1.", 1.21 → "21.0.", 26.1 → "26.1.".
@@ -160,35 +111,34 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     util::is_newer(latest, current)
 }
 
-fn first_json(url: &str, stable_only: bool) -> Result<Option<String>> {
-    let list: serde_json::Value = serde_json::from_str(&fetch(url)?)?;
-    Ok(list
-        .as_array()
-        .ok_or_else(|| anyhow!("unexpected answer from {url}"))?
-        .iter()
-        .find(|o| !stable_only || o["stable"].as_bool().unwrap_or(true))
-        .and_then(|o| o["version"].as_str().map(str::to_string)))
-}
-
-fn max_maven(url: &str, filter: impl Fn(&str) -> bool) -> Result<Option<String>> {
-    let text = fetch(url)?;
-    Ok(MAVEN_VERSION
-        .captures_iter(&text)
-        .map(|m| m[1].trim().to_string())
-        .filter(|v| filter(v))
-        .max_by(|a, b| compare_versions(a, b)))
-}
-
-fn fetch(url: &str) -> Result<String> {
-    if let Some(cached) = CACHE.lock().unwrap().get(url) {
-        return Ok(cached.clone());
-    }
-    let body = http::get_ok(url)?;
-    CACHE.lock().unwrap().insert(url.to_string(), body.clone());
-    Ok(body)
-}
-
 // ---------------------------------------------------------------- update
+
+/// Sets the version of an entry: the property in gradle.properties, or the distribution of the Gradle wrapper.
+pub fn set(project: &Path, entry: &DependencyEntry, version: &str) -> Result<()> {
+    match &entry.key {
+        Some(key) => update(project, key, version),
+        None if entry.kind == DependencyKind::Gradle => update_wrapper(project, version),
+        None => bail!("{} cannot be changed here", entry.label),
+    }
+}
+
+/// Points the wrapper to another Gradle version (`distributionUrl`); a `distributionSha256Sum` is replaced with the
+/// checksum of the new distribution, so the download still verifies.
+pub fn update_wrapper(project: &Path, version: &str) -> Result<()> {
+    let file = project.join("gradle/wrapper/gradle-wrapper.properties");
+    let text = std::fs::read_to_string(&file).context("No gradle/wrapper/gradle-wrapper.properties")?;
+    let Some(m) = WRAPPER.captures(&text) else { bail!("No Gradle distribution in gradle-wrapper.properties") };
+    let (old, flavor) = (m.get(1).unwrap(), m[2].to_string());
+    let mut updated = format!("{}{version}{}", &text[..old.start()], &text[old.end()..]);
+    let sum = Regex::new(r"(?m)^(\s*distributionSha256Sum\s*[=:]\s*)(\S*)(\s*)$")?;
+    if let Some(c) = sum.captures(&updated).and_then(|c| c.get(2)) {
+        let url = format!("https://services.gradle.org/distributions/gradle-{version}-{flavor}.zip.sha256");
+        let checksum = http::get_ok(&url)?.trim().to_string();
+        updated = format!("{}{checksum}{}", &updated[..c.start()], &updated[c.end()..]);
+    }
+    std::fs::write(&file, updated)?;
+    Ok(())
+}
 
 /// Replaces the value of `key` in gradle.properties, keeping formatting, comments and line endings.
 pub fn update(project: &Path, key: &str, new_value: &str) -> Result<()> {
@@ -230,7 +180,7 @@ mod tests {
             ["Fabric Loader", "Fabric API", "Yarn mappings", "Gradle wrapper", "modmenu_version"]
         );
         assert_eq!(entries[3].value, "8.10.2");
-        assert!(!entries[4].checkable());
+        assert!(!entries[4].updatable());
     }
 
     #[test]
@@ -253,5 +203,24 @@ mod tests {
         assert!(is_newer("0.105.0+1.21.1", "0.104.0+1.21.1"));
         assert!(!is_newer("0.16.5", "0.16.5"));
         assert!(!is_newer("0.16.4", "0.16.5"));
+    }
+
+    #[test]
+    fn neoform_and_wrapper() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path();
+        fs::write(p.join("gradle.properties"), "neo_form_version=1.21.1-20240808.144430\n").unwrap();
+        fs::create_dir_all(p.join("gradle/wrapper")).unwrap();
+        let wrapper = p.join("gradle/wrapper/gradle-wrapper.properties");
+        fs::write(&wrapper, "distributionBase=GRADLE_USER_HOME\r\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip\r\n").unwrap();
+        let entries = read(p);
+        assert_eq!(entries[0].kind, DependencyKind::NeoForm);
+        assert_eq!(entries[0].label, "NeoForm");
+        set(p, &entries[1], "9.8.2").unwrap();
+        assert_eq!(
+            fs::read_to_string(&wrapper).unwrap(),
+            "distributionBase=GRADLE_USER_HOME\r\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip\r\n"
+        );
+        assert_eq!(wrapper_version(p).as_deref(), Some("9.8.2"));
     }
 }

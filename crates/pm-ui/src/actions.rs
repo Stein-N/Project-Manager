@@ -487,13 +487,16 @@ pub async fn checkout(s: Store, p: ModProject, branch: String) {
     git_task(s, p.path, &["checkout", &branch], format!("Checkout {branch}")).await;
 }
 
-pub async fn commit(s: Store, p: ModProject, message: String) {
-    let Some((all, selected, message, push)) = forms::commit_dialog(s, p.clone(), message).await else { return };
+/// Commit dialog for the project; true if something was committed.
+pub async fn commit(s: Store, p: ModProject, message: String) -> bool {
+    let Some((all, selected, message, push)) = forms::commit_dialog(s, p.clone(), message).await else { return false };
     let label = if push { "Committing and pushing…" } else { "Committing…" };
     if s.bg(label, api::commit(p.path.clone(), all, selected, message, push)).await.is_some() {
         s.reload_and_select(p.path).await;
+        true
     } else {
         s.rescan().await;
+        false
     }
 }
 
@@ -579,17 +582,80 @@ pub async fn edit_env(s: Store) {
 
 // ---------------------------------------------------------------- dependencies
 
-pub async fn check_dependencies(s: Store, p: ModProject) {
-    if let Some(result) = s.bg("Checking for updates…", api::check_dependencies(p.path.clone())).await {
-        s.latest.update(|l| {
-            l.insert(p.path.clone(), result);
+/// Sets one version and remembers the change for the commit message.
+pub async fn set_dependency(s: Store, p: ModProject, entry: DependencyEntry, version: String) {
+    if version == entry.value {
+        return;
+    }
+    let change = (entry.label.clone(), entry.value.clone(), version.clone());
+    if s.bg("Updating…", api::set_dependency(p.path.clone(), entry, version)).await.is_some() {
+        s.version_changes.update(|c| c.entry(p.path.clone()).or_default().push(change));
+        s.reload_and_select(p.path).await;
+    }
+}
+
+/// Every entry to its newest stable version.
+pub async fn update_all_dependencies(s: Store, p: ModProject, rows: Vec<DependencyRow>) {
+    let updates: Vec<(DependencyEntry, String)> = rows
+        .into_iter()
+        .filter_map(|r| r.latest.filter(|l| is_newer(l, &r.entry.value)).map(|l| (r.entry, l)))
+        .collect();
+    if updates.is_empty() {
+        return;
+    }
+    let list = updates
+        .iter()
+        .map(|(e, v)| format!("{}: {} → {}", html(&e.label), html(&e.value), html(v)))
+        .collect::<Vec<_>>();
+    if !s
+        .dialogs
+        .confirm(
+            "Update dependencies",
+            &format!("Update {} version(s)?<br><br>{}", updates.len(), list.join("<br>")),
+            "Update",
+        )
+        .await
+    {
+        return;
+    }
+    for (entry, version) in updates {
+        let change = (entry.label.clone(), entry.value.clone(), version.clone());
+        if s.bg("Updating…", api::set_dependency(p.path.clone(), entry, version)).await.is_none() {
+            break;
+        }
+        s.version_changes.update(|c| c.entry(p.path.clone()).or_default().push(change));
+    }
+    s.reload_and_select(p.path).await;
+}
+
+/// Commit dialog with a message that lists the version changes.
+pub async fn commit_version_changes(s: Store, p: ModProject) {
+    let changes = s.version_changes.with_untracked(|c| c.get(&p.path).cloned().unwrap_or_default());
+    let message = version_commit_message(&changes);
+    if commit(s, p.clone(), message).await {
+        s.version_changes.update(|c| {
+            c.remove(&p.path);
         });
     }
 }
 
-pub async fn update_dependency(s: Store, p: ModProject, entry: DependencyEntry, version: String) {
-    let Some(key) = entry.key.clone() else { return };
-    if s.bg("Updating…", api::update_dependency(p.path.clone(), key, entry.value, version)).await.is_some() {
-        s.reload_and_select(p.path).await;
+/// `build: update Fabric API to 0.2` for one change, a list for several (the last change per entry counts).
+fn version_commit_message(changes: &[(String, String, String)]) -> String {
+    // several changes of the same entry: from the first old to the last new version
+    let mut merged: Vec<(String, String, String)> = Vec::new();
+    for (label, old, new) in changes {
+        match merged.iter_mut().find(|(l, _, _)| l == label) {
+            Some(m) => m.2 = new.clone(),
+            None => merged.push((label.clone(), old.clone(), new.clone())),
+        }
+    }
+    merged.retain(|(_, old, new)| old != new);
+    match merged.as_slice() {
+        [] => "build: update dependencies".into(),
+        [(label, old, new)] => format!("build: update {label} to {new}\n\n{label} {old} → {new}"),
+        many => format!(
+            "build: update dependencies\n\n{}",
+            many.iter().map(|(l, o, n)| format!("- {l} {o} → {n}")).collect::<Vec<_>>().join("\n")
+        ),
     }
 }

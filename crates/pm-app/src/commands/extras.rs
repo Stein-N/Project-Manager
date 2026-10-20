@@ -1,19 +1,35 @@
 //! Dependencies tab, the cleanup dialog and the GitHub repository list.
 
-use crate::state::{self, CmdResult, run};
-use pm_core::{cleanup, dependencies, github, util};
-use pm_types::{CacheItem, DependenciesInfo, GithubProgress, GithubRepo, Latest, events};
-use std::collections::BTreeMap;
+use crate::state::{self, AppState, CmdResult, run};
+use pm_core::{cleanup, dependencies, github, util, versions};
+use pm_types::{CacheItem, DependenciesInfo, DependencyEntry, DependencyRow, GithubProgress, GithubRepo, events};
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use std::sync::atomic::Ordering;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
 pub async fn dependencies(app: AppHandle, project: PathBuf) -> CmdResult<DependenciesInfo> {
     run(app, move |_, st| {
         let p = st.project(&project)?;
         let meta = p.metadata.clone().unwrap_or_default();
+        let catalog = st.versions.read().unwrap().clone();
+        let parchment = dependencies::parchment_minecraft(&project);
+        let rows = dependencies::read(&project)
+            .into_iter()
+            .map(|entry| {
+                let options = catalog
+                    .as_ref()
+                    .map(|c| versions::options(c, entry.kind, p.effective_mc(), parchment.as_deref(), &entry.value))
+                    .unwrap_or_default();
+                DependencyRow { latest: versions::latest(&options), options, entry }
+            })
+            .collect();
         Ok(DependenciesInfo {
-            entries: dependencies::read(&project),
+            rows,
+            versions_loaded_at: catalog.as_ref().map(|c| c.fetched_at),
+            versions_errors: catalog
+                .map(|c| c.errors.into_iter().map(|(k, e)| format!("{k}: {e}")).collect())
+                .unwrap_or_default(),
             declared_in: p.metadata.as_ref().map(|m| util::file_name(std::path::Path::new(&m.file))),
             declared: meta.dependencies,
         })
@@ -21,60 +37,69 @@ pub async fn dependencies(app: AppHandle, project: PathBuf) -> CmdResult<Depende
     .await
 }
 
-/// Looks up the latest versions; per entry the version or why the lookup failed.
+/// Sets one version (gradle.properties or the Gradle wrapper); the change stays uncommitted.
 #[tauri::command]
-pub async fn check_dependencies(app: AppHandle, project: PathBuf) -> CmdResult<BTreeMap<String, Latest>> {
+pub async fn set_dependency(
+    app: AppHandle,
+    project: PathBuf,
+    entry: DependencyEntry,
+    version: String,
+) -> CmdResult<()> {
     run(app, move |app, st| {
-        let p = st.project(&project)?;
-        let parchment = dependencies::parchment_minecraft(&project);
-        let entries = dependencies::read(&project);
-        let mut result = BTreeMap::new();
-        for d in entries.iter().filter(|d| d.checkable()) {
-            match dependencies::latest(d, p.effective_mc(), parchment.as_deref()) {
-                Ok(Some(v)) => {
-                    result.insert(d.id(), Latest::Version(v));
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    result.insert(d.id(), Latest::Failed(e.to_string()));
-                }
-            }
-        }
-        let updates = entries
-            .iter()
-            .filter(|d| matches!(result.get(&d.id()), Some(Latest::Version(v)) if dependencies::is_newer(v, &d.value)))
-            .count();
-        state::log(
-            app,
-            &format!(
-                "{}: {}",
-                p.label(),
-                if updates == 0 {
-                    "all dependencies up to date".into()
-                } else {
-                    format!("{updates} update(s) available")
-                }
-            ),
-        );
-        Ok(result)
+        dependencies::set(&project, &entry, &version)?;
+        let label = st.project(&project).map(|p| p.label()).unwrap_or_default();
+        state::log(app, &format!("[{label}] {}: {} → {version}", entry.label, entry.value));
+        Ok(())
     })
     .await
 }
 
+/// Loads the available versions again (they are loaded once at start otherwise).
 #[tauri::command]
-pub async fn update_dependency(
-    app: AppHandle,
-    project: PathBuf,
-    key: String,
-    old: String,
-    version: String,
-) -> CmdResult<()> {
-    run(app, move |app, _| {
-        dependencies::update(&project, &key, &version)?;
-        state::log(app, &format!("Updated {key}: {old} → {version}  ({})", project.display()));
+pub async fn refresh_versions(app: AppHandle) -> CmdResult<()> {
+    run(app, |app, _| {
+        load_versions(app);
         Ok(())
     })
     .await
+}
+
+/// Loads the version lists from the official repositories, caches them on disk and tells the UI.
+pub fn load_versions(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    if st.versions_loading.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let parchment: Vec<String> = {
+        let scan = st.scan.lock().unwrap();
+        let mut mcs: Vec<String> = scan
+            .projects
+            .iter()
+            .filter(|p| dependencies::read(&p.path).iter().any(|e| e.kind == pm_types::DependencyKind::Parchment))
+            .map(|p| dependencies::parchment_minecraft(&p.path).unwrap_or_else(|| p.effective_mc().to_string()))
+            .collect();
+        mcs.sort();
+        mcs.dedup();
+        mcs
+    };
+    let previous = st.versions.read().unwrap().clone();
+    let catalog = versions::fetch(previous.as_ref(), &parchment);
+    if let Err(e) = versions::save(&catalog) {
+        state::log(app, &format!("✖ {e:#}"));
+    }
+    let lists = catalog.lists.len();
+    let errors = catalog.errors.len();
+    *st.versions.write().unwrap() = Some(catalog);
+    st.versions_loading.store(false, Ordering::SeqCst);
+    state::log(
+        app,
+        &if errors == 0 {
+            format!("✔ Available versions loaded ({lists} lists)")
+        } else {
+            format!("⚠ Available versions loaded, {errors} list(s) failed – the cached ones are used")
+        },
+    );
+    let _ = app.emit(events::VERSIONS, ());
 }
 
 // ---------------------------------------------------------------- cleanup

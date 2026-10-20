@@ -92,7 +92,7 @@ pub fn GitTab(p: ModProject) -> impl IntoView {
             <div class="grid2 gap">
                 <Button label="Fetch" icon="fetch" on_click=move || spawn(actions::git_task(s, pf.path.clone(), &["fetch", "--all", "--prune"], format!("Fetch {}", pf.name))) />
                 <Button label="Pull (fast-forward)" icon="pull" on_click=move || spawn(actions::git_task(s, pp.path.clone(), &["pull", "--ff-only"], format!("Pull {}", pp.name))) />
-                <Button label=commit_label icon="commit" disabled=no_changes on_click=move || spawn(actions::commit(s, pc.clone(), String::new())) />
+                <Button label=commit_label icon="commit" disabled=no_changes on_click=move || { let p = pc.clone(); spawn(async move { actions::commit(s, p, String::new()).await; }) } />
                 <Button label=push_label icon="push" disabled=!can_push on_click=move || spawn(actions::push(s, pu.clone())) />
                 <Button label="Add version (worktree)…" icon="add" on_click=move || spawn(actions::add_worktree(s, pw.path.clone(), pw.name.clone(), pw.branch.clone(), Some(pw.mc_version.clone()))) />
                 <Button label="Create tag…" icon="add" on_click=move || spawn(actions::tag(s, pt.clone())) />
