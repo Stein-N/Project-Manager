@@ -4,6 +4,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+#[cfg(target_os = "linux")]
+mod desktop_entry;
 mod state;
 mod tray;
 mod window;
@@ -28,6 +30,9 @@ fn main() {
     }
     let minimized = args.iter().any(|a| a == autostart_flag::MINIMIZED);
     update::clean_up();
+    // before the window opens, so the desktop gives it the right icon
+    #[cfg(target_os = "linux")]
+    desktop_entry::install();
 
     tauri::Builder::default()
         // a second start shows the running window (a start with the system just ends)
