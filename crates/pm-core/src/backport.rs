@@ -16,11 +16,11 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 pub const WORK_DIR: &str = ".backport";
-/// Conventional Commit types offered for the type rules.
-pub const TYPES: [&str; 11] = ["fix", "feat", "perf", "refactor", "revert", "build", "chore", "docs", "test", "ci", "style"];
+pub use pm_types::BACKPORT_TYPES as TYPES;
 
 /// File names that are never taken over: versions and dependency ranges belong to the target.
-const NEVER_FILES: [&str; 5] = ["gradle.properties", "mods.toml", "neoforge.mods.toml", changelog::FILE, changelog::FULL_FILE];
+const NEVER_FILES: [&str; 5] =
+    ["gradle.properties", "mods.toml", "neoforge.mods.toml", changelog::FILE, changelog::FULL_FILE];
 static CHERRY_TRAILER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\(cherry picked from commit ([0-9a-fA-F]{7,40})\)").unwrap());
 static CONFLICT_MARKERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^(<{7} |>{7} |={7}$)").unwrap());
@@ -32,8 +32,15 @@ static CONFLICT_MARKERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^(<
 ///
 /// * `target_names` – names used in `[no-backport: …]` markers (the target's Minecraft version / branch)
 /// * `types` – allowed Conventional Commit types; empty = all. Commits without a type are always offered.
-pub fn candidates(git: &Git, repo: &Path, source: &str, target: &str, since: Option<&str>, target_names: &[String],
-                  types: &[String]) -> Result<Vec<Candidate>> {
+pub fn candidates(
+    git: &Git,
+    repo: &Path,
+    source: &str,
+    target: &str,
+    since: Option<&str>,
+    target_names: &[String],
+    types: &[String],
+) -> Result<Vec<Candidate>> {
     let range = format!("{}..{source}", since.unwrap_or(target));
     let commits = commits::log(git, repo, &["--reverse", &range])?;
     let trailers = ported_trailers(git, repo, target)?;
@@ -48,7 +55,11 @@ pub fn candidates(git: &Git, repo: &Path, source: &str, target: &str, since: Opt
             } else if is_ported(&c.sha, &trailers) || same_patch.contains(&c.sha) {
                 (CandidateState::AlreadyPorted, "already ported".into())
             } else if m.no_backport_all || marker.is_some() {
-                let why = if m.no_backport_all { "[no-backport]".into() } else { format!("[no-backport: {}]", marker.unwrap()) };
+                let why = if m.no_backport_all {
+                    "[no-backport]".into()
+                } else {
+                    format!("[no-backport: {}]", marker.unwrap())
+                };
                 (CandidateState::Marker, why)
             } else if let Some(kind) = m.kind.as_ref().filter(|k| !types.is_empty() && !types.contains(k)) {
                 (CandidateState::FilteredType, format!("type {kind} not ported"))
@@ -73,7 +84,12 @@ fn is_ported(sha: &str, trailers: &HashSet<String>) -> bool {
 
 /// Source commits whose patch is already in the target (`git cherry`: lines starting with "-").
 fn same_patch(git: &Git, repo: &Path, source: &str, target: &str) -> Result<HashSet<String>> {
-    Ok(git.output(repo, &["cherry", target, source])?.lines().filter_map(|l| l.strip_prefix("- ")).map(|s| s.trim().into()).collect())
+    Ok(git
+        .output(repo, &["cherry", target, source])?
+        .lines()
+        .filter_map(|l| l.strip_prefix("- "))
+        .map(|s| s.trim().into())
+        .collect())
 }
 
 // ---------------------------------------------------------------- type rules
@@ -81,7 +97,8 @@ fn same_patch(git: &Git, repo: &Path, source: &str, target: &str) -> Result<Hash
 /// Allowed types for `target` from the repo's `CLAUDE.md` or `.github/workflows/backport.yml`: a line naming the
 /// target (e.g. ``- `1.20.1`: `fix` ``) and at least one type. Empty if nothing is found.
 pub fn types_from_repo(repo: &Path, target: &str) -> Vec<String> {
-    let target_token = fancy_regex::Regex::new(&format!(r"(?<![\w.]){}(?![\w.])", fancy_regex::escape(target))).unwrap();
+    let target_token =
+        fancy_regex::Regex::new(&format!(r"(?<![\w.]){}(?![\w.])", fancy_regex::escape(target))).unwrap();
     for file in [repo.join("CLAUDE.md"), repo.join(".github/workflows/backport.yml")] {
         for line in read_or_empty(&file).lines() {
             if !target_token.is_match(line).unwrap_or(false) {
@@ -89,7 +106,12 @@ pub fn types_from_repo(repo: &Path, target: &str) -> Vec<String> {
             }
             let found: Vec<String> = TYPES
                 .iter()
-                .filter(|t| fancy_regex::Regex::new(&format!(r"(?<![\w-]){t}(?![\w-])")).unwrap().is_match(line).unwrap_or(false))
+                .filter(|t| {
+                    fancy_regex::Regex::new(&format!(r"(?<![\w-]){t}(?![\w-])"))
+                        .unwrap()
+                        .is_match(line)
+                        .unwrap_or(false)
+                })
                 .map(|t| t.to_string())
                 .collect();
             if !found.is_empty() {
@@ -104,7 +126,10 @@ pub fn types_from_repo(repo: &Path, target: &str) -> Vec<String> {
 
 /// `<master>/.backport/<mod>-<target>` – hidden, so the scanner ignores it.
 pub fn work_dir(master: &Path, mod_name: &str, target: &str) -> PathBuf {
-    let clean: String = target.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') { c } else { '_' }).collect();
+    let clean: String = target
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') { c } else { '_' })
+        .collect();
     master.join(WORK_DIR).join(format!("{mod_name}-{clean}"))
 }
 
@@ -220,7 +245,10 @@ pub fn has_conflict_markers(text: &str) -> bool {
 pub fn never_port(path: &str) -> bool {
     let p = path.replace('\\', "/");
     let name = p.rsplit('/').next().unwrap_or(&p);
-    NEVER_FILES.contains(&name) || p.starts_with(".github/") || p.starts_with("src/generated/") || p.contains("/src/generated/")
+    NEVER_FILES.contains(&name)
+        || p.starts_with(".github/")
+        || p.starts_with("src/generated/")
+        || p.contains("/src/generated/")
 }
 
 /// Sets the "never port" files back to the target's state; returns them.
@@ -311,7 +339,10 @@ pub fn sync_changelog(git: &Git, work: &Path, source_ref: &str, source_display_v
     let v = source_display_version;
     Ok(match plan.action {
         ChangelogAction::MoveOldVersion => {
-            format!("CHANGELOG.md v{v} taken over, v{} moved to CHANGELOG_FULL.md", plan.old_version.unwrap_or_default())
+            format!(
+                "CHANGELOG.md v{v} taken over, v{} moved to CHANGELOG_FULL.md",
+                plan.old_version.unwrap_or_default()
+            )
         }
         ChangelogAction::ReplaceSameVersion => format!("CHANGELOG.md v{v} replaced with the one of the source"),
         _ => format!("CHANGELOG.md v{v} taken over"),
@@ -342,12 +373,20 @@ pub fn conflict_diff(git: &Git, work: &Path, path: &str, sha: &str) -> String {
     let code = status.get(..2).unwrap_or("");
     let original = || git.run(Some(work), &["show", "--format=", sha, "--", path]).text;
     match code {
-        "DU" => format!("The file was deleted in the target but changed by the commit.\n\
+        "DU" => format!(
+            "The file was deleted in the target but changed by the commit.\n\
             Keep it (it is in the work folder as in the commit) or delete it, then click Continue.\n\n\
-            Change of the original commit:\n{}", original()),
-        "UD" => format!("The commit deletes the file but the target changed it.\n\
-            Delete it or keep the target's version, then click Continue.\n\nChange of the original commit:\n{}", original()),
-        "AU" | "UA" => format!("Added on one side only with a conflict:\n\n{}", git.run(Some(work), &["diff", "--", path]).text),
+            Change of the original commit:\n{}",
+            original()
+        ),
+        "UD" => format!(
+            "The commit deletes the file but the target changed it.\n\
+            Delete it or keep the target's version, then click Continue.\n\nChange of the original commit:\n{}",
+            original()
+        ),
+        "AU" | "UA" => {
+            format!("Added on one side only with a conflict:\n\n{}", git.run(Some(work), &["diff", "--", path]).text)
+        }
         _ => {
             let d = git.run(Some(work), &["diff", "--", path]).text;
             if d.trim().is_empty() { status } else { d }
@@ -367,7 +406,11 @@ pub fn apply(git: &Git, work: &Path, target_project: &Path, log: Log) -> Result<
         if fs::metadata(&patch).map(|m| m.len()).unwrap_or(0) == 0 {
             bail!("Nothing to apply.");
         }
-        let r = git.run_logged(Some(target_project), log, &["apply", "--3way", "--whitespace=nowarn", &patch.to_string_lossy()]);
+        let r = git.run_logged(
+            Some(target_project),
+            log,
+            &["apply", "--3way", "--whitespace=nowarn", &patch.to_string_lossy()],
+        );
         let conflicts = unmerged(git, target_project)?;
         if !r.ok() && conflicts.is_empty() {
             bail!("git apply failed:\n{}", r.text);
@@ -395,7 +438,8 @@ pub fn discard(git: &Git, target_project: &Path, work: &Path) -> Result<()> {
 
 /// Branches, tags and the work worktree's HEAD – must be unchanged after every step (nothing may be committed).
 pub fn snapshot(git: &Git, work: &Path) -> String {
-    let refs = git.run(Some(work), &["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"]).text;
+    let refs =
+        git.run(Some(work), &["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"]).text;
     format!("{refs}\nHEAD {}", git.run(Some(work), &["rev-parse", "HEAD"]).text)
 }
 
@@ -512,7 +556,9 @@ mod tests {
         write(&s.main, "README.md", "x\n");
         commit(&s.main, "Update readme");
 
-        let st = states(&candidates(&git(), &s.target, "main", "1.20.1", None, &names(), &["fix".into(), "feat".into()]).unwrap());
+        let st = states(
+            &candidates(&git(), &s.target, "main", "1.20.1", None, &names(), &["fix".into(), "feat".into()]).unwrap(),
+        );
         assert_eq!(st["early"], CandidateState::AlreadyPorted);
         assert_eq!(st["a"], CandidateState::Port);
         assert_eq!(st["b"], CandidateState::Port);
@@ -576,10 +622,19 @@ mod tests {
         assert_eq!(sync_version(&s.work, "1.20.1", "1.1.0").unwrap().as_deref(), Some("1.20.1-1.0.0 → 1.20.1-1.1.0"));
         assert!(sync_changelog(&g, &s.work, "main", "1.1.0").unwrap().contains("v1.0.0 moved to CHANGELOG_FULL.md"));
 
-        let ch: BTreeMap<String, char> = changes(&g, &s.work).unwrap().into_iter().map(|c| (c.path, c.status)).collect();
-        let expected: BTreeMap<String, char> = [("src/A.java", 'M'), ("src/C.java", 'A'), ("src/D.java", 'A'),
-            ("gradle.properties", 'M'), ("CHANGELOG.md", 'M'), ("CHANGELOG_FULL.md", 'A')]
-            .into_iter().map(|(p, c)| (p.to_string(), c)).collect();
+        let ch: BTreeMap<String, char> =
+            changes(&g, &s.work).unwrap().into_iter().map(|c| (c.path, c.status)).collect();
+        let expected: BTreeMap<String, char> = [
+            ("src/A.java", 'M'),
+            ("src/C.java", 'A'),
+            ("src/D.java", 'A'),
+            ("gradle.properties", 'M'),
+            ("CHANGELOG.md", 'M'),
+            ("CHANGELOG_FULL.md", 'A'),
+        ]
+        .into_iter()
+        .map(|(p, c)| (p.to_string(), c))
+        .collect();
         assert_eq!(ch, expected);
         assert!(diff(&g, &s.work, "gradle.properties").contains("+version=1.20.1-1.1.0"));
         assert_eq!(before, snapshot(&g, &s.work), "no commit, no branch moved");
@@ -674,7 +729,11 @@ mod tests {
     #[test]
     fn type_rules_from_claude_md() {
         let s = setup();
-        write(&s.main, "CLAUDE.md", "### Was portiert wird\n- `1.21.1`: `fix`, `feat`, `perf`\n- `1.20.1`: nur `fix`\n");
+        write(
+            &s.main,
+            "CLAUDE.md",
+            "### Was portiert wird\n- `1.21.1`: `fix`, `feat`, `perf`\n- `1.20.1`: nur `fix`\n",
+        );
         assert_eq!(types_from_repo(&s.main, "1.20.1"), ["fix"]);
         assert_eq!(types_from_repo(&s.main, "1.21.1"), ["fix", "feat", "perf"]);
         assert!(types_from_repo(&s.main, "1.19.2").is_empty());
@@ -701,10 +760,14 @@ mod tests {
     fn commit_message_with_trailers() {
         let a = commits::commit("aaaaaaa1111", "aaaaaaa", "t", "d", false, "fix(net): sync\n\nDetails.");
         let b = commits::commit("bbbbbbb2222", "bbbbbbb", "t", "d", false, "feat: thing");
-        assert_eq!(commit_message(std::slice::from_ref(&a), "main", None),
-            "fix(net): sync\n\nDetails.\n\n(cherry picked from commit aaaaaaa1111)");
-        assert_eq!(commit_message(&[a, b], "main", Some("version 1.1.0 and its changelog")),
+        assert_eq!(
+            commit_message(std::slice::from_ref(&a), "main", None),
+            "fix(net): sync\n\nDetails.\n\n(cherry picked from commit aaaaaaa1111)"
+        );
+        assert_eq!(
+            commit_message(&[a, b], "main", Some("version 1.1.0 and its changelog")),
             "backport 2 commits from main\n\n- fix(net): sync\n- feat: thing\n- version 1.1.0 and its changelog\n\n\
-             (cherry picked from commit aaaaaaa1111)\n(cherry picked from commit bbbbbbb2222)");
+             (cherry picked from commit aaaaaaa1111)\n(cherry picked from commit bbbbbbb2222)"
+        );
     }
 }

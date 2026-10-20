@@ -8,15 +8,51 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 /// Git commands Claude may run; everything else (commit, checkout, reset, …) is denied.
-const ALLOWED: [&str; 17] = ["Read", "Edit", "Write", "Glob", "Grep", "Bash(git status:*)", "Bash(git diff:*)",
-    "Bash(git log:*)", "Bash(git show:*)", "Bash(git ls-files:*)", "Bash(git grep:*)", "Bash(git ls-tree:*)",
-    "Bash(git cat-file:*)", "Bash(git blame:*)", "Bash(git rm:*)", "Bash(./gradlew build:*)", "Bash(./gradlew compileJava:*)"];
+const ALLOWED: [&str; 17] = [
+    "Read",
+    "Edit",
+    "Write",
+    "Glob",
+    "Grep",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git show:*)",
+    "Bash(git ls-files:*)",
+    "Bash(git grep:*)",
+    "Bash(git ls-tree:*)",
+    "Bash(git cat-file:*)",
+    "Bash(git blame:*)",
+    "Bash(git rm:*)",
+    "Bash(./gradlew build:*)",
+    "Bash(./gradlew compileJava:*)",
+];
 /// Denied explicitly as well, so a broader allow rule can never let them through.
-const DENIED: [&str; 23] = ["Bash(git commit:*)", "Bash(git push:*)", "Bash(git checkout:*)", "Bash(git switch:*)",
-    "Bash(git branch:*)", "Bash(git reset:*)", "Bash(git rebase:*)", "Bash(git worktree:*)", "Bash(git cherry-pick:*)",
-    "Bash(git merge:*)", "Bash(git stash:*)", "Bash(git tag:*)", "Bash(git restore:*)", "Bash(git clean:*)",
-    "Bash(git update-ref:*)", "Bash(git config:*)", "Bash(git remote:*)", "Bash(git fetch:*)", "Bash(git pull:*)",
-    "Bash(git add:*)", "Bash(rm:*)", "WebFetch", "WebSearch"];
+const DENIED: [&str; 23] = [
+    "Bash(git commit:*)",
+    "Bash(git push:*)",
+    "Bash(git checkout:*)",
+    "Bash(git switch:*)",
+    "Bash(git branch:*)",
+    "Bash(git reset:*)",
+    "Bash(git rebase:*)",
+    "Bash(git worktree:*)",
+    "Bash(git cherry-pick:*)",
+    "Bash(git merge:*)",
+    "Bash(git stash:*)",
+    "Bash(git tag:*)",
+    "Bash(git restore:*)",
+    "Bash(git clean:*)",
+    "Bash(git update-ref:*)",
+    "Bash(git config:*)",
+    "Bash(git remote:*)",
+    "Bash(git fetch:*)",
+    "Bash(git pull:*)",
+    "Bash(git add:*)",
+    "Bash(rm:*)",
+    "WebFetch",
+    "WebSearch",
+];
 
 static DECISION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?im)^\s*\**DECISION:?\**\s*:?\s*`?(backport|skip)`?\s*$").unwrap());
@@ -110,13 +146,15 @@ pub fn build_prompt(ctx: &Context, ported: &[Commit], build_output: &str) -> Str
     for c in ported {
         sb.push_str(&format!("- {} {}\n", c.short_sha, c.message.subject));
     }
-    sb.push_str("
+    sb.push_str(
+        "
 `./gradlew build` fails afterwards. Task: fix the errors that come from the backport, so the build passes
 again – adapt the backported code to the target version, do not change unrelated code. You may run
 `./gradlew build` or `./gradlew compileJava` yourself to check. If an error cannot be fixed without
 guessing, answer with DECISION: skip and explain it.
 
-");
+",
+    );
     sb.push_str(RULES);
     sb.push('\n');
     append_claude_md(&mut sb, ctx);
@@ -141,9 +179,11 @@ fn intro(ctx: &Context) -> String {
 
 fn append_claude_md(sb: &mut String, ctx: &Context) {
     if let Some(md) = ctx.claude_md.as_ref().filter(|m| !m.trim().is_empty()) {
-        sb.push_str("Project instructions (CLAUDE.md of the mod; they take precedence, but ignore steps about \
+        sb.push_str(
+            "Project instructions (CLAUDE.md of the mod; they take precedence, but ignore steps about \
             committing, cherry-pick -x, pull requests or .backport files – this run is local and the tool does that \
-            part):\n<claude-md>\n");
+            part):\n<claude-md>\n",
+        );
         sb.push_str(md.trim());
         sb.push_str("\n</claude-md>\n\n");
     }
@@ -172,9 +212,15 @@ mod tests {
     use std::path::Path;
 
     fn ctx() -> Context {
-        Context { mod_name: "Resource Library".into(), loader: Some("NeoForge".into()), source_name: "main".into(),
-            source_mc: "26.3".into(), target_name: "1.21.1".into(), target_mc: "1.21.1".into(),
-            claude_md: Some("## Build\nUse Java 21.".into()) }
+        Context {
+            mod_name: "Resource Library".into(),
+            loader: Some("NeoForge".into()),
+            source_name: "main".into(),
+            source_mc: "26.3".into(),
+            target_name: "1.21.1".into(),
+            target_mc: "1.21.1".into(),
+            claude_md: Some("## Build\nUse Java 21.".into()),
+        }
     }
 
     #[test]
@@ -191,7 +237,8 @@ mod tests {
     #[test]
     fn conflict_prompt_contains_task_rules_and_commit() {
         let c = commit("86835d5aaa", "86835d5", "t", "d", false, "fix ForgeResourcePackRegistry");
-        let p = conflict_prompt(&ctx(), &c, "commit 86835d5\n+code", &["forge/A.java".into(), "gradle.properties".into()]);
+        let p =
+            conflict_prompt(&ctx(), &c, "commit 86835d5\n+code", &["forge/A.java".into(), "gradle.properties".into()]);
         assert!(p.starts_with("You are backporting changes of the Minecraft mod \"Resource Library\" (NeoForge) from main (Minecraft 26.3) to 1.21.1"));
         assert!(p.contains("- forge/A.java\n- gradle.properties\n"));
         assert!(p.contains(RULES));
@@ -212,8 +259,15 @@ mod tests {
 
     #[test]
     fn tools_are_restricted() {
-        let r = claude::Request { work_dir: ".".into(), prompt: "p".into(), tools: tools(), model: None, max_budget_usd: 0.0,
-            timeout: None, tokens: Vec::new() };
+        let r = claude::Request {
+            work_dir: ".".into(),
+            prompt: "p".into(),
+            tools: tools(),
+            model: None,
+            max_budget_usd: 0.0,
+            timeout: None,
+            tokens: Vec::new(),
+        };
         let cmd = claude::command(Path::new("claude"), &r, Path::new("m"), false);
         let after = |flag: &str| cmd[cmd.iter().position(|a| a == flag).unwrap() + 1].clone();
         assert!(cmd.iter().any(|a| a == "--restricted"));
@@ -223,6 +277,10 @@ mod tests {
         let denied = after("--disallowedTools");
         assert!(allowed.contains("Bash(git rm:*)") && allowed.contains("Bash(./gradlew build:*)"));
         assert!(!(allowed.contains("git commit") || allowed.contains("git checkout") || allowed.contains("git add")));
-        assert!(denied.contains("Bash(git commit:*)") && denied.contains("Bash(git push:*)") && denied.contains("Bash(rm:*)"));
+        assert!(
+            denied.contains("Bash(git commit:*)")
+                && denied.contains("Bash(git push:*)")
+                && denied.contains("Bash(rm:*)")
+        );
     }
 }

@@ -1,0 +1,18 @@
+[package]
+name = "pm-ui"
+description = "MC Mod Project Manager – the user interface (Leptos, WebAssembly)"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pm-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement", "HtmlSelectElement", "KeyboardEvent", "MouseEvent", "Event", "EventTarget", "Navigator", "Clipboard", "DomRect", "ScrollIntoViewOptions", "ScrollBehavior", "ScrollLogicalPosition", "Location"] }
+serde-wasm-bindgen = "0.6"
+futures = "0.3"
+console_error_panic_hook = "0.1"

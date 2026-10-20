@@ -34,8 +34,14 @@ pub fn token(vars: &BTreeMap<String, String>, system: &BTreeMap<String, String>)
 }
 
 fn get(url: &str, token: &str, accept: &str) -> Result<http::Response> {
-    http::get(url, &[("Accept", accept), ("Authorization", &format!("Bearer {}", token.trim())),
-        ("X-GitHub-Api-Version", "2022-11-28")])
+    http::get(
+        url,
+        &[
+            ("Accept", accept),
+            ("Authorization", &format!("Bearer {}", token.trim())),
+            ("X-GitHub-Api-Version", "2022-11-28"),
+        ],
+    )
 }
 
 fn check(status: u16) -> Result<()> {
@@ -53,7 +59,10 @@ pub fn fetch_all(token: &str) -> Result<Vec<GithubRepo>> {
         bail!("No GitHub token – set {VARIABLE} in the .env.");
     }
     let mut repos = Vec::new();
-    let mut url = Some("https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member".to_string());
+    let mut url = Some(
+        "https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member"
+            .to_string(),
+    );
     for _ in 0..MAX_PAGES {
         let Some(u) = url else { break };
         let r = get(&u, token, "application/vnd.github+json")?;
@@ -66,30 +75,36 @@ pub fn fetch_all(token: &str) -> Result<Vec<GithubRepo>> {
 
 /// Checks the repositories' gradle.properties in parallel and reports each mod as soon as it is known.
 /// `progress` gets (repositories checked so far, the repository if it is a mod).
-pub fn detect_mods(token: &str, repos: &[GithubRepo], progress: &(dyn Fn(usize, Option<&GithubRepo>) + Sync)) -> Result<()> {
+pub fn detect_mods(
+    token: &str,
+    repos: &[GithubRepo],
+    progress: &(dyn Fn(usize, Option<&GithubRepo>) + Sync),
+) -> Result<()> {
     let next_index = Mutex::new(0usize);
     let done = Mutex::new(0usize);
     let error: Mutex<Option<anyhow::Error>> = Mutex::new(None);
     std::thread::scope(|s| {
         for _ in 0..THREADS.min(repos.len().max(1)) {
-            s.spawn(|| loop {
-                let i = {
-                    let mut n = next_index.lock().unwrap();
-                    if *n >= repos.len() || error.lock().unwrap().is_some() {
-                        return;
-                    }
-                    *n += 1;
-                    *n - 1
-                };
-                match is_mod(token, &repos[i]) {
-                    Ok(m) => {
-                        let mut d = done.lock().unwrap();
-                        *d += 1;
-                        progress(*d, m.then_some(&repos[i]));
-                    }
-                    Err(e) => {
-                        error.lock().unwrap().get_or_insert(e);
-                        return;
+            s.spawn(|| {
+                loop {
+                    let i = {
+                        let mut n = next_index.lock().unwrap();
+                        if *n >= repos.len() || error.lock().unwrap().is_some() {
+                            return;
+                        }
+                        *n += 1;
+                        *n - 1
+                    };
+                    match is_mod(token, &repos[i]) {
+                        Ok(m) => {
+                            let mut d = done.lock().unwrap();
+                            *d += 1;
+                            progress(*d, m.then_some(&repos[i]));
+                        }
+                        Err(e) => {
+                            error.lock().unwrap().get_or_insert(e);
+                            return;
+                        }
                     }
                 }
             });
@@ -106,8 +121,11 @@ fn is_mod(token: &str, repo: &GithubRepo) -> Result<bool> {
     if let Some(&cached) = MOD_CACHE.lock().unwrap().get(&key) {
         return Ok(cached);
     }
-    let r = get(&format!("https://api.github.com/repos/{}/contents/gradle.properties", repo.full_name), token,
-        "application/vnd.github.raw+json")?;
+    let r = get(
+        &format!("https://api.github.com/repos/{}/contents/gradle.properties", repo.full_name),
+        token,
+        "application/vnd.github.raw+json",
+    )?;
     let m = match r.status {
         200 => defines_mod_property(&r.body),
         404 => false, // no gradle.properties (or an empty repository)
@@ -156,11 +174,14 @@ mod tests {
 
     #[test]
     fn parses_repos() {
-        let repos = parse(r#"[{"name":"cool-mod","full_name":"me/cool-mod","description":"Adds things","private":true,"fork":false,
+        let repos = parse(
+            r#"[{"name":"cool-mod","full_name":"me/cool-mod","description":"Adds things","private":true,"fork":false,
           "archived":false,"clone_url":"https://github.com/me/cool-mod.git","html_url":"https://github.com/me/cool-mod",
           "pushed_at":"2026-01-01T00:00:00Z","owner":{"login":"me"}},
          {"name":"website","full_name":"org/website","description":null,"private":false,"fork":true,
-          "archived":true,"clone_url":"https://github.com/org/website.git","owner":{"login":"org"}}]"#).unwrap();
+          "archived":true,"clone_url":"https://github.com/org/website.git","owner":{"login":"org"}}]"#,
+        )
+        .unwrap();
         assert_eq!(repos.len(), 2);
         assert_eq!(repos[0].full_name, "me/cool-mod");
         assert_eq!(repos[0].owner, "me");
@@ -179,8 +200,11 @@ mod tests {
 
     #[test]
     fn follows_pagination_and_prefers_env_file() {
-        assert_eq!(next(Some(r#"<https://api.github.com/user/repos?page=2>; rel="next", <https://x?page=5>; rel="last""#)).as_deref(),
-            Some("https://api.github.com/user/repos?page=2"));
+        assert_eq!(
+            next(Some(r#"<https://api.github.com/user/repos?page=2>; rel="next", <https://x?page=5>; rel="last""#))
+                .as_deref(),
+            Some("https://api.github.com/user/repos?page=2")
+        );
         assert_eq!(next(Some(r#"<https://x?page=1>; rel="prev""#)), None);
         assert_eq!(next(None), None);
         let m = |k: &str, v: &str| -> BTreeMap<String, String> { [(k.to_string(), v.to_string())].into() };

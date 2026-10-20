@@ -2,7 +2,40 @@
 //! compile to WebAssembly as well; everything that needs the file system or processes lives in `pm-core`.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::path::PathBuf;
+
+// ---------------------------------------------------------------- versions
+
+/// Compares version strings like "1.20.1", "1.21" or "1.8.9" numerically (ascending); numbers sort after text
+/// (`1.21` > `1.x`).
+pub fn compare_versions(a: &str, b: &str) -> Ordering {
+    let split =
+        |s: &str| -> Vec<String> { s.split(|c: char| !c.is_ascii_alphanumeric()).map(str::to_string).collect() };
+    let (pa, pb) = (split(a), split(b));
+    for (x, y) in pa.iter().zip(&pb) {
+        let nx = !x.is_empty() && x.bytes().all(|c| c.is_ascii_digit());
+        let ny = !y.is_empty() && y.bytes().all(|c| c.is_ascii_digit());
+        let cmp = match (nx, ny) {
+            (true, true) => match (x.parse::<u128>(), y.parse::<u128>()) {
+                (Ok(i), Ok(j)) => i.cmp(&j),
+                _ => x.len().cmp(&y.len()).then_with(|| x.cmp(y)),
+            },
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            _ => x.to_lowercase().cmp(&y.to_lowercase()),
+        };
+        if cmp != Ordering::Equal {
+            return cmp;
+        }
+    }
+    pa.len().cmp(&pb.len())
+}
+
+/// `latest` is a different and higher version than `current`.
+pub fn is_newer(latest: &str, current: &str) -> bool {
+    latest != current && compare_versions(latest, current) == Ordering::Greater
+}
 
 // ---------------------------------------------------------------- projects
 
@@ -28,6 +61,9 @@ pub struct ModProject {
     /// Canonical path of the shared git directory (None without Git).
     pub common_dir: Option<PathBuf>,
     pub metadata: Option<ModMetadata>,
+    /// The project has a Gradle wrapper (gradlew).
+    pub gradle_wrapper: bool,
+    pub readme: Option<PathBuf>,
 }
 
 impl ModProject {
@@ -146,6 +182,104 @@ pub struct AppInfo {
     pub default_claude_model: String,
     pub default_backport_model: String,
 }
+
+/// The README of a project, rendered.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReadmeDoc {
+    pub file: PathBuf,
+    pub name: String,
+    pub html: String,
+}
+
+/// Where a new project would go (clone, worktree, import).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TargetInfo {
+    pub path: PathBuf,
+    pub exists: bool,
+    /// The shared repository `.repos/<name>.git`.
+    pub repo: PathBuf,
+    pub repo_exists: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CloneRequest {
+    pub url: String,
+    pub branch: String,
+    pub version: String,
+    pub name: String,
+    /// One shared repository per mod in .repos, the version folder is a worktree of it.
+    pub worktree: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RemoteBranches {
+    pub branches: Vec<String>,
+    pub default_branch: Option<String>,
+}
+
+/// Branches of a repository for the "Add version" dialog.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    pub branches: Vec<String>,
+    /// Branch → folder (relative to the master folder) for the branches that are checked out.
+    pub busy: Vec<(String, String)>,
+    pub fetch_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WorktreeRequest {
+    /// Worktree or repository the new worktree is created from.
+    pub from: PathBuf,
+    pub version: String,
+    pub name: String,
+    /// Branch to check out, or the base of `new_branch`.
+    pub branch: String,
+    pub new_branch: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TagInfo {
+    /// `v2.1.7` from the mod version.
+    pub suggestion: String,
+    pub latest: Option<String>,
+    pub commits_since: u32,
+}
+
+/// What the publish confirmation shows.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PublishCheck {
+    /// Names of the variables passed from .env.
+    pub vars: Vec<String>,
+    /// Expected variables that are missing or empty.
+    pub missing: Vec<String>,
+    /// CHANGELOG.md is not for the current mod version.
+    pub changelog_warning: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DependenciesInfo {
+    pub entries: Vec<DependencyEntry>,
+    /// Metadata file the declared dependencies come from.
+    pub declared_in: Option<String>,
+    pub declared: Vec<ModDependency>,
+}
+
+/// A changelog draft by Claude.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChangelogDraft {
+    pub text: String,
+    /// The answer starts with the right version heading.
+    pub clean: bool,
+    pub cost_usd: f64,
+}
+
+/// Variables the .env editor offers to add.
+pub const ENV_PRESETS: [&str; 7] =
+    ["MAVEN_URL", "MAVEN_USER", "MAVEN_PASSWORD", "CURSEFORGE_API", "MODRINTH_API", "CLAUDE_API", "GITHUB_TOKEN"];
+
+/// Conventional Commit types offered for the backport type rules.
+pub const BACKPORT_TYPES: [&str; 11] =
+    ["fix", "feat", "perf", "refactor", "revert", "build", "chore", "docs", "test", "ci", "style"];
 
 // ---------------------------------------------------------------- git
 
@@ -333,6 +467,60 @@ pub enum Decision {
     Backport,
     Skip,
     Unknown,
+}
+
+/// What the Backport tab needs to set up a backport: the commits of the chosen source and the type rules.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BackportCandidates {
+    /// Last release tag of the source; only commits after it are offered.
+    pub since_tag: Option<String>,
+    /// Newest first.
+    pub candidates: Vec<Candidate>,
+    /// Allowed commit types; empty = all.
+    pub types: Vec<String>,
+    /// The types are configured in the settings (otherwise taken from the repo's CLAUDE.md).
+    pub types_configured: bool,
+}
+
+/// A commit whose cherry-pick stopped with conflicts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BackportConflict {
+    pub commit: Commit,
+    pub files: Vec<String>,
+    /// Commits that follow after this one.
+    pub remaining: usize,
+}
+
+/// State of a backport in progress, as shown in the Backport tab.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BackportView {
+    /// A backport was started and not applied or discarded yet.
+    pub active: bool,
+    /// A step is running (the buttons wait).
+    pub busy: bool,
+    pub claude_running: bool,
+    pub building: bool,
+    pub status: String,
+    pub work_dir: Option<PathBuf>,
+    pub conflict: Option<BackportConflict>,
+    pub ported: usize,
+    /// Notes of the tool and Claude, rendered from Markdown.
+    pub notes_html: String,
+    /// Number of note sections (headings).
+    pub notes_count: usize,
+    pub changes: Vec<FileChange>,
+    pub build_failed: bool,
+    /// The work folder is still at the target commit (nothing was committed).
+    pub can_apply: bool,
+}
+
+/// Result of applying a backport to the target.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BackportApplied {
+    /// Files with conflicts in the target.
+    pub conflicts: Vec<String>,
+    /// Commit message with the cherry-pick trailers.
+    pub message: String,
 }
 
 // ---------------------------------------------------------------- gradle
@@ -586,6 +774,10 @@ pub mod events {
     pub const RESCAN: &str = "rescan";
     /// A second start or the tray asks for an action (payload: [`AppAction`](super::AppAction)).
     pub const ACTION: &str = "action";
+    /// Mod detection in the GitHub dialog (payload: [`GithubProgress`](super::GithubProgress)).
+    pub const GITHUB: &str = "github";
+    /// A backport step ended outside of a command, e.g. its build (payload: the target path).
+    pub const BACKPORT: &str = "backport";
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -600,5 +792,14 @@ pub struct LogLine {
 pub enum AppAction {
     /// The close button was pressed and the user has not decided yet what it does.
     AskClose,
-    OpenSettings,
+    /// "Exit" in the tray: ask when Gradle tasks are running, then exit.
+    ConfirmExit,
+}
+
+/// Progress of the mod detection in the GitHub dialog.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GithubProgress {
+    pub checked: usize,
+    /// Full name of a repository that is a mod.
+    pub mod_repo: Option<String>,
 }

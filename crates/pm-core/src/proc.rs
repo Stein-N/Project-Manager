@@ -66,8 +66,11 @@ pub fn kill_tree(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = command("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).stdout(Stdio::null())
-            .stderr(Stdio::null()).status();
+        let _ = command("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 

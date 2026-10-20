@@ -70,6 +70,8 @@ pub fn inspect(mc_version: &str, dir: &Path, git: &Git) -> ModProject {
         linked_worktree: dot_git.is_file(),
         common_dir: None,
         metadata: None,
+        gradle_wrapper: crate::gradle::wrapper(dir).is_some(),
+        readme: crate::readme::find(dir),
     };
     if is_git {
         if let Some(s) = git.status(dir) {
@@ -83,7 +85,8 @@ pub fn inspect(mc_version: &str, dir: &Path, git: &Git) -> ModProject {
         p.common_dir = worktrees::common_dir(git, dir);
     }
     let gradle = util::read_properties(&dir.join("gradle.properties"));
-    p.gradle_mc_version = first_property(&gradle, &["minecraft_version", "minecraftVersion", "mc_version", "mcVersion"]);
+    p.gradle_mc_version =
+        first_property(&gradle, &["minecraft_version", "minecraftVersion", "mc_version", "mcVersion"]);
     p.mod_version = first_property(&gradle, &["mod_version", "modVersion", "version"]);
     p.loader = detect_loader(dir, &gradle);
     p.metadata = metadata::read(dir, &gradle);

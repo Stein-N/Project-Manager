@@ -12,7 +12,7 @@ anyhow = "1"
 regex = "1"
 fancy-regex = "0.19"
 os_pipe = "1"
-comrak = "0.56"
+comrak = { version = "0.56", default-features = false }
 ammonia = "4"
 base64 = "0.23"
 ureq = "3"

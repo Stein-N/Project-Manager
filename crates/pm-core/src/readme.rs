@@ -10,7 +10,8 @@ const NAMES: [&str; 4] = ["readme.md", "readme.markdown", "readme.txt", "readme"
 
 /// README in the project root (case-insensitive; Markdown preferred).
 pub fn find(project: &Path) -> Option<PathBuf> {
-    let files: Vec<PathBuf> = std::fs::read_dir(project).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
+    let files: Vec<PathBuf> =
+        std::fs::read_dir(project).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
     NAMES.iter().find_map(|name| files.iter().find(|f| util::file_name(f).to_lowercase() == *name).cloned())
 }
 
@@ -20,13 +21,18 @@ pub fn render(file: &Path) -> Result<String> {
     let name = util::file_name(file).to_lowercase();
     let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
     Ok(if name.ends_with(".md") || name.ends_with(".markdown") {
-        sanitize(&markdown_to_html(&text), &base)
+        markdown_to_safe_html(&text, &base)
     } else {
         format!("<pre>{}</pre>", escape(&text))
     })
 }
 
-pub fn markdown_to_html(markdown: &str) -> String {
+/// Markdown (README, changelog drafts, Claude's notes) as sanitized HTML; relative paths resolve against `base`.
+pub fn markdown_to_safe_html(markdown: &str, base: &Path) -> String {
+    sanitize(&markdown_to_html(markdown), base)
+}
+
+fn markdown_to_html(markdown: &str) -> String {
     let mut options = comrak::Options::default();
     let e = &mut options.extension;
     e.table = true;
@@ -86,12 +92,13 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(b);
-                i += 3;
-                continue;
-            }
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(b);
+            i += 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;

@@ -11,8 +11,10 @@ use std::sync::LazyLock;
 pub const FILE_NAME: &str = ".env";
 /// Variables the publish setup of the mods expects (Maven repository, CurseForge, Modrinth).
 pub const EXPECTED: [&str; 5] = ["MAVEN_URL", "MAVEN_USER", "MAVEN_PASSWORD", "CURSEFORGE_API", "MODRINTH_API"];
+
 static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").unwrap());
-static ENTRY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$").unwrap());
+static ENTRY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$").unwrap());
 
 /// Variables in file order.
 pub type Vars = Vec<(String, String)>;
@@ -78,11 +80,8 @@ fn parse_value(raw: &str) -> String {
 /// are dropped and new keys are appended.
 pub fn save(master: &Path, vars: &Vars) -> Result<()> {
     let file = path(master);
-    let mut lines: Vec<String> = if file.is_file() {
-        fs::read_to_string(&file)?.lines().map(str::to_string).collect()
-    } else {
-        Vec::new()
-    };
+    let mut lines: Vec<String> =
+        if file.is_file() { fs::read_to_string(&file)?.lines().map(str::to_string).collect() } else { Vec::new() };
     if lines.is_empty() {
         lines.push("# Environment variables for the publish tasks of MC Mod Project Manager.".into());
         lines.push("# Keep this file private - it usually contains API tokens.".into());
@@ -96,11 +95,11 @@ pub fn save(master: &Path, vars: &Vars) -> Result<()> {
             continue;
         };
         let key = m[1].to_string();
-        if let Some(v) = value_of(&key) {
-            if !written.contains(&key) {
-                out.push(format!("{key}={}", format(v)));
-                written.push(key);
-            }
+        if let Some(v) = value_of(&key)
+            && !written.contains(&key)
+        {
+            out.push(format!("{key}={}", format(v)));
+            written.push(key);
         }
     }
     for (k, v) in vars {
@@ -142,10 +141,15 @@ mod tests {
 
     #[test]
     fn parses_common_dotenv_syntax() {
-        let vars = parse("# tokens\nMODRINTH_TOKEN=mrp_abc123\nexport CURSEFORGE_TOKEN = cf-xyz   # inline comment\n\
-            QUOTED=\"a value with # hash and \\\"quotes\\\"\"\nSINGLE='raw $value'\nEMPTY=\nnot a variable line\n");
+        let vars = parse(
+            "# tokens\nMODRINTH_TOKEN=mrp_abc123\nexport CURSEFORGE_TOKEN = cf-xyz   # inline comment\n\
+            QUOTED=\"a value with # hash and \\\"quotes\\\"\"\nSINGLE='raw $value'\nEMPTY=\nnot a variable line\n",
+        );
         let m = to_map(&vars);
-        assert_eq!(vars.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["MODRINTH_TOKEN", "CURSEFORGE_TOKEN", "QUOTED", "SINGLE", "EMPTY"]);
+        assert_eq!(
+            vars.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["MODRINTH_TOKEN", "CURSEFORGE_TOKEN", "QUOTED", "SINGLE", "EMPTY"]
+        );
         assert_eq!(m["MODRINTH_TOKEN"], "mrp_abc123");
         assert_eq!(m["CURSEFORGE_TOKEN"], "cf-xyz");
         assert_eq!(m["QUOTED"], "a value with # hash and \"quotes\"");
@@ -162,8 +166,10 @@ mod tests {
         vars.retain(|(k, _)| k != "C");
         vars.push(("D".into(), "new\"value".into()));
         save(tmp.path(), &vars).unwrap();
-        assert_eq!(fs::read_to_string(tmp.path().join(".env")).unwrap().replace("\r\n", "\n"),
-            "# my tokens\nA=1\n\n# second\nB=\"two words\"\nD=\"new\\\"value\"\n");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join(".env")).unwrap().replace("\r\n", "\n"),
+            "# my tokens\nA=1\n\n# second\nB=\"two words\"\nD=\"new\\\"value\"\n"
+        );
         assert_eq!(load(tmp.path()).unwrap(), vars);
     }
 

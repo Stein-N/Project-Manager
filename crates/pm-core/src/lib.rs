@@ -1,9 +1,10 @@
 //! Logic of the MC Mod Project Manager. Everything here is UI independent: the Tauri app calls it from its commands,
 //! the tests call it directly.
 
-
+pub mod autostart_flag;
 pub mod backport;
 pub mod backport_claude;
+pub mod backport_session;
 pub mod changelog;
 pub mod changes;
 pub mod claude;

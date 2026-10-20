@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/pm-types", "crates/pm-core"]
+members = ["crates/pm-types", "crates/pm-core", "crates/pm-app", "crates/pm-ui"]
 # The UI is WebAssembly and is built by trunk (see crates/pm-ui/Trunk.toml)
-default-members = ["crates/pm-types", "crates/pm-core"]
+default-members = ["crates/pm-types", "crates/pm-core", "crates/pm-app"]
 
 [workspace.package]
 version = "1.0.0"

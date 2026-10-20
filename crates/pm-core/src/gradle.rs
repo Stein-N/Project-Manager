@@ -63,7 +63,8 @@ impl Runner {
     /// Whether `task` could be started now (not running yet and the loader has a free slot).
     pub fn can_start(&self, project: &Path, task: &str) -> bool {
         let running = self.running.lock().unwrap();
-        !running.contains_key(&(project.to_path_buf(), task.to_string())) && in_loader(&running, project, &loader_of(task)) < MAX_PER_LOADER
+        !running.contains_key(&(project.to_path_buf(), task.to_string()))
+            && in_loader(&running, project, &loader_of(task)) < MAX_PER_LOADER
     }
 
     pub fn running_count(&self) -> usize {
@@ -71,8 +72,14 @@ impl Runner {
     }
 
     /// Starts `task` on a background thread. Every output line goes to `out`; `done` receives the exit code.
-    pub fn start(&self, project: &Path, task: &str, env: &BTreeMap<String, String>, out: Out,
-                 done: impl FnOnce(i32) + Send + 'static) -> Result<()> {
+    pub fn start(
+        &self,
+        project: &Path,
+        task: &str,
+        env: &BTreeMap<String, String>,
+        out: Out,
+        done: impl FnOnce(i32) + Send + 'static,
+    ) -> Result<()> {
         let (child, reader) = self.launch(project, task, env)?;
         let runner = self.clone();
         let (project, task) = (project.to_path_buf(), task.to_string());
@@ -99,8 +106,12 @@ impl Runner {
         }
     }
 
-    fn launch(&self, project: &Path, task: &str, env: &BTreeMap<String, String>)
-              -> Result<(std::process::Child, os_pipe::PipeReader)> {
+    fn launch(
+        &self,
+        project: &Path,
+        task: &str,
+        env: &BTreeMap<String, String>,
+    ) -> Result<(std::process::Child, os_pipe::PipeReader)> {
         let mut running = self.running.lock().unwrap();
         let key = (project.to_path_buf(), task.to_string());
         if running.contains_key(&key) {
@@ -108,10 +119,13 @@ impl Runner {
         }
         let loader = loader_of(task);
         if in_loader(&running, project, &loader) >= MAX_PER_LOADER {
-            bail!("At most {MAX_PER_LOADER} Gradle tasks can run at the same time for {}. Stop one first.",
-                if loader.is_empty() { "the root project".to_string() } else { format!(":{loader}") });
+            bail!(
+                "At most {MAX_PER_LOADER} Gradle tasks can run at the same time for {}. Stop one first.",
+                if loader.is_empty() { "the root project".to_string() } else { format!(":{loader}") }
+            );
         }
-        let w = wrapper(project).ok_or_else(|| anyhow!("No Gradle wrapper (gradlew) found in {}", project.display()))?;
+        let w =
+            wrapper(project).ok_or_else(|| anyhow!("No Gradle wrapper (gradlew) found in {}", project.display()))?;
         let w = util::absolute(&w);
         let mut cmd = if util::is_windows() {
             let mut c = proc::command("cmd.exe");
@@ -131,8 +145,14 @@ impl Runner {
         Ok((child, reader))
     }
 
-    fn pump(&self, project: &Path, task: &str, mut child: std::process::Child, reader: os_pipe::PipeReader,
-            out: &(dyn Fn(&str) + Sync)) -> i32 {
+    fn pump(
+        &self,
+        project: &Path,
+        task: &str,
+        mut child: std::process::Child,
+        reader: os_pipe::PipeReader,
+        out: &(dyn Fn(&str) + Sync),
+    ) -> i32 {
         proc::read_lines(reader, out);
         let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
         self.running.lock().unwrap().remove(&(project.to_path_buf(), task.to_string()));
@@ -230,7 +250,10 @@ pub fn parse_tasks(output: &str) -> Vec<RunTask> {
         // build and publishing are general tasks: run by name, Gradle executes them in every subproject
         let stored = if is_general(name) { name.to_string() } else { format!(":{path}") };
         if !tasks.iter().any(|t| t.path == stored) {
-            tasks.push(RunTask { path: stored, description: m.get(2).map(|d| d.as_str().trim().to_string()).unwrap_or_default() });
+            tasks.push(RunTask {
+                path: stored,
+                description: m.get(2).map(|d| d.as_str().trim().to_string()).unwrap_or_default(),
+            });
         }
     }
     tasks
@@ -246,7 +269,11 @@ pub fn group(tasks: &[RunTask], root_loader_label: &str) -> Vec<TaskGroup> {
     let mut seen = vec!["build".to_string()];
     for t in tasks.iter().filter(|t| is_allowed(t.name())) {
         // build/publish of subprojects (older caches) are folded into General
-        let task = if is_general(t.name()) { RunTask { path: t.name().into(), description: t.description.clone() } } else { t.clone() };
+        let task = if is_general(t.name()) {
+            RunTask { path: t.name().into(), description: t.description.clone() }
+        } else {
+            t.clone()
+        };
         if !is_general(task.name()) {
             let loader = if task.project().is_empty() {
                 root_loader_label.to_string()
@@ -288,7 +315,13 @@ pub fn group(tasks: &[RunTask], root_loader_label: &str) -> Vec<TaskGroup> {
         .into_iter()
         .map(|(p, mut list)| {
             list.sort_by_key(|t| (task_rank(t.name()), t.name().to_string()));
-            let name = if p.is_empty() { "General".into() } else if p == ROOT { root_loader_label.into() } else { display_name(&p) };
+            let name = if p.is_empty() {
+                "General".into()
+            } else if p == ROOT {
+                root_loader_label.into()
+            } else {
+                display_name(&p)
+            };
             TaskGroup { name, tasks: list }
         })
         .collect()
@@ -370,11 +403,14 @@ pub fn cached(project: &Path) -> Option<Cached> {
 
 fn store(project: &Path, tasks: &[RunTask]) {
     let json = with_cache(|c| {
-        c.insert(cache_key(project), CacheEntry {
-            signature: signature(project),
-            tasks: tasks.to_vec(),
-            detected: chrono::Utc::now().timestamp_millis(),
-        });
+        c.insert(
+            cache_key(project),
+            CacheEntry {
+                signature: signature(project),
+                tasks: tasks.to_vec(),
+                detected: chrono::Utc::now().timestamp_millis(),
+            },
+        );
         serde_json::to_string(c).unwrap_or_default()
     });
     // the cache is optional
@@ -390,7 +426,8 @@ fn signature(project: &Path) -> String {
     let mut sb = String::new();
     let dirs = std::iter::once(project.to_path_buf()).chain(LOADER_ORDER.iter().map(|s| project.join(s)));
     for dir in dirs {
-        for file in ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.properties"] {
+        for file in ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.properties"]
+        {
             let f = dir.join(file);
             if let Ok(modified) = std::fs::metadata(&f).and_then(|m| m.modified()) {
                 let ms = modified.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
@@ -450,7 +487,10 @@ BUILD SUCCESSFUL in 4s
     #[test]
     fn general_tasks_and_one_gametest_run_per_loader() {
         let groups = group(&parse_tasks(OUTPUT), "General");
-        assert_eq!(groups.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(), ["General", "Fabric", "Forge", "NeoForge"]);
+        assert_eq!(
+            groups.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(),
+            ["General", "Fabric", "Forge", "NeoForge"]
+        );
         assert_eq!(paths(&groups[0]), ["build", "publish", "publishMods"]);
         assert_eq!(paths(&groups[1]), [":fabric:runGametests"]);
         assert_eq!(paths(&groups[2]), [":forge:runGameTestServer"]);
@@ -482,14 +522,17 @@ BUILD SUCCESSFUL in 4s
     #[test]
     fn runs_and_tracks_tasks() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("gradlew"), "echo \"task $1\"\n[ \"$1\" = slow ] && sleep 30\nexit 0\n").unwrap();
+        std::fs::write(tmp.path().join("gradlew"), "echo \"task $1\"\n[ \"$1\" = slow ] && sleep 30\nexit 0\n")
+            .unwrap();
         let runner = Runner::default();
         let lines = Mutex::new(Vec::new());
         assert_eq!(runner.run(tmp.path(), "build", &|l: &str| lines.lock().unwrap().push(l.to_string())).unwrap(), 0);
         assert_eq!(lines.lock().unwrap().as_slice(), ["task build"]);
 
         let (tx, rx) = std::sync::mpsc::channel();
-        runner.start(tmp.path(), "slow", &BTreeMap::new(), Arc::new(|_: &str| {}), move |code| tx.send(code).unwrap()).unwrap();
+        runner
+            .start(tmp.path(), "slow", &BTreeMap::new(), Arc::new(|_: &str| {}), move |code| tx.send(code).unwrap())
+            .unwrap();
         assert!(runner.is_task_running(tmp.path(), "slow"));
         assert!(runner.start(tmp.path(), "slow", &BTreeMap::new(), Arc::new(|_: &str| {}), |_| {}).is_err());
         runner.stop(tmp.path(), "slow");

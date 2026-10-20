@@ -61,11 +61,7 @@ pub fn list(git: &Git, any_dir: &Path) -> Vec<Worktree> {
 
 /// Branch → worktree path for all currently checked-out branches.
 pub fn checked_out_branches(git: &Git, any_dir: &Path) -> BTreeMap<String, PathBuf> {
-    list(git, any_dir)
-        .into_iter()
-        .filter(|w| !w.bare)
-        .filter_map(|w| w.branch.map(|b| (b, w.path)))
-        .collect()
+    list(git, any_dir).into_iter().filter(|w| !w.bare).filter_map(|w| w.branch.map(|b| (b, w.path))).collect()
 }
 
 /// Absolute, canonical path of the shared git directory.
@@ -75,7 +71,9 @@ pub fn common_dir(git: &Git, dir: &Path) -> Option<PathBuf> {
 
 /// Commits on local branches that are not on any remote.
 pub fn unpushed_commits(git: &Git, any_dir: &Path) -> usize {
-    git.value(any_dir, &["log", "--branches", "--not", "--remotes", "--oneline"]).map(|o| o.lines().count()).unwrap_or(0)
+    git.value(any_dir, &["log", "--branches", "--not", "--remotes", "--oneline"])
+        .map(|o| o.lines().count())
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------- create / remove
@@ -122,7 +120,13 @@ pub fn add(git: &Git, from: &Path, target: &Path, branch: &str, new_branch: Opti
     let remote = git.has_ref(from, &format!("refs/remotes/origin/{branch}"));
     let origin = format!("origin/{branch}");
     if let Some(new_branch) = new_branch {
-        let base = if local { branch } else if remote { &origin } else { branch };
+        let base = if local {
+            branch
+        } else if remote {
+            &origin
+        } else {
+            branch
+        };
         git.run_ok(from, log, &["worktree", "add", "--no-track", "-b", new_branch, &t, base])?;
     } else if local {
         git.run_ok(from, log, &["worktree", "add", &t, branch])?;
@@ -191,9 +195,18 @@ fn repair_args(linked: &[PathBuf]) -> Vec<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn convert_by_move(git: &Git, project: &Path, dot_git: &Path, repo: &Path, head_ref: &str, head_before: &str,
-                   id: &str, log: Log) -> Result<()> {
-    let linked: Vec<PathBuf> = list(git, project).into_iter().map(|w| w.path).filter(|p| !same_path(p, project)).collect();
+fn convert_by_move(
+    git: &Git,
+    project: &Path,
+    dot_git: &Path,
+    repo: &Path,
+    head_ref: &str,
+    head_before: &str,
+    id: &str,
+    log: Log,
+) -> Result<()> {
+    let linked: Vec<PathBuf> =
+        list(git, project).into_iter().map(|w| w.path).filter(|p| !same_path(p, project)).collect();
     fs::create_dir_all(repo.parent().unwrap())?;
     log(&format!("Moving .git to {}", repo.display()));
     util::move_dir(dot_git, repo)?;
@@ -242,32 +255,49 @@ fn convert_by_move(git: &Git, project: &Path, dot_git: &Path, repo: &Path, head_
 }
 
 #[allow(clippy::too_many_arguments)]
-fn convert_into_existing(git: &Git, project: &Path, dot_git: &Path, repo: &Path, head_ref: &str, head_before: &str,
-                         id: &str, log: Log) -> Result<()> {
+fn convert_into_existing(
+    git: &Git,
+    project: &Path,
+    dot_git: &Path,
+    repo: &Path,
+    head_ref: &str,
+    head_before: &str,
+    id: &str,
+    log: Log,
+) -> Result<()> {
     if list(git, project).len() > 1 {
-        bail!("This clone has its own worktrees and a shared repository already exists.\nPlease remove this clone's worktrees first.");
+        bail!(
+            "This clone has its own worktrees and a shared repository already exists.\nPlease remove this clone's worktrees first."
+        );
     }
     if git.has_ref(project, "refs/stash") {
-        bail!("The project has stash entries (git stash).\nPlease apply or drop them first – they would be lost otherwise.");
+        bail!(
+            "The project has stash entries (git stash).\nPlease apply or drop them first – they would be lost otherwise."
+        );
     }
     let own_url = git.remote_url(project);
     let repo_url = git.remote_url(repo);
     if !same_url(&own_url, &repo_url) {
-        bail!("The shared repository belongs to a different URL:\n{repo_url}\nThis project: {}",
-            if own_url.is_empty() { "(no origin)" } else { &own_url });
+        bail!(
+            "The shared repository belongs to a different URL:\n{repo_url}\nThis project: {}",
+            if own_url.is_empty() { "(no origin)" } else { &own_url }
+        );
     }
     let current = head_ref.strip_prefix("ref: refs/heads/").map(str::to_string);
     let busy = checked_out_branches(git, repo);
-    if let Some(c) = &current {
-        if let Some(path) = busy.get(c) {
-            bail!("The branch “{c}” is already checked out in the shared repository:\n{}", path.display());
-        }
+    if let Some(c) = &current
+        && let Some(path) = busy.get(c)
+    {
+        bail!("The branch “{c}” is already checked out in the shared repository:\n{}", path.display());
     }
 
     // fetch all local branches + HEAD into a temporary namespace, then reconcile
     log(&format!("Transferring local branches into {} …", util::file_name(repo)));
-    git.run_ok(repo, log, &["fetch", "--no-tags", &slash(dot_git), "+refs/heads/*:refs/pm-import/heads/*",
-        "+HEAD:refs/pm-import/HEAD"])?;
+    git.run_ok(
+        repo,
+        log,
+        &["fetch", "--no-tags", &slash(dot_git), "+refs/heads/*:refs/pm-import/heads/*", "+HEAD:refs/pm-import/HEAD"],
+    )?;
     let transfer = (|| -> Result<()> {
         let mut updates = Vec::new();
         let mut conflicts = Vec::new();
@@ -275,7 +305,8 @@ fn convert_into_existing(git: &Git, project: &Path, dot_git: &Path, repo: &Path,
         for line in refs.text.lines().filter(|l| !l.trim().is_empty()) {
             let (name, sha) = line.trim().split_once(' ').unwrap_or((line, ""));
             let name = name.trim_start_matches("refs/pm-import/heads/").to_string();
-            let Some(repo_sha) = git.value(repo, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{name}")]) else {
+            let Some(repo_sha) = git.value(repo, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{name}")])
+            else {
                 updates.push((name, sha.to_string()));
                 continue;
             };
@@ -289,14 +320,18 @@ fn convert_into_existing(git: &Git, project: &Path, dot_git: &Path, repo: &Path,
             } else if repo_ahead && current.as_ref() != Some(&name) {
                 // shared repo is already ahead – nothing lost
             } else {
-                let why = busy.get(&name).map(|p| format!(" (checked out in {})", p.display()))
+                let why = busy
+                    .get(&name)
+                    .map(|p| format!(" (checked out in {})", p.display()))
                     .unwrap_or_else(|| " (diverged commits)".into());
                 conflicts.push(format!("{name}{why}"));
             }
         }
         if !conflicts.is_empty() {
-            bail!("The following branches cannot be transferred automatically:\n  {}\n\nPlease push/pull first so both sides match.",
-                conflicts.join("\n  "));
+            bail!(
+                "The following branches cannot be transferred automatically:\n  {}\n\nPlease push/pull first so both sides match.",
+                conflicts.join("\n  ")
+            );
         }
         for (name, sha) in &updates {
             git.run_ok(repo, log, &["update-ref", &format!("refs/heads/{name}"), sha])?;
@@ -304,10 +339,10 @@ fn convert_into_existing(git: &Git, project: &Path, dot_git: &Path, repo: &Path,
         // copy upstream settings (branch.<x>.remote/merge) unless already set in the shared repo
         let cfg = git.run(Some(project), &["config", "--local", "--get-regexp", r"^branch\."]);
         for line in cfg.text.lines() {
-            if let Some((key, value)) = line.split_once(' ') {
-                if git.value(repo, &["config", "--get", key]).is_none() {
-                    git.run(Some(repo), &["config", key, value]);
-                }
+            if let Some((key, value)) = line.split_once(' ')
+                && git.value(repo, &["config", "--get", key]).is_none()
+            {
+                git.run(Some(repo), &["config", key, value]);
             }
         }
         Ok(())

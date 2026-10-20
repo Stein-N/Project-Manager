@@ -41,7 +41,10 @@ pub fn parse(message: &str) -> ConventionalCommit {
         match m.get(1).map(|v| v.as_str().trim()).filter(|v| !v.is_empty()) {
             None => c.no_backport_all = true,
             Some(versions) => c.no_backport_to.extend(
-                versions.split(|ch: char| ch == ',' || ch.is_whitespace()).filter(|v| !v.is_empty()).map(str::to_string),
+                versions
+                    .split(|ch: char| ch == ',' || ch.is_whitespace())
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_string),
             ),
         }
     }
@@ -174,7 +177,9 @@ mod tests {
 
     #[test]
     fn cherry_pick_trailers() {
-        let c = parse("fix: sync\n\n(cherry picked from commit 0123456789ABCDEF0123456789abcdef01234567)\n(cherry picked from commit abcdef1)\n");
+        let c = parse(
+            "fix: sync\n\n(cherry picked from commit 0123456789ABCDEF0123456789abcdef01234567)\n(cherry picked from commit abcdef1)\n",
+        );
         assert!(c.is_backport());
         assert_eq!(c.cherry_picked_from, ["0123456789abcdef0123456789abcdef01234567", "abcdef1"]);
         assert!(!parse("fix: sync").is_backport());

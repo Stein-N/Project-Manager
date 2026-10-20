@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-static GRADLE_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+(\.\d+)+(-rc-\d+|-milestone-\d+)?$").unwrap());
+static GRADLE_VERSION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d+(\.\d+)+(-rc-\d+|-milestone-\d+)?$").unwrap());
 static WRAPPER_DIST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^gradle-(.+)-(bin|all)$").unwrap());
 static MC_VERSION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\d+\.\d+(\.\d+)?(-(pre|rc)\d+)?|\d{2}w\d{2}[a-z])$").unwrap());
@@ -41,7 +42,12 @@ pub fn scan(gradle_home: &Path, projects: &[ModProject]) -> Vec<CacheItem> {
     }
 
     let item = |category: String, path: &Path, name: String, status: CacheStatus, used_by: Option<String>| CacheItem {
-        category, path: path.to_path_buf(), name, status, used_by, size: None,
+        category,
+        path: path.to_path_buf(),
+        name,
+        status,
+        used_by,
+        size: None,
     };
     let attributed = |category: String, dir: &Path, key: Option<&str>, users: &BTreeMap<String, Vec<String>>| {
         let name = util::file_name(dir);
@@ -83,7 +89,13 @@ pub fn scan(gradle_home: &Path, projects: &[ModProject]) -> Vec<CacheItem> {
         }
     }
     for jdk in util::subdirs(&gradle_home.join("jdks")) {
-        items.push(item("Toolchain JDK".into(), &jdk, format!("jdks/{}", util::file_name(&jdk)), CacheStatus::Shared, None));
+        items.push(item(
+            "Toolchain JDK".into(),
+            &jdk,
+            format!("jdks/{}", util::file_name(&jdk)),
+            CacheStatus::Shared,
+            None,
+        ));
     }
     // build output inside the projects
     for p in projects {
@@ -94,13 +106,21 @@ pub fn scan(gradle_home: &Path, projects: &[ModProject]) -> Vec<CacheItem> {
                 let dir = base.join(out);
                 if dir.is_dir() {
                     let rel = if sub.is_empty() { out.to_string() } else { format!("{sub}/{out}") };
-                    items.push(item("Project build output".into(), &dir, format!("{label}/{rel}"), CacheStatus::BuildOutput, Some(label.clone())));
+                    items.push(item(
+                        "Project build output".into(),
+                        &dir,
+                        format!("{label}/{rel}"),
+                        CacheStatus::BuildOutput,
+                        Some(label.clone()),
+                    ));
                 }
             }
         }
     }
     // unused first – it is what the user is looking for
-    items.sort_by(|a, b| a.status.cmp(&b.status).then_with(|| a.category.cmp(&b.category)).then_with(|| a.name.cmp(&b.name)));
+    items.sort_by(|a, b| {
+        a.status.cmp(&b.status).then_with(|| a.category.cmp(&b.category)).then_with(|| a.name.cmp(&b.name))
+    });
     items
 }
 
@@ -127,8 +147,17 @@ mod tests {
     fn marks_data_no_project_uses() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().join("gradle-home");
-        for dir in ["wrapper/dists/gradle-8.10.2-bin/abc", "wrapper/dists/gradle-8.8-all/def", "caches/8.10.2", "caches/8.8",
-            "caches/modules-2", "caches/fabric-loom/1.21.1", "caches/fabric-loom/1.20.1", "caches/fabric-loom/assets", "daemon/8.8"] {
+        for dir in [
+            "wrapper/dists/gradle-8.10.2-bin/abc",
+            "wrapper/dists/gradle-8.8-all/def",
+            "caches/8.10.2",
+            "caches/8.8",
+            "caches/modules-2",
+            "caches/fabric-loom/1.21.1",
+            "caches/fabric-loom/1.20.1",
+            "caches/fabric-loom/assets",
+            "daemon/8.8",
+        ] {
             fs::create_dir_all(home.join(dir)).unwrap();
         }
         fs::write(home.join("caches/8.8/file.bin"), "12345").unwrap();
@@ -136,13 +165,34 @@ mod tests {
         fs::create_dir_all(project.join("gradle/wrapper")).unwrap();
         fs::create_dir_all(project.join("build/libs")).unwrap();
         fs::create_dir_all(project.join("fabric/build")).unwrap();
-        fs::write(project.join("gradle/wrapper/gradle-wrapper.properties"),
-            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip\n").unwrap();
-        let m = ModProject { name: "Mod".into(), mc_version: "1.21.1".into(), path: project, git: false, branch: None,
-            upstream: None, remote_url: String::new(), changes: 0, ahead: 0, behind: 0, loader: None,
-            gradle_mc_version: Some("1.21.1".into()), mod_version: None, linked_worktree: false, common_dir: None, metadata: None };
+        fs::write(
+            project.join("gradle/wrapper/gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip\n",
+        )
+        .unwrap();
+        let m = ModProject {
+            name: "Mod".into(),
+            mc_version: "1.21.1".into(),
+            path: project,
+            git: false,
+            branch: None,
+            upstream: None,
+            remote_url: String::new(),
+            changes: 0,
+            ahead: 0,
+            behind: 0,
+            loader: None,
+            gradle_mc_version: Some("1.21.1".into()),
+            mod_version: None,
+            linked_worktree: false,
+            common_dir: None,
+            metadata: None,
+            gradle_wrapper: false,
+            readme: None,
+        };
         let items = scan(&home, &[m]);
-        let status: BTreeMap<String, CacheStatus> = items.iter().map(|i| (format!("{}:{}", i.category, i.name), i.status)).collect();
+        let status: BTreeMap<String, CacheStatus> =
+            items.iter().map(|i| (format!("{}:{}", i.category, i.name), i.status)).collect();
         use CacheStatus::*;
         assert_eq!(status["Gradle distribution:gradle-8.10.2-bin"], Used);
         assert_eq!(status["Gradle distribution:gradle-8.8-all"], Unused);

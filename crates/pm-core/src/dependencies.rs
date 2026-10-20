@@ -1,7 +1,7 @@
 //! Dependency versions from gradle.properties (and the Gradle wrapper) plus lookup of the latest versions.
 
-use crate::util::{self, compare_versions};
 use crate::http;
+use crate::util::{self, compare_versions};
 use anyhow::{Result, anyhow, bail};
 use pm_types::{DependencyEntry, DependencyKind};
 use regex::Regex;
@@ -9,8 +9,16 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
-const SKIP: [&str; 8] = ["mod_version", "version", "minecraft_version", "mc_version", "minecraftVersion",
-    "parchment_minecraft_version", "parchment_minecraft", "java_version"];
+const SKIP: [&str; 8] = [
+    "mod_version",
+    "version",
+    "minecraft_version",
+    "mc_version",
+    "minecraftVersion",
+    "parchment_minecraft_version",
+    "parchment_minecraft",
+    "java_version",
+];
 static MAVEN_VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<version>([^<]+)</version>").unwrap());
 static MAVEN_RELEASE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<release>([^<]+)</release>").unwrap());
 static WRAPPER: LazyLock<Regex> =
@@ -42,7 +50,12 @@ pub fn read(project: &Path) -> Vec<DependencyEntry> {
         })
         .collect();
     if let Some(v) = wrapper_version(project) {
-        entries.push(DependencyEntry { label: "Gradle wrapper".into(), key: None, value: v, kind: DependencyKind::Gradle });
+        entries.push(DependencyEntry {
+            label: "Gradle wrapper".into(),
+            key: None,
+            value: v,
+            kind: DependencyKind::Gradle,
+        });
     }
     // known kinds first, then the rest
     entries.sort_by_key(|e| e.kind);
@@ -90,8 +103,11 @@ pub fn latest(entry: &DependencyEntry, mc: &str, parchment_mc: Option<&str>) -> 
     Ok(match entry.kind {
         FabricLoader => first_json("https://meta.fabricmc.net/v2/versions/loader", true)?,
         Yarn => first_json(&format!("https://meta.fabricmc.net/v2/versions/yarn/{mc}"), false)?,
-        FabricApi => max_maven("https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml",
-            |v| v.ends_with(&format!("+{mc}")))?,
+        FabricApi => {
+            max_maven("https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml", |v| {
+                v.ends_with(&format!("+{mc}"))
+            })?
+        }
         NeoForge => {
             let url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
             let prefix = neoforge_prefix(mc);
@@ -101,8 +117,9 @@ pub fn latest(entry: &DependencyEntry, mc: &str, parchment_mc: Option<&str>) -> 
             }
         }
         Forge => {
-            let promos: serde_json::Value =
-                serde_json::from_str(&fetch("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")?)?;
+            let promos: serde_json::Value = serde_json::from_str(&fetch(
+                "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json",
+            )?)?;
             promos["promos"][format!("{mc}-latest")].as_str().map(|latest| {
                 // keep the format of the current value ("47.3.0" or "1.20.1-47.3.0")
                 if entry.value.starts_with(&format!("{mc}-")) { format!("{mc}-{latest}") } else { latest.to_string() }
@@ -110,7 +127,9 @@ pub fn latest(entry: &DependencyEntry, mc: &str, parchment_mc: Option<&str>) -> 
         }
         Parchment => {
             let mc = parchment_mc.unwrap_or(mc);
-            let text = fetch(&format!("https://maven.parchmentmc.org/org/parchmentmc/data/parchment-{mc}/maven-metadata.xml"))?;
+            let text = fetch(&format!(
+                "https://maven.parchmentmc.org/org/parchmentmc/data/parchment-{mc}/maven-metadata.xml"
+            ))?;
             MAVEN_RELEASE.captures(&text).map(|m| m[1].trim().to_string())
         }
         Gradle => {
@@ -192,15 +211,24 @@ mod tests {
     fn reads_known_and_other_versions_and_skips_ranges() {
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path();
-        fs::write(p.join("gradle.properties"), "# Fabric\nminecraft_version=1.21.1\nyarn_mappings=1.21.1+build.3\n\
+        fs::write(
+            p.join("gradle.properties"),
+            "# Fabric\nminecraft_version=1.21.1\nyarn_mappings=1.21.1+build.3\n\
             loader_version=0.16.5\nfabric_version=0.104.0+1.21.1\nmod_version=1.0.0\nmodmenu_version=11.0.2\n\
-            loader_version_range=[4,)\norg.gradle.jvmargs=-Xmx2G\n").unwrap();
+            loader_version_range=[4,)\norg.gradle.jvmargs=-Xmx2G\n",
+        )
+        .unwrap();
         fs::create_dir_all(p.join("gradle/wrapper")).unwrap();
-        fs::write(p.join("gradle/wrapper/gradle-wrapper.properties"),
-            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip\n").unwrap();
+        fs::write(
+            p.join("gradle/wrapper/gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip\n",
+        )
+        .unwrap();
         let entries = read(p);
-        assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(),
-            ["Fabric Loader", "Fabric API", "Yarn mappings", "Gradle wrapper", "modmenu_version"]);
+        assert_eq!(
+            entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(),
+            ["Fabric Loader", "Fabric API", "Yarn mappings", "Gradle wrapper", "modmenu_version"]
+        );
         assert_eq!(entries[3].value, "8.10.2");
         assert!(!entries[4].checkable());
     }
@@ -211,7 +239,10 @@ mod tests {
         let file = tmp.path().join("gradle.properties");
         fs::write(&file, "# comment\r\nfabric_version = 0.1.0+1.21.1\r\nloader_version=0.16.0\r\n").unwrap();
         update(tmp.path(), "fabric_version", "0.2.0+1.21.1").unwrap();
-        assert_eq!(fs::read_to_string(&file).unwrap(), "# comment\r\nfabric_version = 0.2.0+1.21.1\r\nloader_version=0.16.0\r\n");
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "# comment\r\nfabric_version = 0.2.0+1.21.1\r\nloader_version=0.16.0\r\n"
+        );
     }
 
     #[test]

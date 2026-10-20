@@ -31,7 +31,14 @@ pub fn changes(git: &Git, repo: &Path) -> Result<Vec<GitChange>> {
 
 /// Commits exactly the selected files. Staged changes of files that are not selected are unstaged first, so they
 /// stay as local changes.
-pub fn commit(git: &Git, repo: &Path, all: &[GitChange], selected: &[GitChange], message: &str, log: Log) -> Result<()> {
+pub fn commit(
+    git: &Git,
+    repo: &Path,
+    all: &[GitChange],
+    selected: &[GitChange],
+    message: &str,
+    log: Log,
+) -> Result<()> {
     if selected.is_empty() {
         bail!("No files selected.");
     }
@@ -41,7 +48,11 @@ pub fn commit(git: &Git, repo: &Path, all: &[GitChange], selected: &[GitChange],
     let mut present = Vec::new();
     let mut removed = Vec::new();
     for c in selected {
-        if repo.join(&c.path).exists() { present.push(c.path.clone()) } else { removed.push(c.path.clone()) }
+        if repo.join(&c.path).exists() {
+            present.push(c.path.clone())
+        } else {
+            removed.push(c.path.clone())
+        }
         removed.extend(c.orig_path.clone());
     }
     let mut unstage = Vec::new();
@@ -82,7 +93,8 @@ fn with_pathspec(paths: &[String], action: impl FnOnce(&str) -> Result<()>) -> R
 /// Pushes the current branch; sets the upstream on the first push of a new branch.
 pub fn push(git: &Git, repo: &Path, log: Log) -> Result<()> {
     let status = git.status(repo).context("Could not read git status.")?;
-    let branch = status.branch.filter(|b| !b.starts_with('(')).context("Not on a branch (detached HEAD) – nothing to push.")?;
+    let branch =
+        status.branch.filter(|b| !b.starts_with('(')).context("Not on a branch (detached HEAD) – nothing to push.")?;
     if status.upstream.is_none() {
         git.run_ok(repo, log, &["push", "-u", "origin", &branch])?;
     } else {

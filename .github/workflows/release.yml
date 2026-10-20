@@ -1,12 +1,14 @@
 # Creates a GitHub release whenever a new version is pushed to main.
-# The version lives in gradle.properties ("version=1.2.3"); if the release v<version> exists already,
+# The version lives in Cargo.toml ([workspace.package] version = "1.2.3"); if the release v<version> exists already,
 # nothing happens. Versions with a suffix (1.2.0-beta.1) become pre-releases.
+#
+# Assets: the program file per platform (used by the built-in updater) plus the installers Tauri bundles.
 name: Release
 
 on:
   push:
     branches: [main]
-    paths: [gradle.properties]
+    paths: [Cargo.toml]
   workflow_dispatch:
 
 permissions:
@@ -17,18 +19,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      exists: ${{ steps.check.outputs.exists }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
       - name: Read version
         id: version
         run: |
-          version=$(grep -E '^[[:space:]]*version[[:space:]]*=' gradle.properties | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/p' Cargo.toml | grep -E '^version *=' | head -n1 | cut -d'"' -f2)
           if [ -z "$version" ]; then
-            echo "::error::No version found in gradle.properties"
+            echo "::error::No version found in Cargo.toml"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -48,34 +53,81 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up Java
-        if: steps.check.outputs.exists == 'false'
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: gradle
+  build:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # an older Ubuntu keeps the Linux build compatible with older glibc versions
+          - os: ubuntu-22.04
+            asset: Project-Manager-linux-x64
+            binary: target/release/project-manager
+          - os: windows-latest
+            asset: Project-Manager-windows-x64.exe
+            binary: target/release/project-manager.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
 
-      - name: Build and test
-        if: steps.check.outputs.exists == 'false'
-        run: ./gradlew build --no-daemon --console=plain
+      - name: Linux packages for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build tools (trunk, Tauri CLI)
+        run: cargo install --locked trunk tauri-cli@^2
+
+      - name: Test
+        run: cargo test -p pm-core
+
+      - name: Build
+        working-directory: crates/pm-app
+        run: cargo tauri build
+
+      - name: Collect assets
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+          find target/release/bundle \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: dist/*
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create release
-        if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          jar="build/libs/Project-Manager.jar"
-          if [ ! -f "$jar" ]; then
-            echo "::error::$jar was not built"
-            ls -la build/libs
-            exit 1
-          fi
+          ls -la dist
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" "$jar" \
+          gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "MC Mod Project Manager $VERSION" \

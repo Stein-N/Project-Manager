@@ -34,7 +34,14 @@ pub fn intellij_candidates(os: Os, env: &BTreeMap<String, String>, home: &Path, 
         Os::Linux => {
             // JetBrains Toolbox: shell scripts, then the app folders themselves
             let toolbox = home.join(".local/share/JetBrains/Toolbox");
-            for script in ["idea", "idea-ultimate", "intellij-idea-ultimate", "idea-community", "intellij-idea-community", "idea-ce"] {
+            for script in [
+                "idea",
+                "idea-ultimate",
+                "intellij-idea-ultimate",
+                "idea-community",
+                "intellij-idea-community",
+                "idea-ce",
+            ] {
                 out.push(toolbox.join("scripts").join(script));
             }
             add_toolbox_apps(&mut out, &toolbox.join("apps"));
@@ -46,7 +53,9 @@ pub fn intellij_candidates(os: Os, env: &BTreeMap<String, String>, home: &Path, 
             // Snap and Flatpak
             out.push("/snap/bin/intellij-idea-ultimate".into());
             out.push("/snap/bin/intellij-idea-community".into());
-            for exports in [PathBuf::from("/var/lib/flatpak/exports/bin"), home.join(".local/share/flatpak/exports/bin")] {
+            for exports in
+                [PathBuf::from("/var/lib/flatpak/exports/bin"), home.join(".local/share/flatpak/exports/bin")]
+            {
                 out.push(exports.join("com.jetbrains.IntelliJ-IDEA-Ultimate"));
                 out.push(exports.join("com.jetbrains.IntelliJ-IDEA-Community"));
             }
@@ -192,17 +201,26 @@ const LINUX_TERMINALS: [&[&str]; 13] = [
 ];
 
 /// Command that opens a terminal in `dir` (the process is also started with `dir` as working directory).
-pub fn terminal_command(os: Os, env: &BTreeMap<String, String>, dir: &Path, path_dirs: &[PathBuf]) -> Option<Vec<String>> {
+pub fn terminal_command(
+    os: Os,
+    env: &BTreeMap<String, String>,
+    dir: &Path,
+    path_dirs: &[PathBuf],
+) -> Option<Vec<String>> {
     let d = dir.to_string_lossy().into_owned();
     match os {
-        Os::Windows => Some(if find_on_path("wt.exe", path_dirs).is_some() || find_on_path("wt", path_dirs).is_some() {
-            vec!["wt.exe".into(), "-d".into(), d]
-        } else {
-            vec!["cmd.exe".into(), "/c".into(), "start".into(), "cmd.exe".into()]
-        }),
+        Os::Windows => {
+            Some(if find_on_path("wt.exe", path_dirs).is_some() || find_on_path("wt", path_dirs).is_some() {
+                vec!["wt.exe".into(), "-d".into(), d]
+            } else {
+                vec!["cmd.exe".into(), "/c".into(), "start".into(), "cmd.exe".into()]
+            })
+        }
         Os::Mac => Some(vec!["open".into(), "-a".into(), "Terminal".into(), d]),
         Os::Linux => {
-            if let Some(t) = env.get("TERMINAL").map(|t| t.trim()).filter(|t| !t.is_empty() && find_on_path(t, path_dirs).is_some()) {
+            if let Some(t) =
+                env.get("TERMINAL").map(|t| t.trim()).filter(|t| !t.is_empty() && find_on_path(t, path_dirs).is_some())
+            {
                 return Some(vec![t.to_string()]);
             }
             LINUX_TERMINALS
@@ -238,7 +256,10 @@ mod tests {
         let old = touch(&home.join(".local/share/JetBrains/Toolbox/apps/IDEA-C/ch-0/241.1/bin/idea.sh"));
         let on_path = touch(&bin.join("idea"));
         let env = BTreeMap::new();
-        assert_eq!(existing(intellij_candidates(Os::Linux, &env, &home, std::slice::from_ref(&bin))), [app, old, on_path]);
+        assert_eq!(
+            existing(intellij_candidates(Os::Linux, &env, &home, std::slice::from_ref(&bin))),
+            [app, old, on_path]
+        );
         let script = touch(&home.join(".local/share/JetBrains/Toolbox/scripts/idea"));
         assert_eq!(existing(intellij_candidates(Os::Linux, &env, &home, &[bin]))[0], script);
     }
@@ -263,8 +284,10 @@ mod tests {
         assert_eq!(terminal_command(Os::Linux, &env, &dir, std::slice::from_ref(&bin)), None);
         touch(&bin.join("xterm"));
         touch(&bin.join("konsole"));
-        assert_eq!(terminal_command(Os::Linux, &env, &dir, std::slice::from_ref(&bin)).unwrap(),
-            ["konsole", "--workdir", &dir.to_string_lossy()]);
+        assert_eq!(
+            terminal_command(Os::Linux, &env, &dir, std::slice::from_ref(&bin)).unwrap(),
+            ["konsole", "--workdir", &dir.to_string_lossy()]
+        );
         touch(&bin.join("kitty"));
         let env: BTreeMap<String, String> = [("TERMINAL".to_string(), "kitty".to_string())].into();
         assert_eq!(terminal_command(Os::Linux, &env, &dir, &[bin]).unwrap(), ["kitty"]);

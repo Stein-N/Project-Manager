@@ -1,47 +1,17 @@
 //! Small helpers used everywhere: version ordering, `.properties` files, the PATH, file operations.
 
 use anyhow::{Context, Result, bail};
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------- versions
 
-/// Compares version strings like "1.20.1", "1.21" or "1.8.9" numerically (ascending); numbers sort after text
-/// (`1.21` > `1.x`).
-pub fn compare_versions(a: &str, b: &str) -> Ordering {
-    let split = |s: &str| -> Vec<String> {
-        s.split(|c: char| !c.is_ascii_alphanumeric()).map(str::to_string).collect()
-    };
-    let (pa, pb) = (split(a), split(b));
-    for (x, y) in pa.iter().zip(&pb) {
-        let nx = !x.is_empty() && x.bytes().all(|c| c.is_ascii_digit());
-        let ny = !y.is_empty() && y.bytes().all(|c| c.is_ascii_digit());
-        let cmp = match (nx, ny) {
-            (true, true) => match (x.parse::<u128>(), y.parse::<u128>()) {
-                (Ok(i), Ok(j)) => i.cmp(&j),
-                _ => x.len().cmp(&y.len()).then_with(|| x.cmp(y)),
-            },
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            _ => x.to_lowercase().cmp(&y.to_lowercase()),
-        };
-        if cmp != Ordering::Equal {
-            return cmp;
-        }
-    }
-    pa.len().cmp(&pb.len())
-}
+pub use pm_types::{compare_versions, is_newer};
 
 /// Sorts newest first.
 pub fn sort_versions_desc(list: &mut [String]) {
     list.sort_by(|a, b| compare_versions(b, a));
-}
-
-/// `latest` is a different and higher version than `current`.
-pub fn is_newer(latest: &str, current: &str) -> bool {
-    latest != current && compare_versions(latest, current) == Ordering::Greater
 }
 
 // ---------------------------------------------------------------- .properties
@@ -160,11 +130,7 @@ pub fn read_properties(file: &Path) -> BTreeMap<String, String> {
 
 /// The first non-blank value of `keys`, trimmed.
 pub fn first_property(props: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .filter_map(|k| props.get(*k))
-        .map(|v| v.trim())
-        .find(|v| !v.is_empty())
-        .map(str::to_string)
+    keys.iter().filter_map(|k| props.get(*k)).map(|v| v.trim()).find(|v| !v.is_empty()).map(str::to_string)
 }
 
 // ---------------------------------------------------------------- platform
@@ -257,9 +223,8 @@ pub fn visible_subdirs(dir: &Path) -> Vec<PathBuf> {
 
 /// All sub folders, sorted.
 pub fn subdirs(dir: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = fs::read_dir(dir)
-        .map(|it| it.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-        .unwrap_or_default();
+    let mut dirs: Vec<PathBuf> =
+        fs::read_dir(dir).map(|it| it.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
     dirs.sort();
     dirs
 }
@@ -332,9 +297,7 @@ pub fn dir_size(path: &Path) -> u64 {
     if !meta.is_dir() {
         return meta.len();
     }
-    fs::read_dir(path)
-        .map(|it| it.flatten().map(|e| dir_size(&e.path())).sum())
-        .unwrap_or(0)
+    fs::read_dir(path).map(|it| it.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
 }
 
 pub fn format_size(bytes: u64) -> String {
@@ -373,6 +336,7 @@ pub fn image_data_url(file: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
 
     #[test]
     fn compares_versions() {

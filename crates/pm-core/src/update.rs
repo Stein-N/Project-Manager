@@ -34,7 +34,10 @@ pub fn check() -> Result<Option<Release>> {
 
 /// The latest (non-draft, non-prerelease) release.
 pub fn latest() -> Result<Release> {
-    let r = http::get(&format!("https://api.github.com/repos/{REPO}/releases/latest"), &[("Accept", "application/vnd.github+json")])?;
+    let r = http::get(
+        &format!("https://api.github.com/repos/{REPO}/releases/latest"),
+        &[("Accept", "application/vnd.github+json")],
+    )?;
     if r.status != 200 {
         bail!("GitHub answered {}", r.status);
     }

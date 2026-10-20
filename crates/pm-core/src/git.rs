@@ -152,10 +152,10 @@ impl Git {
     /// The main branch of a repo: the default branch of `origin` (`origin/HEAD`), otherwise a local `main` or
     /// `master`; None if none of them exists.
     pub fn default_branch(&self, repo: &Path) -> Option<String> {
-        if let Some(head) = self.value(repo, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]) {
-            if let Some(b) = head.strip_prefix("origin/") {
-                return Some(b.trim().to_string());
-            }
+        if let Some(head) = self.value(repo, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
+            && let Some(b) = head.strip_prefix("origin/")
+        {
+            return Some(b.trim().to_string());
         }
         ["main", "master"]
             .into_iter()
@@ -172,16 +172,16 @@ impl Git {
         let mut branches = Vec::new();
         let mut default = None;
         for line in out.text.lines() {
-            if let Some(rest) = line.strip_prefix("ref: refs/heads/") {
-                if line.ends_with("HEAD") {
-                    default = rest.split('\t').next().map(|s| s.trim().to_string());
-                    continue;
-                }
+            if let Some(rest) = line.strip_prefix("ref: refs/heads/")
+                && line.ends_with("HEAD")
+            {
+                default = rest.split('\t').next().map(|s| s.trim().to_string());
+                continue;
             }
-            if let Some((_, r)) = line.split_once('\t') {
-                if let Some(b) = r.trim().strip_prefix("refs/heads/") {
-                    branches.push(b.to_string());
-                }
+            if let Some((_, r)) = line.split_once('\t')
+                && let Some(b) = r.trim().strip_prefix("refs/heads/")
+            {
+                branches.push(b.to_string());
             }
         }
         branches.sort_by(|a, b| compare_versions(b, a));
@@ -205,8 +205,18 @@ pub(crate) mod testing {
 
     /// `git` with a fixed identity, failing the test on an error.
     pub fn sh(dir: &Path, args: &[&str]) -> String {
-        let mut all = vec!["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false",
-            "-c", "init.defaultBranch=main", "-c", "core.autocrlf=false"];
+        let mut all = vec![
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "init.defaultBranch=main",
+            "-c",
+            "core.autocrlf=false",
+        ];
         all.extend_from_slice(args);
         git().run_ok(dir, &no_log, &all).unwrap_or_else(|e| panic!("{e}")).text
     }

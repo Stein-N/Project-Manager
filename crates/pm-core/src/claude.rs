@@ -120,7 +120,10 @@ pub fn key_unusable(o: &ClaudeOutcome) -> bool {
     if [401, 402, 403, 429].contains(&o.api_error_status) {
         return true;
     }
-    if o.api_error.as_deref().is_some_and(|e| ["authentication_failed", "billing_error", "permission_error", "rate_limit"].contains(&e)) {
+    if o.api_error
+        .as_deref()
+        .is_some_and(|e| ["authentication_failed", "billing_error", "permission_error", "rate_limit"].contains(&e))
+    {
         return true;
     }
     let text = o.text.to_lowercase();
@@ -240,7 +243,14 @@ fn unique() -> u64 {
     NEXT.fetch_add(1, Ordering::SeqCst)
 }
 
-fn execute(executable: &Path, request: &Request, token: Option<&str>, mcp: &Path, log: Log, cancel: &Cancel) -> ClaudeOutcome {
+fn execute(
+    executable: &Path,
+    request: &Request,
+    token: Option<&str>,
+    mcp: &Path,
+    log: Log,
+    cancel: &Cancel,
+) -> ClaudeOutcome {
     let bare = token.is_some_and(|t| key_kind(t) == KeyKind::ApiKey);
     let args = command(executable, request, mcp, bare);
     let mut cmd = proc::command(&args[0]);
@@ -291,10 +301,10 @@ fn execute(executable: &Path, request: &Request, token: Option<&str>, mcp: &Path
         if let Some(text) = describe(&event) {
             log(&text);
         }
-        if event["type"] == "assistant" {
-            if let Some(e) = event["error"].as_str() {
-                api_error = Some(e.to_string());
-            }
+        if event["type"] == "assistant"
+            && let Some(e) = event["error"].as_str()
+        {
+            api_error = Some(e.to_string());
         }
         if event["type"] == "result" {
             result = Some(outcome(&event));
@@ -351,7 +361,9 @@ pub fn describe(event: &Value) -> Option<String> {
                 .iter()
                 .filter_map(|block| match block["type"].as_str() {
                     Some("text") => block["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string),
-                    Some("tool_use") => Some(format!("→ {}{}", block["name"].as_str().unwrap_or("?"), tool_summary(&block["input"]))),
+                    Some("tool_use") => {
+                        Some(format!("→ {}{}", block["name"].as_str().unwrap_or("?"), tool_summary(&block["input"])))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -389,7 +401,9 @@ pub fn outcome(event: &Value) -> ClaudeOutcome {
         status: if error { ClaudeStatus::Error } else { ClaudeStatus::Success },
         text,
         cost_usd: event["total_cost_usd"].as_f64().unwrap_or(0.0),
-        input_tokens: n(usage, "input_tokens") + n(usage, "cache_creation_input_tokens") + n(usage, "cache_read_input_tokens"),
+        input_tokens: n(usage, "input_tokens")
+            + n(usage, "cache_creation_input_tokens")
+            + n(usage, "cache_read_input_tokens"),
         output_tokens: n(usage, "output_tokens"),
         api_error_status: n(event, "api_error_status") as u32,
         api_error: None,
@@ -406,7 +420,11 @@ pub fn denials(event: &Value) -> Vec<String> {
                 .filter(|d| d.is_object())
                 .map(|d| {
                     let summary = tool_summary(&d["tool_input"]);
-                    format!("{}{}", d["tool_name"].as_str().unwrap_or("?"), summary.strip_prefix(' ').map(|s| format!(": {s}")).unwrap_or(summary.clone()))
+                    format!(
+                        "{}{}",
+                        d["tool_name"].as_str().unwrap_or("?"),
+                        summary.strip_prefix(' ').map(|s| format!(": {s}")).unwrap_or(summary.clone())
+                    )
                 })
                 .collect()
         })
@@ -448,11 +466,13 @@ mod tests {
     use super::*;
     use std::sync::Mutex as StdMutex;
 
-    const INIT: &str = r#"{"type":"system","subtype":"init","cwd":"C:\\x","model":"claude-haiku-5-5","tools":[],"mcp_servers":[]}"#;
+    const INIT: &str =
+        r#"{"type":"system","subtype":"init","cwd":"C:\\x","model":"claude-haiku-5-5","tools":[],"mcp_servers":[]}"#;
     const ASSISTANT: &str = r###"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"## 1.0.0"},{"type":"tool_use","name":"Bash","input":{"command":"git status"}}]}}"###;
     const TOOL_ERROR: &str = r#"{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"Permission denied"}]}}"#;
     const RESULT: &str = r###"{"type":"result","subtype":"success","is_error":false,"result":"## 1.0.0","total_cost_usd":0.0125,"usage":{"input_tokens":2,"cache_creation_input_tokens":3190,"cache_read_input_tokens":8,"output_tokens":9}}"###;
-    const BUDGET: &str = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":1.01,"usage":{}}"#;
+    const BUDGET: &str =
+        r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":1.01,"usage":{}}"#;
     const AUTH_ERROR: &str = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Invalid API key"}]},"error":"authentication_failed"}"#;
     const AUTH_RESULT: &str = r#"{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"result":"Invalid API key · Fix external API key","total_cost_usd":0,"usage":{}}"#;
     const BAD_REQUEST: &str = r#"{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"prompt is too long","total_cost_usd":0,"usage":{}}"#;
@@ -460,22 +480,36 @@ mod tests {
     const OK_API_KEY: &str = r#"{"type":"result","subtype":"success","is_error":false,"result":"via api key","total_cost_usd":0.01,"usage":{}}"#;
 
     fn request(dir: &Path, tools: Tools, model: Option<&str>) -> Request {
-        Request { work_dir: dir.into(), prompt: "prompt".into(), tools, model: model.map(String::from), max_budget_usd: 1.5,
-            timeout: Some(Duration::from_secs(60)), tokens: Vec::new() }
+        Request {
+            work_dir: dir.into(),
+            prompt: "prompt".into(),
+            tools,
+            model: model.map(String::from),
+            max_budget_usd: 1.5,
+            timeout: Some(Duration::from_secs(60)),
+            tokens: Vec::new(),
+        }
     }
 
     fn arg_after<'a>(cmd: &'a [String], flag: &str) -> &'a str {
         &cmd[cmd.iter().position(|a| a == flag).unwrap() + 1]
     }
 
-    /// A shell script standing in for the CLI.
+    /// A shell script standing in for the CLI. Other test threads fork while it is written, and a child that still
+    /// holds the file open makes executing it fail with "Text file busy" – so wait until it can be run.
     fn fake_cli(dir: &Path, body: &str) -> PathBuf {
         let script = dir.join("claude");
-        std::fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(&script, format!("#!/bin/sh\n[ -n \"$FAKE_PROBE\" ] && exit 0\n{body}\n")).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            for _ in 0..50 {
+                match std::process::Command::new(&script).env("FAKE_PROBE", "1").arg("--version").output() {
+                    Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) => std::thread::sleep(Duration::from_millis(20)),
+                    _ => break,
+                }
+            }
         }
         script
     }
@@ -522,7 +556,12 @@ mod tests {
 
     #[test]
     fn command_without_tools() {
-        let cmd = command(Path::new("claude"), &request(Path::new("."), Tools::default(), None), Path::new("mcp.json"), false);
+        let cmd = command(
+            Path::new("claude"),
+            &request(Path::new("."), Tools::default(), None),
+            Path::new("mcp.json"),
+            false,
+        );
         assert_eq!(cmd[0], "claude");
         for flag in ["-p", "--strict-mcp-config", "--no-session-persistence"] {
             assert!(cmd.iter().any(|a| a == flag));
@@ -536,9 +575,19 @@ mod tests {
 
     #[test]
     fn command_with_tools() {
-        let tools = Tools { available: vec!["Read".into(), "Edit".into()], allowed: vec!["Bash(git diff:*)".into()],
-            disallowed: vec!["Bash(git commit:*)".into(), "Bash(git push:*)".into()], permission_mode: Some("dontAsk".into()), restricted: false };
-        let cmd = command(Path::new("C:/x/claude.cmd"), &request(Path::new("."), tools, Some("haiku")), Path::new("m"), false);
+        let tools = Tools {
+            available: vec!["Read".into(), "Edit".into()],
+            allowed: vec!["Bash(git diff:*)".into()],
+            disallowed: vec!["Bash(git commit:*)".into(), "Bash(git push:*)".into()],
+            permission_mode: Some("dontAsk".into()),
+            restricted: false,
+        };
+        let cmd = command(
+            Path::new("C:/x/claude.cmd"),
+            &request(Path::new("."), tools, Some("haiku")),
+            Path::new("m"),
+            false,
+        );
         assert_eq!(&cmd[..2], ["cmd.exe", "/c"]);
         assert_eq!(arg_after(&cmd, "--tools"), "Read,Edit");
         assert_eq!(arg_after(&cmd, "--allowedTools"), "Bash(git diff:*)");
@@ -555,7 +604,9 @@ mod tests {
     fn keys() {
         assert_eq!(parse_keys(" a ; b;;a; "), ["a", "b"]);
         assert!(parse_keys("  ").is_empty());
-        let m = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<BTreeMap<_, _>>();
+        let m = |pairs: &[(&str, &str)]| {
+            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<BTreeMap<_, _>>()
+        };
         assert_eq!(resolve_keys(&m(&[("CLAUDE_API", "x")]), &m(&[("CLAUDE_API", "y")])), ["x"]);
         assert_eq!(resolve_keys(&m(&[("CLAUDE_API", " ")]), &m(&[("CLAUDE_API", "y;z")])), ["y", "z"]);
         assert!(resolve_keys(&m(&[]), &m(&[])).is_empty());
@@ -568,7 +619,9 @@ mod tests {
     #[test]
     fn recognizes_key_problems() {
         let e = |status: u32, code: Option<&str>, text: &str| ClaudeOutcome {
-            api_error_status: status, api_error: code.map(String::from), ..ClaudeOutcome::failed(ClaudeStatus::Error, text)
+            api_error_status: status,
+            api_error: code.map(String::from),
+            ..ClaudeOutcome::failed(ClaudeStatus::Error, text)
         };
         assert!(key_unusable(&e(401, None, "x")));
         assert!(key_unusable(&e(429, None, "x")));
@@ -630,10 +683,18 @@ mod tests {
     /// Answers by token prefix: bad… → 401, broken… → 400, otherwise success naming the variable it got the token from.
     #[cfg(unix)]
     fn key_cli(dir: &Path) -> PathBuf {
-        fake_cli(dir, &format!(
-            "case \"$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN\" in\n  bad*) {}; {}; exit 1;;\n  broken*) {}; exit 1;;\n  \
+        fake_cli(
+            dir,
+            &format!(
+                "case \"$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN\" in\n  bad*) {}; {}; exit 1;;\n  broken*) {}; exit 1;;\n  \
              *) if [ -n \"$CLAUDE_CODE_OAUTH_TOKEN\" ]; then {}; else {}; fi;;\nesac",
-            print(AUTH_ERROR), print(AUTH_RESULT), print(BAD_REQUEST), print(OK_OAUTH), print(OK_API_KEY)))
+                print(AUTH_ERROR),
+                print(AUTH_RESULT),
+                print(BAD_REQUEST),
+                print(OK_OAUTH),
+                print(OK_API_KEY)
+            ),
+        )
     }
 
     #[cfg(unix)]
@@ -655,7 +716,10 @@ mod tests {
         let o = run_keys(d, &["bad-key-0001", "good-key-0002"], &log);
         assert!(o.ok(), "{}", o.text);
         let lines = lines.lock().unwrap().clone();
-        assert!(lines.iter().any(|l| l.contains("Token 1 (…0001) cannot be used (401") && l.contains("next token")), "{lines:?}");
+        assert!(
+            lines.iter().any(|l| l.contains("Token 1 (…0001) cannot be used (401") && l.contains("next token")),
+            "{lines:?}"
+        );
         assert!(lines.contains(&"Using token 2/2 (…0002)".to_string()), "{lines:?}");
 
         let o = run_keys(d, &["bad-key-0001", "bad-key-0002"], &|_: &str| {});

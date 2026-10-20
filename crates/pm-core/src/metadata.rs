@@ -271,13 +271,17 @@ mod tests {
         let res = tmp.path().join("src/main/resources");
         fs::create_dir_all(res.join("assets/coolmod")).unwrap();
         fs::write(res.join("assets/coolmod/icon.png"), [1]).unwrap();
-        fs::write(res.join("fabric.mod.json"), r#"{
+        fs::write(
+            res.join("fabric.mod.json"),
+            r#"{
           "schemaVersion": 1, "id": "${mod_id}", "version": "${version}", "name": "Cool Mod",
           "authors": ["Nico", {"name": "Helper"}],
           "icon": {"16": "assets/coolmod/small.png", "128": "assets/${mod_id}/icon.png"},
           "depends": {"fabricloader": ">=0.16", "minecraft": ["~1.21", "1.21.1"]},
           "recommends": {"modmenu": "*"}
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         let m = read(tmp.path(), &props(&[("mod_id", "coolmod"), ("mod_version", "1.2.3")])).unwrap();
         assert_eq!(m.id.as_deref(), Some("coolmod"));
         assert_eq!(m.version.as_deref(), Some("1.2.3"));
@@ -312,8 +316,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let res = tmp.path().join("src/main/resources/META-INF");
         fs::create_dir_all(&res).unwrap();
-        fs::write(res.join("mods.toml"), "[[mods]]\nmodId=\"old\"\n[[dependencies.old]]\n    modId=\"forge\"\n    mandatory=true\n\
-            [[dependencies.old]]\n    modId=\"curios\"\n    mandatory=false\n").unwrap();
+        fs::write(
+            res.join("mods.toml"),
+            "[[mods]]\nmodId=\"old\"\n[[dependencies.old]]\n    modId=\"forge\"\n    mandatory=true\n\
+            [[dependencies.old]]\n    modId=\"curios\"\n    mandatory=false\n",
+        )
+        .unwrap();
         let m = read(tmp.path(), &BTreeMap::new()).unwrap();
         assert!(m.dependencies[0].required);
         assert!(!m.dependencies[1].required);
