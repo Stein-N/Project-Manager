@@ -1,6 +1,7 @@
 package net.morthen.ui;
 
 import net.morthen.core.ModProject;
+import net.morthen.core.SystemActions;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
@@ -33,8 +34,12 @@ final class TrayManager {
         this.exit = exit;
     }
 
+    /**
+     * Windows only: on Linux the AWT tray icon is an old XEmbed icon that e.g. KDE on Wayland only shows through a proxy,
+     * and clicks on it never reach Java – the window could not be brought back.
+     */
     static boolean supported() {
-        return SystemTray.isSupported();
+        return SystemActions.isWindows() && SystemTray.isSupported();
     }
 
     boolean installed() {
@@ -78,6 +83,8 @@ final class TrayManager {
 
     void restore() {
         SwingUtilities.invokeLater(() -> {
+            // the window was hidden while iconified: without NORMAL first it can come back as an icon only
+            frame.setExtendedState(Frame.NORMAL);
             frame.setVisible(true);
             frame.setExtendedState(Frame.NORMAL);
             frame.toFront();

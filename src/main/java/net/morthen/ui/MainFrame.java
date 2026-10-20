@@ -17,6 +17,7 @@ import net.morthen.core.ModMetadata;
 import net.morthen.core.ModProject;
 import net.morthen.core.ProjectScanner;
 import net.morthen.core.Readme;
+import net.morthen.core.SingleInstance;
 import net.morthen.core.SystemActions;
 import net.morthen.core.Tags;
 import net.morthen.core.UpdateChecker;
@@ -81,6 +82,7 @@ public final class MainFrame extends JFrame {
     private static final int MAX_LOG_CHARS = 400_000;
 
     private final Config config;
+    private final SingleInstance instance;
     private final Git git;
     private final GradleRunner gradle = new GradleRunner();
     private final TrayManager tray = new TrayManager(this, this::openInIntelliJ, this::exitApplication);
@@ -215,10 +217,12 @@ public final class MainFrame extends JFrame {
     /** Projects for which an automatic detection was already started this session. */
     private final java.util.Set<Path> autoDetected = new java.util.HashSet<>();
 
-    public MainFrame(Config config) {
+    public MainFrame(Config config, SingleInstance instance) {
         super(windowTitle());
         this.config = config;
+        this.instance = instance;
         this.git = new Git(config.gitExecutable());
+        instance.onShow(tray::restore); // another start of the tool brings this window back
 
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -452,6 +456,7 @@ public final class MainFrame extends JFrame {
                 log("Update postponed (downloaded file removed again).");
                 return;
             }
+            instance.release(); // otherwise the new version would find this one still running and end
             try {
                 UpdateChecker.startAndReplace(downloaded, jar);
             } catch (java.io.IOException e) {
@@ -1984,6 +1989,12 @@ public final class MainFrame extends JFrame {
         fetchRow.add(fetchMinutes);
         fetchRow.add(Ui.muted("minutes (0 = off)"));
         JCheckBox tray = new JCheckBox("Minimize to system tray", config.minimizeToTray());
+        if (!TrayManager.supported()) {
+            tray.setText("Minimize to system tray (Windows only)");
+            tray.setSelected(false);
+            tray.setEnabled(false);
+            tray.setToolTipText("The system tray only works on Windows; elsewhere the window is minimized to the taskbar.");
+        }
 
         JComboBox<String> closeAction = new JComboBox<>(new String[]{"Ask", "Minimize", "Exit"});
         closeAction.setSelectedIndex(config.closeAction().ordinal());
@@ -1993,8 +2004,12 @@ public final class MainFrame extends JFrame {
         checkNow.addActionListener(e -> checkForUpdate(true));
         JCheckBox autostart = new JCheckBox("Start minimized with the system", config.autostart());
         autostart.setEnabled(Autostart.supported());
-        if (!Autostart.supported()) {
-            autostart.setToolTipText("Only available when started from the jar file on Windows or Linux");
+        if (!SystemActions.isWindows()) {
+            autostart.setText("Start minimized with the system (Windows only)");
+            autostart.setSelected(false);
+            autostart.setToolTipText("Autostart only works on Windows.");
+        } else if (!Autostart.supported()) {
+            autostart.setToolTipText("Only available when started from the jar file");
         }
 
         JTextField claudeField = new JTextField(config.claudeExecutable());
@@ -2053,7 +2068,7 @@ public final class MainFrame extends JFrame {
         config.setGitExecutable(gitField.getText());
         git.setExecutable(config.gitExecutable());
         config.setAutoFetchMinutes((Integer) fetchMinutes.getValue());
-        config.setMinimizeToTray(tray.isSelected());
+        if (tray.isEnabled()) config.setMinimizeToTray(tray.isSelected());
         config.setCloseAction(Config.CloseAction.values()[closeAction.getSelectedIndex()]);
         config.setCheckUpdates(updates.isSelected());
         if (autostart.isEnabled()) {

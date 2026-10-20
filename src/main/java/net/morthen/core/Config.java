@@ -20,6 +20,11 @@ public final class Config {
     private Config() {
     }
 
+    /** Folder of the settings and other per-user files. */
+    public static Path dir() {
+        return DIR;
+    }
+
     public static Config load() {
         Config config = new Config();
         if (Files.isRegularFile(FILE)) {
