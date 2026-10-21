@@ -1,6 +1,6 @@
 // Linux: Wayland compositors take the window icon from the desktop file that matches the app id (project-manager), not
 // from the window. Without one KDE shows a generic "W", so the app installs a desktop file and its icon in
-// ~/.local/share – unless a package (deb) installed it under /usr already.
+// ~/.local/share – unless a package (deb) installed one under /usr already.
 
 using ProjectManager.Core;
 
@@ -9,6 +9,9 @@ namespace ProjectManager.Services;
 public static class DesktopEntry
 {
     public const string Id = "project-manager";
+
+    // the entry of the deb package; with it a second one would only duplicate the launcher
+    private const string PackageEntry = "/usr/share/applications/MC Mod Project Manager.desktop";
 
     public static void Install()
     {
@@ -19,7 +22,7 @@ public static class DesktopEntry
         if (data is null) return;
         // the AppImage itself, not the mounted binary inside it
         var exe = Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } image ? image : Environment.ProcessPath;
-        if (exe is null || exe.StartsWith("/usr/")) return;
+        if (exe is null || exe.StartsWith("/usr/") || File.Exists(PackageEntry)) return;
         var icon = Path.Combine(data, "icons", "hicolor", "256x256", "apps", $"{Id}.png");
         var entry = Path.Combine(data, "applications", $"{Id}.desktop");
 #if DEBUG
