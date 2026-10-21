@@ -1,0 +1,174 @@
+# Creates a GitHub release whenever a new version is pushed to main.
+# The version lives in Directory.Build.props (<Version>1.2.3</Version>); if the release v<version> exists already,
+# nothing happens. Versions with a suffix (1.2.0-beta.1) become pre-releases.
+#
+# Assets: the program file per platform (used by the built-in updater) plus the deb package, the AppImage and the
+# Windows installer – the same files as the releases of the Rust versions, so their updater finds them.
+# Notes: the commit titles since the previous release (the app shows them as its changelog).
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [Directory.Build.props]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # one self-contained program file, no .NET installation needed
+  PUBLISH: >-
+    -c Release --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+    -p:EnableCompressionInSingleFile=true -p:DebugType=none
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n1 | tr -d '[:space:]')
+          if [ -z "$version" ]; then
+            echo "::error::No version found in Directory.Build.props"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Check for an existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG exists already – nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    # an older Ubuntu keeps the packages compatible with older systems
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test tests/ProjectManager.Core.Tests
+
+      - name: Publish
+        run: dotnet publish src/ProjectManager -r linux-x64 $PUBLISH -o publish
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp publish/project-manager dist/Project-Manager-linux-x64
+          packaging/linux/build-deb.sh publish/project-manager "$VERSION" dist
+          packaging/linux/build-appimage.sh publish/project-manager "$VERSION" dist
+          ls -la dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux
+          path: dist/*
+
+  windows:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test tests/ProjectManager.Core.Tests
+
+      - name: Publish
+        shell: bash
+        run: dotnet publish src/ProjectManager -r win-x64 $PUBLISH -o publish
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp publish/project-manager.exe dist/Project-Manager-windows-x64.exe
+          command -v makensis > /dev/null || choco install nsis -y --no-progress
+          export PATH="$PATH:/c/Program Files (x86)/NSIS"
+          numeric=$(echo "$VERSION" | sed 's/[-+].*//')
+          makensis -DVERSION="$VERSION" -DFILEVERSION="$numeric.0" \
+            -DPROGRAM="$(cygpath -w "$PWD/publish/project-manager.exe")" \
+            -DICON="$(cygpath -w "$PWD/packaging/icons/icon.ico")" \
+            -DOUTFILE="$(cygpath -w "$PWD/dist/MC Mod Project Manager_${VERSION}_x64-setup.exe")" \
+            packaging/windows/installer.nsi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: dist/*
+
+  release:
+    needs: [version, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ls -la dist
+          previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          git log --no-merges --format='- %s' ${previous:+"$previous..HEAD"} \
+            | grep -vE '^- (Version|Release) [0-9]' > notes.md || true
+          [ -s notes.md ] || echo "- Maintenance release" > notes.md
+          if [ -n "$previous" ]; then
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$previous" "$TAG" >> notes.md
+          fi
+          cat notes.md
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "MC Mod Project Manager $VERSION" \
+            --notes-file notes.md \
+            $prerelease
