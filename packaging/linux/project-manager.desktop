@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=Development;
+Comment=Manage Minecraft mod projects, versions and backports
+Exec=project-manager
+StartupWMClass=project-manager
+Icon=project-manager
+Name=MC Mod Project Manager
+Terminal=false
+Type=Application

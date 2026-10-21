@@ -6,39 +6,40 @@ for changelog drafts, backport conflicts and build errors. Runs on Windows and L
 
 ## Structure
 
-| Crate | Content |
-|-------|---------|
-| `crates/pm-types` | Data types shared by the logic and the UI (also compiled to WebAssembly) |
-| `crates/pm-core` | All logic: projects, git, worktrees, Gradle, changelog, backport, Claude, updates – with tests |
-| `crates/pm-app` | The Tauri app: commands for the UI, tray icon, autostart, single instance, log window |
-| `crates/pm-ui` | The user interface in Rust (Leptos), styled after the IntelliJ New UI |
+| Project | Content |
+|---------|---------|
+| `src/ProjectManager.Core` | All logic: projects, git, worktrees, Gradle, changelog, backport, Claude, updates |
+| `src/ProjectManager` | The app ([Avalonia](https://avaloniaui.net/)): user interface in the IntelliJ New UI style, tray icon, autostart, single instance, log window |
+| `tests/ProjectManager.Core.Tests` | Tests of the logic (xUnit; they need git on the PATH) |
+| `packaging` | deb package, AppImage and Windows installer |
 
-Settings are stored in `~/.mc-project-manager/config.properties` (the same file the former Java version used).
+Settings are stored in `~/.mc-project-manager/config.properties` (the same file the former Java and Rust versions
+used, so an existing setup is taken over).
 
 ## Development
 
-Requirements: Rust (stable) with the `wasm32-unknown-unknown` target, `trunk` and the Tauri CLI:
+Requirements: the [.NET 10 SDK](https://dotnet.microsoft.com/download) and git.
 
 ```sh
-rustup target add wasm32-unknown-unknown
-cargo install --locked trunk tauri-cli@^2
+dotnet test                                   # logic tests
+dotnet run --project src/ProjectManager       # the app
 ```
 
-On Linux additionally the Tauri system packages, e.g. on Ubuntu:
-
-```sh
-sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
-```
+Release build of one self-contained program file (no .NET installation needed on the target):
 
 ```sh
-cargo test -p pm-core          # logic tests (need git on the PATH)
-cd crates/pm-app
-cargo tauri dev                # app with live-reloading UI
-cargo tauri build              # release build and installers (target/release/bundle)
+dotnet publish src/ProjectManager -r linux-x64 -c Release --self-contained \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish    # or -r win-x64
+packaging/linux/build-deb.sh publish/project-manager <version> dist
+packaging/linux/build-appimage.sh publish/project-manager <version> dist
 ```
+
+Debug builds can open a project tab or a dialog right at the start, to look at a view without clicking:
+`PM_SELECT=<project folder> PM_TAB=Gradle` and `PM_DIALOG=settings` (also `clone`, `commit`, `cleanup`, `env`, `log` …).
 
 ## Releases
 
-Raising `version` in `[workspace.package]` of `Cargo.toml` on `main` builds Windows and Linux on GitHub Actions and
-creates the release (`.github/workflows/release.yml`). The program files `Project-Manager-windows-x64.exe` and
-`Project-Manager-linux-x64` are what the built-in updater downloads.
+Raising `<Version>` in `Directory.Build.props` on `main` builds Windows and Linux on GitHub Actions and creates the
+release (`.github/workflows/release.yml`). The program files `Project-Manager-windows-x64.exe` and
+`Project-Manager-linux-x64`, the deb package and the AppImage are what the built-in updater downloads – the same file
+names as before, so installations of the former Rust version update to this one.

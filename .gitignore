@@ -43,10 +43,13 @@ bin/
 .DS_Store
 
 .env
-### Rust ###
+### Rust (the former version; its build folder may still be there) ###
 /target/
-/crates/pm-ui/dist/
-/crates/pm-app/gen/
-### C# example ###
-/csharp/**/obj/
-/csharp/**/bin/
+
+### .NET ###
+obj/
+*.user
+/publish/
+/dist/
+.vs/
+TestResults/

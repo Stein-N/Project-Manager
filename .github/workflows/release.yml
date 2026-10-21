@@ -1,15 +1,16 @@
 # Creates a GitHub release whenever a new version is pushed to main.
-# The version lives in Cargo.toml ([workspace.package] version = "1.2.3"); if the release v<version> exists already,
+# The version lives in Directory.Build.props (<Version>1.2.3</Version>); if the release v<version> exists already,
 # nothing happens. Versions with a suffix (1.2.0-beta.1) become pre-releases.
 #
-# Assets: the program file per platform (used by the built-in updater) plus the installers Tauri bundles.
+# Assets: the program file per platform (used by the built-in updater) plus the deb package, the AppImage and the
+# Windows installer – the same files as the releases of the Rust versions, so their updater finds them.
 # Notes: the commit titles since the previous release (the app shows them as its changelog).
 name: Release
 
 on:
   push:
     branches: [main]
-    paths: [Cargo.toml]
+    paths: [Directory.Build.props]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +19,14 @@ permissions:
 concurrency:
   group: release
   cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # one self-contained program file, no .NET installation needed
+  PUBLISH: >-
+    -c Release --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+    -p:EnableCompressionInSingleFile=true -p:DebugType=none
 
 jobs:
   version:
@@ -32,9 +41,9 @@ jobs:
       - name: Read version
         id: version
         run: |
-          version=$(sed -n '/^\[workspace.package\]/,/^\[/p' Cargo.toml | grep -E '^version *=' | head -n1 | cut -d'"' -f2)
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n1 | tr -d '[:space:]')
           if [ -z "$version" ]; then
-            echo "::error::No version found in Cargo.toml"
+            echo "::error::No version found in Directory.Build.props"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -54,69 +63,88 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  linux:
     needs: version
     if: needs.version.outputs.exists == 'false'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # an older Ubuntu keeps the Linux build compatible with older glibc versions
-          - os: ubuntu-22.04
-            asset: Project-Manager-linux-x64
-            binary: target/release/project-manager
-          - os: windows-latest
-            asset: Project-Manager-windows-x64.exe
-            binary: target/release/project-manager.exe
-    runs-on: ${{ matrix.os }}
+    # an older Ubuntu keeps the packages compatible with older systems
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Linux packages for Tauri
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
-
-      - name: Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v5
         with:
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Build tools (trunk, Tauri CLI)
-        run: cargo install --locked trunk tauri-cli@^2
+          dotnet-version: 10.0.x
 
       - name: Test
-        run: cargo test -p pm-core
+        run: dotnet test tests/ProjectManager.Core.Tests
 
-      - name: Build
-        working-directory: crates/pm-app
-        run: cargo tauri build
+      - name: Publish
+        run: dotnet publish src/ProjectManager -r linux-x64 $PUBLISH -o publish
 
-      - name: Collect assets
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp publish/project-manager dist/Project-Manager-linux-x64
+          packaging/linux/build-deb.sh publish/project-manager "$VERSION" dist
+          packaging/linux/build-appimage.sh publish/project-manager "$VERSION" dist
+          ls -la dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux
+          path: dist/*
+
+  windows:
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test tests/ProjectManager.Core.Tests
+
+      - name: Publish
+        shell: bash
+        run: dotnet publish src/ProjectManager -r win-x64 $PUBLISH -o publish
+
+      - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          cp "${{ matrix.binary }}" "dist/${{ matrix.asset }}"
-          find target/release/bundle \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
+          cp publish/project-manager.exe dist/Project-Manager-windows-x64.exe
+          command -v makensis > /dev/null || choco install nsis -y --no-progress
+          export PATH="$PATH:/c/Program Files (x86)/NSIS"
+          numeric=$(echo "$VERSION" | sed 's/[-+].*//')
+          makensis -DVERSION="$VERSION" -DFILEVERSION="$numeric.0" \
+            -DPROGRAM="$(cygpath -w "$PWD/publish/project-manager.exe")" \
+            -DICON="$(cygpath -w "$PWD/packaging/icons/icon.ico")" \
+            -DOUTFILE="$(cygpath -w "$PWD/dist/MC Mod Project Manager_${VERSION}_x64-setup.exe")" \
+            packaging/windows/installer.nsi
           ls -la dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.os }}
+          name: windows
           path: dist/*
 
   release:
-    needs: [version, build]
+    needs: [version, linux, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true

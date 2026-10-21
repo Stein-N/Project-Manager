@@ -1,0 +1,260 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ProjectManager.App"
+             Name="MC Mod Project Manager"
+             RequestedThemeVariant="Light">
+
+  <!-- IntelliJ New UI (light): colors and sizes modeled after the Int UI kit, like the Rust version -->
+  <Application.Resources>
+    <Color x:Key="BgColor">#ffffff</Color>
+    <SolidColorBrush x:Key="Bg" Color="#ffffff" />
+    <SolidColorBrush x:Key="Panel" Color="#f7f8fa" />
+    <SolidColorBrush x:Key="Border" Color="#ebecf0" />
+    <SolidColorBrush x:Key="BorderStrong" Color="#dfe1e5" />
+    <SolidColorBrush x:Key="ControlBorder" Color="#c9ccd6" />
+    <SolidColorBrush x:Key="Text" Color="#000000" />
+    <SolidColorBrush x:Key="TextSecondary" Color="#6c707e" />
+    <SolidColorBrush x:Key="TextMuted" Color="#818594" />
+    <SolidColorBrush x:Key="TextDisabled" Color="#a8adbd" />
+    <SolidColorBrush x:Key="Accent" Color="#3574f0" />
+    <SolidColorBrush x:Key="AccentHover" Color="#3369d6" />
+    <SolidColorBrush x:Key="AccentPressed" Color="#315fbd" />
+    <SolidColorBrush x:Key="AccentDisabled" Color="#b5cbf8" />
+    <SolidColorBrush x:Key="Selection" Color="#d4e2ff" />
+    <SolidColorBrush x:Key="SelectionInactive" Color="#dfe1e5" />
+    <SolidColorBrush x:Key="Hover" Color="#dfe1e5" />
+    <SolidColorBrush x:Key="RowHover" Color="#0a000000" />
+    <SolidColorBrush x:Key="Green" Color="#208a3c" />
+    <SolidColorBrush x:Key="GreenBg" Color="#e6f7e9" />
+    <SolidColorBrush x:Key="Red" Color="#db3b4b" />
+    <SolidColorBrush x:Key="RedBg" Color="#fff2f2" />
+    <SolidColorBrush x:Key="Orange" Color="#c27d04" />
+    <SolidColorBrush x:Key="OrangeBg" Color="#fff6de" />
+    <SolidColorBrush x:Key="Purple" Color="#834df0" />
+    <SolidColorBrush x:Key="Link" Color="#2e55a3" />
+    <FontFamily x:Key="Mono">JetBrains Mono, Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, monospace</FontFamily>
+    <CornerRadius x:Key="Radius">4</CornerRadius>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme DensityStyle="Compact">
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#3574f0" RegionColor="#ffffff" ErrorText="#db3b4b" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontFamily" Value="fonts:Inter#Inter, $Default" />
+      <Setter Property="Background" Value="{StaticResource Bg}" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+    </Style>
+
+    <!-- text -->
+    <Style Selector="TextBlock.muted, SelectableTextBlock.muted">
+      <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.small, SelectableTextBlock.small">
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.ok, SelectableTextBlock.ok">
+      <Setter Property="Foreground" Value="{StaticResource Green}" />
+    </Style>
+    <Style Selector="TextBlock.warn, SelectableTextBlock.warn">
+      <Setter Property="Foreground" Value="{StaticResource Orange}" />
+    </Style>
+    <Style Selector="TextBlock.error, SelectableTextBlock.error">
+      <Setter Property="Foreground" Value="{StaticResource Red}" />
+    </Style>
+    <Style Selector="TextBlock.h2">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.h3">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,20,0,4" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,14,0,6" />
+    </Style>
+    <Style Selector="TextBlock.mono, SelectableTextBlock.mono">
+      <Setter Property="FontFamily" Value="{StaticResource Mono}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <!-- buttons -->
+    <Style Selector="Button">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius}" />
+      <Setter Property="Background" Value="{StaticResource Bg}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Bg}" />
+      <Setter Property="BorderBrush" Value="#a8adbd" />
+      <Setter Property="Foreground" Value="{StaticResource Text}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Panel}" />
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Panel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderStrong}" />
+      <Setter Property="Foreground" Value="{StaticResource TextDisabled}" />
+    </Style>
+    <Style Selector="Button:disabled Image">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{StaticResource Accent}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentHover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource AccentHover}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentPressed}" />
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentDisabled}" />
+      <Setter Property="BorderBrush" Value="{StaticResource AccentDisabled}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Foreground" Value="{StaticResource Red}" />
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{StaticResource Red}" />
+    </Style>
+    <Style Selector="Button.flat, Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Padding" Value="8,0" />
+    </Style>
+    <Style Selector="Button.flat:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.flat:disabled /template/ ContentPresenter#PART_ContentPresenter, Button.tool:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.chip">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="MinHeight" Value="20" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Red}" />
+    </Style>
+
+    <!-- inputs -->
+    <Style Selector="TextBox">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBox.copyable">
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0,1" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="IsReadOnly" Value="True" />
+    </Style>
+    <Style Selector="TextBox.copyable:pointerover /template/ Border#PART_BorderElement, TextBox.copyable:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.editor">
+      <Setter Property="FontFamily" Value="{StaticResource Mono}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="AcceptsReturn" Value="True" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="CornerRadius" Value="{StaticResource Radius}" />
+      <Setter Property="BorderBrush" Value="{StaticResource ControlBorder}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- tabs -->
+    <Style Selector="Border.tab">
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.tab.small">
+      <Setter Property="Height" Value="28" />
+    </Style>
+    <Style Selector="Border.tab:pointerover">
+      <Setter Property="Background" Value="{StaticResource RowHover}" />
+    </Style>
+
+    <!-- rows of lists, tables and the tree -->
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.tree ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SelectionInactive}" />
+    </Style>
+    <Style Selector="ListBox.tree:focus-within ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Selection}" />
+    </Style>
+    <Style Selector="ListBox.table ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Selection}" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#f5f8fe" />
+    </Style>
+
+    <Style Selector="Separator.vertical">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Margin" Value="6,0" />
+      <Setter Property="Background" Value="{StaticResource BorderStrong}" />
+    </Style>
+
+  </Application.Styles>
+</Application>

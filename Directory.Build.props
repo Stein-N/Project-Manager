@@ -1,0 +1,14 @@
+<Project>
+  <!-- The version of the tool: the release workflow creates a release whenever it changes on main. -->
+  <PropertyGroup>
+    <Version>0.6.0</Version>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Product>MC Mod Project Manager</Product>
+    <Company>Stein-N</Company>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>

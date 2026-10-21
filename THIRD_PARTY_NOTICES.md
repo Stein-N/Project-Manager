@@ -2,14 +2,14 @@
 
 | Component | License | Source |
 |-----------|---------|--------|
-| IntelliJ Platform icons (`crates/pm-ui/icons/*.svg`) | Apache License 2.0 | https://github.com/JetBrains/intellij-community |
-| Tauri and its plugins (dialog, single-instance, autostart) | Apache License 2.0 / MIT | https://github.com/tauri-apps/tauri |
-| Leptos | MIT | https://github.com/leptos-rs/leptos |
-| comrak (Markdown) | BSD 2-Clause | https://github.com/kivikakk/comrak |
-| ammonia (HTML sanitizer) | Apache License 2.0 / MIT | https://github.com/rust-ammonia/ammonia |
-| serde, serde_json | Apache License 2.0 / MIT | https://github.com/serde-rs |
-| ureq | Apache License 2.0 / MIT | https://github.com/algesten/ureq |
-| regex, fancy-regex | Apache License 2.0 / MIT | https://github.com/rust-lang/regex, https://github.com/fancy-regex/fancy-regex |
+| IntelliJ Platform icons (`src/ProjectManager/Assets/icons/*.svg`) | Apache License 2.0 | https://github.com/JetBrains/intellij-community |
+| Avalonia (incl. Fluent theme, Inter font) | MIT | https://github.com/AvaloniaUI/Avalonia |
+| Avalonia.Svg, Svg.Model, Svg.Custom | MIT | https://github.com/wieslawsoltes/Svg.Skia |
+| Markdown.Avalonia, ColorTextBlock.Avalonia, ColorDocument.Avalonia | MIT | https://github.com/whistyun/Markdown.Avalonia |
+| HtmlAgilityPack | MIT | https://github.com/zzzprojects/html-agility-pack |
+| CommunityToolkit.Mvvm | MIT | https://github.com/CommunityToolkit/dotnet |
+| .NET runtime | MIT | https://github.com/dotnet/runtime |
+| xUnit (tests only) | Apache License 2.0 | https://github.com/xunit/xunit |
 
-The remaining Rust dependencies are listed in `Cargo.lock`; their licenses can be listed with `cargo license` or
-`cargo about`.
+The complete list of packages with their versions is in the project files (`*.csproj`); `dotnet list package
+--include-transitive` shows all of them.

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>ProjectManager.Core</RootNamespace>
+    <Description>Logic of the MC Mod Project Manager: projects, git worktrees, Gradle, changelogs, backports, Claude</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ProjectManager.Core.Tests" />
+  </ItemGroup>
+
+</Project>

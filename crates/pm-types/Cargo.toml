@@ -1,8 +1,0 @@
-[package]
-name = "pm-types"
-description = "Data types shared by the logic (pm-core), the Tauri app and the Leptos UI"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-serde.workspace = true
