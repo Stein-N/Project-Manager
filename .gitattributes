@@ -1,7 +1,0 @@
-# Shell scripts need LF, Windows scripts CRLF – independent of core.autocrlf
-*.sh text eol=lf
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.png binary
-*.ico binary
-*.icns binary
