@@ -47,3 +47,6 @@ bin/
 /target/
 /crates/pm-ui/dist/
 /crates/pm-app/gen/
+### C# example ###
+/csharp/**/obj/
+/csharp/**/bin/

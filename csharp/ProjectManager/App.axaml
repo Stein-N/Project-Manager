@@ -1,0 +1,49 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ProjectManager.App"
+             RequestedThemeVariant="Light">
+
+  <Application.Resources>
+    <!-- IntelliJ New UI (light), the same colors as the Tauri version -->
+    <SolidColorBrush x:Key="Panel" Color="#f7f8fa" />
+    <SolidColorBrush x:Key="Border" Color="#ebecf0" />
+    <SolidColorBrush x:Key="TextSecondary" Color="#6c707e" />
+    <SolidColorBrush x:Key="TextMuted" Color="#818594" />
+    <SolidColorBrush x:Key="Green" Color="#208a3c" />
+    <SolidColorBrush x:Key="Orange" Color="#c27d04" />
+    <Color x:Key="SystemAccentColor">#3574f0</Color>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+    </Style>
+    <Style Selector="TreeViewItem">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="IsExpanded" Value="True" />
+    </Style>
+  </Application.Styles>
+
+  <!-- system tray: Windows notification area, Linux StatusNotifierItem/AppIndicator (D-Bus) -->
+  <TrayIcon.Icons>
+    <TrayIcons>
+      <TrayIcon Icon="/Assets/icon.png" ToolTipText="MC Mod Project Manager" Clicked="TrayClicked">
+        <TrayIcon.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Show" Click="ShowClicked" />
+            <NativeMenuItem Header="Rescan projects" Click="RescanClicked" />
+            <NativeMenuItemSeparator />
+            <NativeMenuItem Header="Exit" Click="ExitClicked" />
+          </NativeMenu>
+        </TrayIcon.Menu>
+      </TrayIcon>
+    </TrayIcons>
+  </TrayIcon.Icons>
+</Application>
