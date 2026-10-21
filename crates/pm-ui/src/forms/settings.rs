@@ -2,10 +2,10 @@ use crate::actions;
 use crate::api;
 use crate::dialogs::{Done, Footer, Modal};
 use crate::store::Store;
-use crate::widgets::{Button, Check, Muted, Row, Select};
+use crate::widgets::{Button, Check, Muted, Row, Select, TabBar};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use pm_types::{CloseAction, Settings};
+use pm_types::{ChangelogEntry, CloseAction, Settings};
 use std::path::PathBuf;
 
 pub async fn settings_dialog(s: Store) -> Option<Settings> {
@@ -94,9 +94,13 @@ fn SettingsForm(s: Store, done: Done<Settings>) -> impl IntoView {
     let cancel = done.clone();
     let close_options =
         Signal::derive(|| ["Ask", "Minimize", "Exit"].iter().map(|o| (o.to_string(), o.to_string())).collect());
+    let tab = RwSignal::new("General".to_string());
+    let tabs = Signal::derive(|| ["General", "Changelog"].iter().map(|t| (t.to_string(), t.to_string())).collect());
+    let version = info.version.clone();
     view! {
-        <Modal title="Settings" on_close=done.clone() width=640>
-            <div class="form">
+        <Modal title="Settings" on_close=done.clone() width=640 height=620>
+            <TabBar tabs=tabs selected=tab small=true />
+            <div class="form" class:hidden=move || tab.get() != "General">
                 <Row label="Master folder">
                     <div class="inline"><input class="input wide" bind:value=master /><Button label="…" on_click=browse /></div>
                 </Row>
@@ -137,10 +141,60 @@ fn SettingsForm(s: Store, done: Done<Settings>) -> impl IntoView {
                 <Row label="Claude sign-in"><Muted text=info.claude_sign_in.clone() /></Row>
                 <Row label="Version"><Muted text=format!("{} · {}", info.version, info.os) /></Row>
             </div>
+            <Show when=move || tab.get() == "Changelog">
+                <ReleaseNotes s=s current=version.clone() />
+            </Show>
             <Footer>
                 <Button label="Cancel" on_click=move || cancel.cancel() />
                 <Button label="Save" primary=true on_click=save />
             </Footer>
         </Modal>
+    }
+}
+
+/// All releases of the tool with their notes, newest first; links open in the browser.
+#[component]
+fn ReleaseNotes(s: Store, current: String) -> impl IntoView {
+    let list = RwSignal::new(None::<Result<Vec<ChangelogEntry>, String>>);
+    spawn_local(async move {
+        let _ = list.try_set(Some(api::changelog().await));
+    });
+    let on_click = move |e: leptos::ev::MouseEvent| {
+        use wasm_bindgen::JsCast;
+        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+        let Ok(Some(link)) = target.closest("a") else { return };
+        e.prevent_default();
+        let href = link.get_attribute("href").unwrap_or_default();
+        if href.starts_with("http") {
+            spawn_local(actions::open_url(s, href));
+        }
+    };
+    view! {
+        <div class="release-notes grow scroll" on:click=on_click>
+            {move || match list.get() {
+                None => view! { <Muted text="Loading the changelog…" /> }.into_any(),
+                Some(Err(e)) => view! { <div class="error">{e}</div> }.into_any(),
+                Some(Ok(entries)) if entries.is_empty() => view! { <Muted text="No releases yet." /> }.into_any(),
+                Some(Ok(entries)) => entries.into_iter().map(|r| {
+                    let installed = r.version == current;
+                    let title = r.page_url.clone().map(|url| view! { <a href=url>{r.name.clone()}</a> }.into_any())
+                        .unwrap_or_else(|| view! { <span>{r.name.clone()}</span> }.into_any());
+                    view! {
+                        <section class="release">
+                            <div class="release-head">
+                                <b>{title}</b>
+                                {installed.then(|| view! { <span class="release-installed">"installed"</span> })}
+                                <Muted text=r.date.clone().unwrap_or_default() />
+                            </div>
+                            {if r.html.trim().is_empty() {
+                                view! { <Muted text="No notes." /> }.into_any()
+                            } else {
+                                view! { <div class="markdown-body small" inner_html=r.html></div> }.into_any()
+                            }}
+                        </section>
+                    }
+                }).collect_view().into_any(),
+            }}
+        </div>
     }
 }

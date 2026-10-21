@@ -36,6 +36,7 @@ commands! {
     clear_log() -> ();
     open_log_window() -> ();
     check_update(manual: bool) -> Option<Release>;
+    changelog() -> Vec<ChangelogEntry>;
     skip_version(version: String) -> ();
     download_update(release: Release) -> PathBuf;
     install_update(file: PathBuf) -> ();

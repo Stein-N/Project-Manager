@@ -88,6 +88,7 @@ fn main() {
             commands::app::clear_log,
             commands::app::open_log_window,
             commands::app::check_update,
+            commands::app::changelog,
             commands::app::skip_version,
             commands::app::download_update,
             commands::app::install_update,

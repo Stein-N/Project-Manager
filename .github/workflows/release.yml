@@ -3,6 +3,7 @@
 # nothing happens. Versions with a suffix (1.2.0-beta.1) become pre-releases.
 #
 # Assets: the program file per platform (used by the built-in updater) plus the installers Tauri bundles.
+# Notes: the commit titles since the previous release (the app shows them as its changelog).
 name: Release
 
 on:
@@ -112,6 +113,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -125,11 +128,19 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           ls -la dist
+          previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          git log --no-merges --format='- %s' ${previous:+"$previous..HEAD"} \
+            | grep -vE '^- (Version|Release) [0-9]' > notes.md || true
+          [ -s notes.md ] || echo "- Maintenance release" > notes.md
+          if [ -n "$previous" ]; then
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$previous" "$TAG" >> notes.md
+          fi
+          cat notes.md
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "MC Mod Project Manager $VERSION" \
-            --generate-notes \
+            --notes-file notes.md \
             $prerelease

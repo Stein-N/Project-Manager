@@ -880,6 +880,18 @@ pub struct Release {
     pub notes: Option<String>,
 }
 
+/// One release of the tool in the changelog (settings).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChangelogEntry {
+    pub version: String,
+    pub name: String,
+    /// `YYYY-MM-DD`
+    pub date: Option<String>,
+    pub page_url: Option<String>,
+    /// The release notes as sanitized HTML.
+    pub html: String,
+}
+
 // ---------------------------------------------------------------- Claude
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

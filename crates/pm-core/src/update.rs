@@ -5,7 +5,7 @@
 
 use crate::{http, util};
 use anyhow::{Context, Result, bail};
-use pm_types::Release;
+use pm_types::{ChangelogEntry, Release};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -103,6 +103,37 @@ pub fn parse(json: &str, asset: impl Fn(&str) -> bool) -> Result<Release> {
         file_name: file.and_then(|f| s(&f["name"])),
         notes: s(&o["body"]),
     })
+}
+
+/// All published releases, newest first – the changelog of the tool.
+pub fn changelog() -> Result<Vec<ChangelogEntry>> {
+    let r = http::get(
+        &format!("https://api.github.com/repos/{REPO}/releases?per_page=100"),
+        &[("Accept", "application/vnd.github+json")],
+    )?;
+    if r.status != 200 {
+        bail!("GitHub answered {}", r.status);
+    }
+    parse_changelog(&r.body)
+}
+
+pub fn parse_changelog(json: &str) -> Result<Vec<ChangelogEntry>> {
+    let list: Vec<Value> = serde_json::from_str(json).with_context(|| "Unexpected answer from GitHub")?;
+    let s = |v: &Value| v.as_str().map(str::to_string);
+    Ok(list
+        .iter()
+        .filter(|o| o["draft"].as_bool() != Some(true))
+        .filter_map(|o| {
+            let tag = o["tag_name"].as_str()?;
+            Some(ChangelogEntry {
+                version: tag.trim_start_matches(['v', 'V']).to_string(),
+                name: s(&o["name"]).filter(|n| !n.is_empty()).unwrap_or_else(|| tag.to_string()),
+                date: o["published_at"].as_str().and_then(|d| d.get(..10)).map(str::to_string),
+                page_url: s(&o["html_url"]),
+                html: crate::readme::markdown_to_safe_html(o["body"].as_str().unwrap_or_default(), Path::new("")),
+            })
+        })
+        .collect())
 }
 
 /// The running program file.
@@ -282,6 +313,23 @@ mod tests {
         let none =
             parse(r#"{"tag_name":"v0.3.0","assets":[{"name":"Project-Manager.jar"}]}"#, |n| n == asset_name()).unwrap();
         assert_eq!(none.download_url, None, "a Java release offers nothing to install");
+    }
+
+    #[test]
+    fn changelog_skips_drafts_and_renders_the_notes() {
+        let list = parse_changelog(
+            r#"[{"tag_name":"v0.6.0","draft":true,"body":"x"},
+            {"tag_name":"v0.5.7","name":"MC Mod Project Manager 0.5.7","published_at":"2026-10-21T15:10:00Z",
+             "html_url":"https://example/0.5.7","body":"- Fix the updater"},
+            {"tag_name":"v0.5.5","name":"","body":null}]"#,
+        )
+        .unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].version, "0.5.7");
+        assert_eq!(list[0].date.as_deref(), Some("2026-10-21"));
+        assert!(list[0].html.contains("<li>Fix the updater</li>"), "{}", list[0].html);
+        assert_eq!(list[1].name, "v0.5.5");
+        assert_eq!(list[1].html, "");
     }
 
     #[test]

@@ -4,7 +4,7 @@ use crate::state::{self, AppState, CmdResult, run};
 use crate::{tray, window};
 use pm_core::config::{DEFAULT_BACKPORT_MODEL, DEFAULT_CLAUDE_MODEL};
 use pm_core::{claude, system, update, util};
-use pm_types::{AppInfo, CloseAction, LogLine, Release, Settings};
+use pm_types::{AppInfo, ChangelogEntry, CloseAction, LogLine, Release, Settings};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
@@ -135,6 +135,12 @@ pub async fn check_update(app: AppHandle, manual: bool) -> CmdResult<Option<Rele
         Ok(release.filter(|r| manual || r.version != st.config().skipped_version()))
     })
     .await
+}
+
+/// All releases of the tool with their notes (changelog in the settings).
+#[tauri::command]
+pub async fn changelog(app: AppHandle) -> CmdResult<Vec<ChangelogEntry>> {
+    run(app, |_, _| update::changelog()).await
 }
 
 #[tauri::command]
