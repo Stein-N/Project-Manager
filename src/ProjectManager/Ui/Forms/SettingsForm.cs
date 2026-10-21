@@ -20,7 +20,6 @@ public static class SettingsForm
         var git = new Var<string>(initial.Git);
         var fetch = new Var<string>(initial.AutoFetchMinutes.ToString(CultureInfo.InvariantCulture));
         var tray = new Var<bool>(initial.MinimizeToTray);
-        var close = new Var<string>(initial.CloseAction.ToString());
         var autostart = new Var<bool>(initial.Autostart);
         var updates = new Var<bool>(initial.CheckUpdates);
         var claude = new Var<string>(initial.Claude);
@@ -56,12 +55,6 @@ public static class SettingsForm
                 Git = git.Value.Trim(),
                 AutoFetchMinutes = (int)Number(fetch, 10),
                 MinimizeToTray = tray.Value,
-                CloseAction = close.Value switch
-                {
-                    "Minimize" => CloseAction.Minimize,
-                    "Exit" => CloseAction.Exit,
-                    _ => CloseAction.Ask,
-                },
                 Autostart = autostart.Value,
                 CheckUpdates = updates.Value,
                 SkippedVersion = initial.SkippedVersion,
@@ -86,8 +79,8 @@ public static class SettingsForm
             .Row("IntelliJ launcher", W.Inline(W.Grow(W.Input(idea)), W.Btn("Detect", DetectIdea)))
             .Row("Git executable", W.Input(git))
             .Row("Auto-fetch every", W.Inline(Num(fetch), W.Muted("minutes (0 = off)"), W.Spacer()))
-            .Row("", W.Check("Minimize to system tray", tray))
-            .Row("On close", W.Select(close, () => [("Ask", "Ask"), ("Minimize", "Minimize"), ("Exit", "Exit")]))
+            .Row("", W.Check("Minimize to system tray", tray,
+                "The close button hides the window in the tray; without it, the close button exits the Project Manager"))
             .Row("", W.Check("Start minimized with the system", autostart))
             .Row("", W.Inline(W.Check("Check for updates on start", updates),
                 W.Btn("Check now", () => React.Spawn(() => Actions.CheckUpdate(s, true)), flat: true), W.Spacer()))

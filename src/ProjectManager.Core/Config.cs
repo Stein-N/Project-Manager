@@ -88,15 +88,6 @@ public sealed class Config
 
     public bool MinimizeToTray => Bool("minimizeToTray", true);
 
-    public CloseAction CloseAction => String("closeAction").ToUpperInvariant() switch
-    {
-        "MINIMIZE" => CloseAction.Minimize,
-        "EXIT" => CloseAction.Exit,
-        _ => CloseAction.Ask,
-    };
-
-    public void SetCloseAction(CloseAction action) => Props["closeAction"] = action.ToString().ToUpperInvariant();
-
     public bool Autostart => Bool("autostart", false);
 
     public void SetAutostart(bool on) => Props["autostart"] = on ? "true" : "false";
@@ -132,7 +123,6 @@ public sealed class Config
         Git = Git,
         AutoFetchMinutes = AutoFetchMinutes,
         MinimizeToTray = MinimizeToTray,
-        CloseAction = CloseAction,
         Autostart = Autostart,
         CheckUpdates = CheckUpdates,
         SkippedVersion = SkippedVersion,
@@ -151,7 +141,6 @@ public sealed class Config
         SetString("git", s.Git.Trim() == "git" ? "" : s.Git);
         Props["autoFetchMinutes"] = s.AutoFetchMinutes.ToString(CultureInfo.InvariantCulture);
         Props["minimizeToTray"] = s.MinimizeToTray ? "true" : "false";
-        SetCloseAction(s.CloseAction);
         SetAutostart(s.Autostart);
         Props["checkUpdates"] = s.CheckUpdates ? "true" : "false";
         SetSkippedVersion(s.SkippedVersion);

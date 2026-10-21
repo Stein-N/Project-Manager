@@ -1,4 +1,4 @@
-// The small dialogs: close, import, move, tag and the backport types.
+// The small dialogs: import, move, tag and the backport types.
 
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -9,19 +9,6 @@ namespace ProjectManager.Ui.Forms;
 
 public static class SimpleForms
 {
-    /// <summary>"Minimize or exit?" – the action and whether to remember it.</summary>
-    public static Task<Maybe<(CloseAction Action, bool Remember)>> Close(Store s) =>
-        s.Dialogs.Open<(CloseAction, bool)>("Close Project Manager", 440, null, done =>
-        {
-            var remember = new Var<bool>(true);
-            var minimize = W.Btn("Minimize", () => done.Resolve((CloseAction.Minimize, remember.Value)), primary: true);
-            minimize.AttachedToVisualTree += (_, _) => minimize.Focus();
-            return Dialogs.Layout(
-                W.Stack(10, W.Wrapped("Should the Project Manager keep running in the background or exit completely?"),
-                    W.Check("Remember my choice (can be changed in the settings)", remember)),
-                Dialogs.Footer(W.Btn("Cancel", done.Cancel), W.Btn("Exit", () => done.Resolve((CloseAction.Exit, remember.Value))), minimize));
-        });
-
     /// <summary>(source, version, name, move)</summary>
     public static Task<Maybe<(string Source, string Version, string Name, bool Move)>> Import(Store s, string? version) =>
         s.Dialogs.Open<(string, string, string, bool)>("Import local project", 560, null, done =>

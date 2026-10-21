@@ -161,7 +161,6 @@ public static class Actions
             case "cleanup": React.Spawn(() => CleanupForm.Show(s)); break;
             case "env": React.Spawn(() => EnvForm.Show(s)); break;
             case "import": React.Spawn(() => SimpleForms.Import(s, null)); break;
-            case "close": React.Spawn(() => SimpleForms.Close(s)); break;
             case "types": React.Spawn(() => SimpleForms.Types(s, "Mod 1.20.1", ["fix"])); break;
             case "message": React.Spawn(() => s.Dialogs.Confirm("Remove project", "Really <b>permanently delete</b> the project folder?<br><code>/x/y</code><br><br><span class=\"error\"><b>Warning:</b> 2 uncommitted change(s).<br>These will be lost!</span>", "Delete")); break;
             case "error": React.Spawn(() => s.Error("Error", "git fetch failed:\nfatal: could not read from remote repository")); break;
@@ -242,26 +241,6 @@ public static class Actions
     }
 
     // ---------------------------------------------------------------- close / exit
-
-    public static async Task AskClose(Store s)
-    {
-        var r = await SimpleForms.Close(s);
-        if (!r.Ok) return;
-        var (action, remember) = r.Value;
-        if (action == CloseAction.Exit && !await ConfirmExit(s)) return;
-        if (remember)
-        {
-            try
-            {
-                await s.Api.SetCloseAction(action);
-            }
-            catch (Exception)
-            {
-            }
-        }
-        if (action == CloseAction.Exit) App.Current.Exit();
-        else App.Current.HideMain();
-    }
 
     /// <summary>Asks when Gradle tasks are running; true if the app may exit.</summary>
     private static async Task<bool> ConfirmExit(Store s)

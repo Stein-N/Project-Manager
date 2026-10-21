@@ -99,7 +99,7 @@ public class ConfigTests
         Assert.Equal(Config.DefaultClaudeModel, c.ClaudeModel);
         var s = c.Settings();
         s.AutoFetchMinutes = 0;
-        s.CloseAction = CloseAction.Exit;
+        s.MinimizeToTray = false;
         s.ClaudeModel = "opus";
         c.Apply(s);
         Assert.Equal(s, c.Settings());

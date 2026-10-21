@@ -81,31 +81,19 @@ public partial class App : Application
         Main.Activate();
     }
 
-    /// <summary>"Minimize": into the tray if it is there, otherwise to the taskbar.</summary>
-    public void HideMain()
-    {
-        if (Main is null) return;
-        if (_tray is not null) Main.Hide();
-        else Main.WindowState = WindowState.Minimized;
-    }
-
-    /// <summary>Close button of the main window: asks once whether to minimize or exit, then does what was chosen.</summary>
+    /// <summary>
+    /// Close button of the main window: into the tray while "minimize to tray" is on (the tray icon is there),
+    /// otherwise exit – after asking when Gradle tasks are running.
+    /// </summary>
     public void CloseRequested()
     {
-        switch (Api.Config().CloseAction)
+        if (Main is null) return;
+        if (_tray is not null)
         {
-            case CloseAction.Ask:
-                ShowMain();
-                React.Spawn(() => Actions.AskClose(Store));
-                break;
-            case CloseAction.Minimize:
-                HideMain();
-                break;
-            default:
-                ShowMain();
-                React.Spawn(() => Actions.Exit(Store));
-                break;
+            Main.Hide();
+            return;
         }
+        React.Spawn(() => Actions.Exit(Store));
     }
 
     public bool Exiting => _exiting;

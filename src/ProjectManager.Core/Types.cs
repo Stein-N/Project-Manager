@@ -112,9 +112,6 @@ public sealed record ScanResult(List<string> Versions, List<ModProject> Projects
 
 // ---------------------------------------------------------------- settings
 
-/// <summary>What the window's close button does.</summary>
-public enum CloseAction { Ask, Minimize, Exit }
-
 /// <summary>All settings (config.properties), as edited in the settings dialog.</summary>
 public sealed record Settings
 {
@@ -123,7 +120,6 @@ public sealed record Settings
     public string Git { get; set; } = "";
     public int AutoFetchMinutes { get; set; }
     public bool MinimizeToTray { get; set; }
-    public CloseAction CloseAction { get; set; }
     public bool Autostart { get; set; }
     public bool CheckUpdates { get; set; }
     public string SkippedVersion { get; set; } = "";

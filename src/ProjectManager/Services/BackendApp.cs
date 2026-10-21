@@ -131,8 +131,6 @@ public sealed partial class Backend
         SystemTools.OpenInIntellij(ide, path);
     });
 
-    public Task SetCloseAction(CloseAction action) => Run(() => UpdateConfig(c => c.SetCloseAction(action)));
-
     /// <summary>Running Gradle tasks; the UI asks before exiting while some run.</summary>
     public int RunningTasks => Gradle.RunningCount;
 }
