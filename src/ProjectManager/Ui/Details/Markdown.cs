@@ -1,6 +1,6 @@
 // Markdown like on GitHub (README, changelog preview, notes, release notes), parsed with Markdig and built from native
 // controls: headings, paragraphs, lists and task lists, code, quotes, tables, images (also SVG badges from the web) and
-// the HTML READMEs often contain (<img>, <p align="center">, <br>, <details>). Links open in the browser, relative
+// the HTML READMEs often contain (<img>, <p align="center">, <br>, <details> spoilers as expanders). Links open in the browser, relative
 // images and links resolve against the folder of the file.
 
 using System.Collections.Concurrent;
@@ -41,7 +41,9 @@ public static partial class Md
         var r = new Renderer(s, baseDir, small ? 12 : 14);
         try
         {
-            return r.Blocks(Markdig.Markdown.Parse(markdown, Pipeline));
+            var page = r.Blocks(Markdig.Markdown.Parse(markdown, Pipeline));
+            r.FitTo(page);
+            return page;
         }
         catch (Exception e)
         {
@@ -58,13 +60,67 @@ public static partial class Md
 
         // ---------------------------------------------------------------- blocks
 
+        private Control? _page;
+        private readonly List<Action> _fits = [];
+
+        /// <summary>Keeps the images no wider than the page (also the ones inside text, which get no width limit from the layout).</summary>
+        public void FitTo(Control page)
+        {
+            _page = page;
+            page.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Visual.BoundsProperty) foreach (var fit in _fits) fit();
+            };
+        }
+
         public StackPanel Blocks(ContainerBlock container)
         {
-            var panel = new StackPanel { Spacing = size * 0.8 };
+            // <details> spoilers: the HTML of the tags and the blocks between them go into an expander
+            var panels = new Stack<StackPanel>([new StackPanel { Spacing = size * 0.8 }]);
             foreach (var block in container)
-                if (Block(block) is { } c) panel.Children.Add(c);
-            return panel;
+            {
+                if (block is HtmlBlock html && Text(html) is var source && DetailsTag().IsMatch(source))
+                {
+                    var at = 0;
+                    foreach (Match tag in DetailsTag().Matches(source))
+                    {
+                        AddHtml(panels.Peek(), source[at..tag.Index]);
+                        at = tag.Index + tag.Length;
+                        if (tag.Groups["summary"].Success)
+                        {
+                            if (panels.Peek().Parent is Expander expander)
+                                expander.Header = WebUtility.HtmlDecode(AnyTag().Replace(tag.Groups["summary"].Value, "")).Trim();
+                        }
+                        else if (tag.Value.StartsWith("</"))
+                        {
+                            if (panels.Count > 1) panels.Pop();
+                        }
+                        else
+                        {
+                            var content = new StackPanel { Spacing = size * 0.8 };
+                            panels.Peek().Children.Add(new Expander
+                            {
+                                Header = "Details",
+                                Content = content,
+                                HorizontalAlignment = HorizontalAlignment.Stretch,
+                                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                            });
+                            panels.Push(content);
+                        }
+                    }
+                    AddHtml(panels.Peek(), source[at..]);
+                }
+                else if (Block(block) is { } c) panels.Peek().Children.Add(c);
+            }
+            return panels.Last();
         }
+
+        private void AddHtml(StackPanel panel, string html)
+        {
+            if (html.Trim().Length > 0 && Html(html) is { } c) panel.Children.Add(c);
+        }
+
+        private static string Text(LeafBlock block) => string.Join("\n", block.Lines.Lines.Take(block.Lines.Count).Select(l => l.ToString()));
 
         private Control? Block(Block block) => block switch
         {
@@ -81,7 +137,7 @@ public static partial class Md
             FencedCodeBlock or CodeBlock => Code((LeafBlock)block),
             ThematicBreakBlock => new Border { Height = 4, Background = Res.Brush("Border"), Margin = new Thickness(0, 6) },
             MdTable t => Table(t),
-            HtmlBlock html => Html(string.Join("\n", html.Lines.Lines.Take(html.Lines.Count).Select(l => l.ToString()))),
+            HtmlBlock html => Html(Text(html)),
             LinkReferenceDefinitionGroup => null,
             ContainerBlock c => Blocks(c),
             LeafBlock { Inline: { } inline } => Paragraph(inline),
@@ -182,7 +238,7 @@ public static partial class Md
 
         private Control Code(LeafBlock code)
         {
-            var text = string.Join("\n", code.Lines.Lines.Take(code.Lines.Count).Select(l => l.ToString())).TrimEnd();
+            var text = Text(code).TrimEnd();
             return new Border
             {
                 Background = CodeBackground,
@@ -265,6 +321,9 @@ public static partial class Md
 
         [GeneratedRegex(@"<h([1-6])\b[^>]*>(.*?)</h\1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
         private static partial Regex HtmlHeading();
+
+        [GeneratedRegex(@"<details\b[^>]*>|</details\s*>|<summary\b[^>]*>(?<summary>.*?)</summary\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+        private static partial Regex DetailsTag();
 
         [GeneratedRegex(@"^<br\s*/?>$", RegexOptions.IgnoreCase)]
         private static partial Regex BreakTag();
@@ -458,23 +517,30 @@ public static partial class Md
             React.Spawn(() => Actions.OpenUrl(s, href));
         }
 
-        /// <summary>An image that appears when it is loaded; never wider than the page.</summary>
+        /// <summary>
+        /// An image that appears when it is loaded: as large as the HTML says (width or height, the other one keeps the
+        /// aspect ratio), else in its natural size – but never wider than the page.
+        /// </summary>
         private Control Image(string? url, double? width, double? height)
         {
-            var image = new Avalonia.Controls.Image { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly };
-            if (width is { } w) image.Width = w;
-            if (height is { } h) image.Height = h;
+            var image = new Avalonia.Controls.Image { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both };
             if (string.IsNullOrWhiteSpace(url)) return image;
             React.Spawn(async () =>
             {
                 if (await Images.Load(url, baseDir) is not { } source) return;
                 image.Source = source;
+                var natural = source.Size;
                 // without a size from the HTML: the natural size (an SVG badge has no pixels to fill the width with)
-                if (width is null && height is null && source.Size is { Width: > 0 } natural)
+                if (width is null && height is null && natural.Width > 0) (width, height) = (natural.Width, natural.Height);
+                if (height is { } h) image.MaxHeight = h;
+                void Fit()
                 {
-                    image.MaxWidth = natural.Width;
-                    image.MaxHeight = natural.Height;
+                    var max = width ?? double.PositiveInfinity;
+                    if (_page is { Bounds.Width: > 0 } page) max = Math.Min(max, page.Bounds.Width);
+                    if (image.MaxWidth != max) image.MaxWidth = max;
                 }
+                Fit();
+                _fits.Add(Fit);
             });
             return image;
         }
