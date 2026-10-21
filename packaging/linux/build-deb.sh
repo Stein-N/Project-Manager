@@ -30,7 +30,9 @@ Installed-Size: $size
 Maintainer: morthen
 Priority: optional
 Section: devel
-Depends: libc6, libgcc-s1, libstdc++6, libssl3t64 | libssl3 | libssl1.1, libx11-6, libice6, libsm6, libfontconfig1
+Depends: libc6, libgcc-s1, libstdc++6, libssl3t64 | libssl3 | libssl1.1, libfontconfig1, libx11-6, libxrandr2, libxi6,
+ libxcursor1, libxext6, libxfixes3, libice6, libsm6
+Recommends: git, libgl1, libgtk-3-0t64 | libgtk-3-0
 Description: Manage Minecraft mod projects, versions and backports
  Git worktrees, Gradle tasks, dependency updates, changelogs and backports between
  the Minecraft versions of a mod.
