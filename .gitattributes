@@ -1,4 +1,6 @@
-# Shell scripts need LF, Windows scripts CRLF – independent of core.autocrlf
+# LF everywhere – independent of core.autocrlf (raw string literals in the C# code would get CRLF on Windows);
+# Windows scripts CRLF
+* text=auto eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
