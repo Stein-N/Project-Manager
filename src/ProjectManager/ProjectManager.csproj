@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>project-manager</AssemblyName>
     <RootNamespace>ProjectManager</RootNamespace>
     <ApplicationIcon>Assets/icon.ico</ApplicationIcon>

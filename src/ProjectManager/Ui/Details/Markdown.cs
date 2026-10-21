@@ -1,7 +1,7 @@
 // Markdown like on GitHub (README, changelog preview, notes, release notes), parsed with Markdig and built from native
-// controls: headings, paragraphs, lists and task lists, code, quotes, tables, images (also SVG badges from the web) and
-// the HTML READMEs often contain (<img>, <p align="center">, <br>, <details> spoilers as expanders). Links open in the browser, relative
-// images and links resolve against the folder of the file.
+// controls: headings, paragraphs, lists and task lists, code, quotes, tables, images (also SVG badges from the web and
+// animated GIFs) and the HTML READMEs often contain (<img>, <p align="center">, <br>, <details> spoilers as expanders).
+// Links open in the browser, relative images and links resolve against the folder of the file.
 
 using System.Collections.Concurrent;
 using System.Net;
@@ -14,6 +14,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Svg.Skia;
+using Avalonia.VisualTree;
 using Markdig;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
@@ -529,6 +530,7 @@ public static partial class Md
             {
                 if (await Images.Load(url, baseDir) is not { } source) return;
                 image.Source = source;
+                if (source is Images.Animation animation) animation.Play(image);
                 var natural = source.Size;
                 // without a size from the HTML: the natural size (an SVG badge has no pixels to fill the width with)
                 if (width is null && height is null && natural.Width > 0) (width, height) = (natural.Width, natural.Height);
@@ -573,6 +575,7 @@ public static partial class Md
             try
             {
                 if (IsSvg(bytes)) return new SvgImage { Source = SvgSource.LoadFromStream(new MemoryStream(bytes)) };
+                if (IsGif(bytes) && await Task.Run(() => Animation.Decode(bytes)) is { } animation) return animation;
                 return new Bitmap(new MemoryStream(bytes));
             }
             catch (Exception)
@@ -585,6 +588,78 @@ public static partial class Md
         {
             var head = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 512)).TrimStart();
             return head.StartsWith("<svg") || (head.StartsWith("<?xml") && head.Contains("<svg"));
+        }
+
+        private static bool IsGif(byte[] bytes) => bytes.Length > 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F';
+
+        /// <summary>
+        /// An animated GIF (Avalonia shows only the first frame): all frames decoded with Skia, shown one after the
+        /// other while the image is on screen.
+        /// </summary>
+        public sealed class Animation : IImage
+        {
+            // larger animations stay a still picture, they would take too much memory
+            private const long MaxBytes = 128L * 1024 * 1024;
+
+            private readonly Bitmap[] _frames;
+            private readonly TimeSpan[] _delays;
+
+            private Animation(Bitmap[] frames, TimeSpan[] delays)
+            {
+                _frames = frames;
+                _delays = delays;
+            }
+
+            public Size Size => _frames[0].Size;
+
+            public void Draw(DrawingContext context, Rect sourceRect, Rect destRect) =>
+                ((IImage)_frames[0]).Draw(context, sourceRect, destRect);
+
+            /// <summary>The frames, or null for a still picture.</summary>
+            public static Animation? Decode(byte[] bytes)
+            {
+                using var codec = SkiaSharp.SKCodec.Create(new MemoryStream(bytes));
+                if (codec is null || codec.FrameCount < 2) return null;
+                var info = new SkiaSharp.SKImageInfo(codec.Info.Width, codec.Info.Height, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul);
+                if ((long)info.BytesSize * codec.FrameCount > MaxBytes) return null;
+                var pixels = new byte[codec.FrameCount][];
+                var frames = new Bitmap[codec.FrameCount];
+                var delays = new TimeSpan[codec.FrameCount];
+                for (var i = 0; i < codec.FrameCount; i++)
+                {
+                    var frame = codec.FrameInfo[i];
+                    // a frame draws over the one it requires
+                    pixels[i] = frame.RequiredFrame >= 0 ? (byte[])pixels[frame.RequiredFrame].Clone() : new byte[info.BytesSize];
+                    unsafe
+                    {
+                        fixed (byte* p = pixels[i])
+                        {
+                            codec.GetPixels(info, (IntPtr)p, new SkiaSharp.SKCodecOptions(i, frame.RequiredFrame));
+                            frames[i] = new Bitmap(Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul, (IntPtr)p,
+                                new PixelSize(info.Width, info.Height), new Vector(96, 96), info.RowBytes);
+                        }
+                    }
+                    // browsers show frames without a delay (or a very short one) for 100 ms
+                    delays[i] = TimeSpan.FromMilliseconds(frame.Duration <= 10 ? 100 : frame.Duration);
+                }
+                return new Animation(frames, delays);
+            }
+
+            /// <summary>Shows the frames in <paramref name="image"/> as long as it is in a window.</summary>
+            public void Play(Avalonia.Controls.Image image)
+            {
+                var index = 0;
+                var timer = new Avalonia.Threading.DispatcherTimer { Interval = _delays[0] };
+                timer.Tick += (_, _) =>
+                {
+                    index = (index + 1) % _frames.Length;
+                    image.Source = _frames[index];
+                    timer.Interval = _delays[index];
+                };
+                image.AttachedToVisualTree += (_, _) => timer.Start();
+                image.DetachedFromVisualTree += (_, _) => timer.Stop();
+                if (image.IsAttachedToVisualTree()) timer.Start();
+            }
         }
 
         private static async Task<byte[]?> Download(string url)
