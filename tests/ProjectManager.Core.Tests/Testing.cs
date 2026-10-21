@@ -1,5 +1,9 @@
 // Temporary folders and repositories for the tests.
 
+// One test after the other: on Linux a fake CLI script that is started while a parallel test forks a process (git) can
+// fail with "Text file busy" – the child holds the still open handle of the script until its exec.
+[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
+
 namespace ProjectManager.Core.Tests;
 
 /// <summary>A temporary folder that is deleted afterwards.</summary>
