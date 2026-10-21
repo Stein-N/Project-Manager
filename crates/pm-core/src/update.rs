@@ -1,6 +1,7 @@
-//! Looks for a newer GitHub release of the tool, downloads the program file for this platform and replaces the running
-//! one with it (same path, so autostart entries and shortcuts stay valid). A program folder the user may not write to
-//! (Windows: `C:\Program Files`) is updated with administrator rights.
+//! Looks for a newer GitHub release of the tool, downloads the file for this kind of installation and puts it in place:
+//! the program file or AppImage is replaced (same path, so autostart entries and shortcuts stay valid; a program folder
+//! the user may not write to, e.g. `C:\Program Files`, with administrator rights), a deb package is installed with
+//! `pkexec dpkg -i`.
 
 use crate::{http, util};
 use anyhow::{Context, Result, bail};
@@ -16,7 +17,7 @@ pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// File name of the release asset for this platform.
+/// File name of the plain program file for this platform among the release assets.
 pub fn asset_name() -> &'static str {
     if cfg!(windows) {
         "Project-Manager-windows-x64.exe"
@@ -24,6 +25,49 @@ pub fn asset_name() -> &'static str {
         "Project-Manager-macos"
     } else {
         "Project-Manager-linux-x64"
+    }
+}
+
+/// How the running program was installed; decides which release file an update takes and how it is put in place.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Install {
+    /// A plain program file (Windows, or the Linux binary copied somewhere).
+    Program(PathBuf),
+    /// Linux: the AppImage (not the binary in its read-only mount).
+    AppImage(PathBuf),
+    /// Linux: installed by the deb package under /usr – updated by the package manager.
+    Deb(PathBuf),
+}
+
+impl Install {
+    pub fn detect() -> Result<Install> {
+        if cfg!(target_os = "linux") {
+            if let Some(image) = std::env::var_os("APPIMAGE").map(PathBuf::from) {
+                return Ok(Install::AppImage(image));
+            }
+            let exe = running_executable()?;
+            if exe.starts_with("/usr") {
+                return Ok(Install::Deb(exe));
+            }
+            return Ok(Install::Program(exe));
+        }
+        Ok(Install::Program(running_executable()?))
+    }
+
+    /// The file that is started after the update.
+    pub fn program(&self) -> &Path {
+        match self {
+            Install::Program(p) | Install::AppImage(p) | Install::Deb(p) => p,
+        }
+    }
+
+    /// Whether `name` is the release asset for this installation.
+    pub fn takes(&self, name: &str) -> bool {
+        match self {
+            Install::Program(_) => name == asset_name(),
+            Install::AppImage(_) => name.ends_with("_amd64.AppImage"),
+            Install::Deb(_) => name.ends_with("_amd64.deb"),
+        }
     }
 }
 
@@ -42,13 +86,14 @@ pub fn latest() -> Result<Release> {
     if r.status != 200 {
         bail!("GitHub answered {}", r.status);
     }
-    parse(&r.body, asset_name())
+    let install = Install::detect()?;
+    parse(&r.body, |name| install.takes(name))
 }
 
-pub fn parse(json: &str, asset: &str) -> Result<Release> {
+pub fn parse(json: &str, asset: impl Fn(&str) -> bool) -> Result<Release> {
     let o: Value = serde_json::from_str(json).with_context(|| "Unexpected answer from GitHub")?;
     let tag = o["tag_name"].as_str().context("Release without a tag")?;
-    let file = o["assets"].as_array().into_iter().flatten().find(|a| a["name"].as_str() == Some(asset));
+    let file = o["assets"].as_array().into_iter().flatten().find(|a| a["name"].as_str().is_some_and(&asset));
     let s = |v: &Value| v.as_str().map(str::to_string);
     Ok(Release {
         version: tag.trim_start_matches(['v', 'V']).to_string(),
@@ -68,8 +113,9 @@ pub fn running_executable() -> Result<PathBuf> {
 /// Downloads the release into the temp folder – the program folder may not be writable (e.g. `C:\Program Files`).
 pub fn download(release: &Release) -> Result<PathBuf> {
     let url = release.download_url.as_deref().context("The release has no program file for this system.")?;
-    let target = pending_file();
-    std::fs::create_dir_all(target.parent().unwrap_or(Path::new(".")))?;
+    let name = release.file_name.as_deref().unwrap_or(asset_name());
+    std::fs::create_dir_all(download_dir())?;
+    let target = download_dir().join(name);
     let part = target.with_extension("part");
     let result = http::download(url, &part).and_then(|_| {
         std::fs::rename(&part, &target)?;
@@ -79,31 +125,37 @@ pub fn download(release: &Release) -> Result<PathBuf> {
     result.map(|_| target)
 }
 
-fn pending_file() -> PathBuf {
-    std::env::temp_dir().join("project-manager-update").join(asset_name())
+fn download_dir() -> PathBuf {
+    std::env::temp_dir().join("project-manager-update")
 }
 
-/// Replaces the running program with the downloaded one and starts it; the caller exits right afterwards. The new
-/// instance waits until this process has ended.
+/// Puts the downloaded version in place and starts it; the caller exits right afterwards. The new instance waits until
+/// this process has ended.
 pub fn install_and_restart(downloaded: &Path) -> Result<()> {
-    let exe = running_executable()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(downloaded, std::fs::Permissions::from_mode(0o755))?;
-    }
-    let old = exe.with_extension("old");
-    match replace(&exe, &old, downloaded) {
-        #[cfg(windows)]
-        Err(e)
-            if e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied) =>
-        {
-            replace_elevated(&exe, &old, downloaded)?
+    let install = Install::detect()?;
+    match &install {
+        Install::Deb(_) => install_deb(downloaded)?,
+        Install::Program(exe) | Install::AppImage(exe) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(downloaded, std::fs::Permissions::from_mode(0o755))?;
+            }
+            let old = exe.with_extension("old");
+            match replace(exe, &old, downloaded) {
+                #[cfg(windows)]
+                Err(e)
+                    if e.downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied) =>
+                {
+                    replace_elevated(exe, &old, downloaded)?
+                }
+                result => result?,
+            }
         }
-        result => result?,
     }
     let _ = std::fs::remove_file(downloaded);
-    std::process::Command::new(&exe)
+    std::process::Command::new(install.program())
         .arg(AFTER_UPDATE_FLAG)
         .arg(std::process::id().to_string())
         .spawn()
@@ -121,6 +173,26 @@ fn replace(exe: &Path, old: &Path, downloaded: &Path) -> Result<()> {
         return Err(e).context("Could not put the new version in place");
     }
     Ok(())
+}
+
+/// Installs the downloaded deb package as root; `pkexec` asks for the password.
+fn install_deb(package: &Path) -> Result<()> {
+    let out = crate::proc::command("pkexec")
+        .arg("dpkg")
+        .arg("-i")
+        .arg(package)
+        .output()
+        .context("Could not start pkexec to install the package")?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(126) => bail!("The update was cancelled (no administrator rights)."),
+        _ => bail!(
+            "Could not install {}:\n{}{}",
+            package.display(),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
 }
 
 /// [`replace`] with administrator rights (UAC prompt), for a program folder the user may not write to.
@@ -156,11 +228,14 @@ fn replace_elevated(exe: &Path, old: &Path, downloaded: &Path) -> Result<()> {
 /// Removes leftovers of an update (`<name>.old`, the download); the old process may still hold the file for a moment.
 /// Without write access to the program folder `<name>.old` stays until the next update.
 pub fn clean_up() {
-    let Ok(exe) = running_executable() else { return };
+    let Ok(install) = Install::detect() else { return };
     std::thread::spawn(move || {
-        let _ = std::fs::remove_file(pending_file());
+        let _ = std::fs::remove_dir_all(download_dir());
+        if matches!(install, Install::Deb(_)) {
+            return;
+        }
         for _ in 0..20 {
-            let old = exe.with_extension("old");
+            let old = install.program().with_extension("old");
             if !old.exists() || std::fs::remove_file(&old).is_ok() {
                 return;
             }
@@ -200,11 +275,27 @@ mod tests {
         let r = parse(r#"{"tag_name":"v1.2.0","name":"MC Mod Project Manager 1.2.0","html_url":"https://github.com/x/y/releases/tag/v1.2.0",
             "body":null,"assets":[{"name":"Project-Manager.jar","browser_download_url":"u0"},
             {"name":"Project-Manager-linux-x64","browser_download_url":"https://example/linux"},
-            {"name":"Project-Manager-windows-x64.exe","browser_download_url":"https://example/win"}]}"#, "Project-Manager-linux-x64").unwrap();
+            {"name":"Project-Manager-windows-x64.exe","browser_download_url":"https://example/win"}]}"#, |n| n == "Project-Manager-linux-x64").unwrap();
         assert_eq!(r.version, "1.2.0");
         assert_eq!(r.download_url.as_deref(), Some("https://example/linux"));
         assert_eq!(r.notes, None);
-        let none = parse(r#"{"tag_name":"v0.3.0","assets":[{"name":"Project-Manager.jar"}]}"#, asset_name()).unwrap();
+        let none =
+            parse(r#"{"tag_name":"v0.3.0","assets":[{"name":"Project-Manager.jar"}]}"#, |n| n == asset_name()).unwrap();
         assert_eq!(none.download_url, None, "a Java release offers nothing to install");
+    }
+
+    #[test]
+    fn each_installation_takes_its_own_file() {
+        let assets = [
+            "MC.Mod.Project.Manager_0.5.5_amd64.AppImage",
+            "MC.Mod.Project.Manager_0.5.5_amd64.deb",
+            "MC.Mod.Project.Manager_0.5.5_x64-setup.exe",
+            "Project-Manager-linux-x64",
+            "Project-Manager-windows-x64.exe",
+        ];
+        let pick = |i: Install| assets.iter().filter(|a| i.takes(a)).copied().collect::<Vec<_>>();
+        assert_eq!(pick(Install::Deb("/usr/bin/project-manager".into())), ["MC.Mod.Project.Manager_0.5.5_amd64.deb"]);
+        assert_eq!(pick(Install::AppImage("/x.AppImage".into())), ["MC.Mod.Project.Manager_0.5.5_amd64.AppImage"]);
+        assert_eq!(pick(Install::Program("/x".into())), [asset_name()]);
     }
 }
