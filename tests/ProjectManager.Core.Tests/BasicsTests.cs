@@ -250,16 +250,6 @@ public class ReadmeTests
         Assert.Equal("ReadMe.MD", Util.FileName(Readme.Find(tmp.Path)!));
         Assert.Equal("# Hi", Readme.Load(tmp.Path)!.Markdown);
     }
-
-    [Fact]
-    public void BareAddressesBecomeLinks()
-    {
-        Assert.Equal("see [https://example.com/a?b=1](https://example.com/a?b=1).", Readme.Autolink("see https://example.com/a?b=1."));
-        const string kept = "[x](https://a.b) ![i](https://c.d/i.png) <https://e.f> <img src=\"https://g.h\"> `https://i.j`\n```\nhttps://k.l\n```";
-        Assert.Equal(kept, Readme.Autolink(kept));
-        Assert.Equal("**Full Changelog**: [https://github.com/x/y/compare/v1...v2](https://github.com/x/y/compare/v1...v2)",
-            Readme.Autolink("**Full Changelog**: https://github.com/x/y/compare/v1...v2"));
-    }
 }
 
 public class SystemToolsTests

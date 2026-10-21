@@ -35,7 +35,8 @@ packaging/linux/build-appimage.sh publish/project-manager <version> dist
 ```
 
 Debug builds can open a project tab or a dialog right at the start, to look at a view without clicking:
-`PM_SELECT=<project folder> PM_TAB=Gradle` and `PM_DIALOG=settings` (also `clone`, `commit`, `cleanup`, `env`, `log` …).
+`PM_SELECT=<project folder> PM_TAB=Gradle` and `PM_DIALOG=settings` (also `clone`, `commit`, `cleanup`, `env`, `log` …);
+`PM_NO_SINGLE_INSTANCE=1` runs it beside an already running instance.
 
 ## Releases
 

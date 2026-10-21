@@ -161,7 +161,7 @@ public static class SettingsForm
                     };
                     Control notes = r.Notes.Trim().Length == 0
                         ? W.Muted("No notes.")
-                        : Md.View(s, r.Notes, null, small: true).Also(v => v.MaxHeight = 400);
+                        : Md.Document(s, r.Notes, null, small: true);
                     list.Children.Add(W.Stack(4, head, notes));
                 }
             });

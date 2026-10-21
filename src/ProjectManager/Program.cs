@@ -17,8 +17,17 @@ internal static class Program
         if (after >= 0 && after + 1 < args.Length && int.TryParse(args[after + 1], out var pid)) Update.WaitForExit(pid);
         App.StartMinimized = args.Contains(AutostartFlag.Minimized);
         // a second start shows the running window and ends
-        App.Instance = SingleInstance.Acquire(args);
-        if (App.Instance is null) return;
+#if DEBUG
+        // debug builds can run beside the installed app (PM_NO_SINGLE_INSTANCE=1)
+        var single = Environment.GetEnvironmentVariable("PM_NO_SINGLE_INSTANCE") is null;
+#else
+        const bool single = true;
+#endif
+        if (single)
+        {
+            App.Instance = SingleInstance.Acquire(args);
+            if (App.Instance is null) return;
+        }
         Update.CleanUp();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args, Avalonia.Controls.ShutdownMode.OnExplicitShutdown);
     }

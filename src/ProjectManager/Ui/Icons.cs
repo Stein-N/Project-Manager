@@ -2,7 +2,7 @@
 
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Svg;
+using Avalonia.Svg.Skia;
 
 namespace ProjectManager.Ui;
 
@@ -17,7 +17,7 @@ public static class Icons
         try
         {
             using var stream = Avalonia.Platform.AssetLoader.Open(new Uri($"avares://project-manager/Assets/icons/{name}.svg"));
-            source = SvgSource.Load(stream);
+            source = SvgSource.LoadFromStream(stream);
         }
         catch (Exception)
         {
