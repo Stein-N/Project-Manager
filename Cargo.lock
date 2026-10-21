@@ -3290,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "pm-app"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3307,7 +3307,7 @@ dependencies = [
 
 [[package]]
 name = "pm-core"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -3327,14 +3327,14 @@ dependencies = [
 
 [[package]]
 name = "pm-types"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "pm-ui"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "console_error_panic_hook",
  "futures",
