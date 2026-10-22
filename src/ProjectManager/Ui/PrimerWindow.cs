@@ -18,8 +18,6 @@ public sealed class PrimerWindow : Window
     private readonly Var<string> _to = new("");
     private readonly List<(string Loader, Var<bool> On)> _loaders = Primer.AllLoaders.Select(l => (l, new Var<bool>(false))).ToList();
     private readonly Var<bool> _ports = new(true);
-    private readonly Var<bool> _running = new(false);
-    private readonly Var<(string Text, bool Error)> _status = new(("", false));
     private readonly Var<List<PrimerFile>> _files = new([]);
     private readonly Var<PrimerFile?> _selected = new(null);
     private readonly Var<string> _text = new("");
@@ -90,15 +88,31 @@ public sealed class PrimerWindow : Window
         var ports = W.Check("Include my own ports", _ports,
             "Diffs between the branches of mods that exist in both version folders – shows how your mods were actually ported");
         ports.Watch(() => ports.Content = PortsLabel(), _from, _to, _s.ScanResult);
-        var generate = W.Btn("Generate primer", Generate, primary: true, title: "Loads the sources and lets Claude write the primer (backport model and budget per Claude call)")
-            .EnabledWhen(() => !_running.Value && _from.Value.Trim().Length > 0 && _to.Value.Trim().Length > 0, _running, _from, _to);
-        var cancel = W.Btn("Cancel", () => _s.Api.PrimerCancel(), icon: "stop").VisibleWhen(() => _running.Value, _running);
+        var generate = W.Btn("Generate primer", Generate, primary: true,
+                title: "Loads the sources and lets Claude write the primer (backport model and budget per Claude call). " +
+                       "It goes on when this window is closed; a notification says when it is done.")
+            .EnabledWhen(() => _s.PrimerRunning.Value is null && _from.Value.Trim().Length > 0 && _to.Value.Trim().Length > 0,
+                _s.PrimerRunning, _from, _to);
+        var cancel = W.Btn("Cancel", () => _s.Api.PrimerCancel(), icon: "stop").VisibleWhen(() => _s.PrimerRunning.Value is not null, _s.PrimerRunning);
         var status = W.Wrapped("");
         status.Watch(() =>
         {
-            status.Text = _status.Value.Text;
-            status.Classes.Set("warn", _status.Value.Error);
-        }, _status);
+            status.Text = _s.PrimerStatus.Value.Text;
+            status.Classes.Set("warn", _s.PrimerStatus.Value.Error);
+        }, _s.PrimerStatus);
+        // a primer that was generated (also while this window was closed): show it
+        var shown = _s.PrimerDone.Value;
+        status.Watch(() =>
+        {
+            if (_s.PrimerDone.Value is not { } path || path == shown) return;
+            shown = path;
+            React.Spawn(async () =>
+            {
+                await ReloadAsync();
+                _selected.Value = _files.Value.FirstOrDefault(f => f.Path == path);
+                LoadText();
+            });
+        }, _s.PrimerDone);
         return W.Stack(6, W.Heading("New primer"), form.Grid, W.Text("Loaders", "label"), loaders, ports,
             W.Inline(generate, cancel, W.Spacer()), status,
             W.Muted("Sources: NeoForged migration primers, Mojang release notes, Fabric and NeoForge posts, Forge changelogs. " +
@@ -118,32 +132,8 @@ public sealed class PrimerWindow : Window
         foreach (var (loader, on) in _loaders) on.Value = found.Contains(loader);
     }
 
-    private void Generate()
-    {
-        var (from, to) = (_from.Value.Trim(), _to.Value.Trim());
-        var loaders = _loaders.Where(l => l.On.Value).Select(l => l.Loader).ToList();
-        _running.Value = true;
-        _status.Value = ($"Generating {from} → {to}… (progress in the log window; this can take several minutes)", false);
-        React.Spawn(async () =>
-        {
-            try
-            {
-                var path = await _s.Api.PrimerCreate(from, to, loaders, _ports.Value);
-                _status.Value = ($"Saved {Path.GetFileName(path)}", false);
-                await ReloadAsync();
-                _selected.Value = _files.Value.FirstOrDefault(f => f.Path == path);
-                LoadText();
-            }
-            catch (Exception e)
-            {
-                _status.Value = (e.Message, true);
-            }
-            finally
-            {
-                _running.Value = false;
-            }
-        });
-    }
+    private void Generate() =>
+        _s.GeneratePrimer(_from.Value.Trim(), _to.Value.Trim(), _loaders.Where(l => l.On.Value).Select(l => l.Loader).ToList(), _ports.Value);
 
     // ---------------------------------------------------------------- list + contents
 
@@ -218,7 +208,7 @@ public sealed class PrimerWindow : Window
                 (_from.Value, _to.Value) = (f.From, f.To);
                 Generate();
             }, title: "With the loaders and options on the left; cached notes are reused")
-            .EnabledWhen(() => HasFile() && !_running.Value, _selected, _running);
+            .EnabledWhen(() => HasFile() && _s.PrimerRunning.Value is null, _selected, _s.PrimerRunning);
         var edit = W.Btn("Open in editor", () =>
         {
             if (_selected.Value is { } f) React.Spawn(() => Actions.OpenFolder(_s, f.Path));
@@ -255,7 +245,7 @@ public sealed class PrimerWindow : Window
         }
         catch (Exception e)
         {
-            _status.Value = (e.Message, true);
+            _s.PrimerStatus.Value = (e.Message, true);
         }
     }
 
@@ -275,7 +265,7 @@ public sealed class PrimerWindow : Window
             }
             catch (Exception e)
             {
-                _status.Value = (e.Message, true);
+                _s.PrimerStatus.Value = (e.Message, true);
             }
         });
     }

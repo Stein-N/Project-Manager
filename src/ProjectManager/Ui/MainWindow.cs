@@ -130,13 +130,23 @@ public sealed class MainWindow : Window
                 text.Text = s.Busy.Value[^1].Label;
                 return;
             }
+            if (s.Background.Value.Count > 0)
+            {
+                text.Text = s.Background.Value[^1].Label;
+                ToolTip.SetTip(text, "Click to open the primer window");
+                return;
+            }
             var sc = s.ScanResult.Value;
             var dirty = sc.Projects.Count(p => p.HasUnsavedWork);
             text.Text = $"{sc.Versions.Count} versions  ·  {sc.Projects.Count} projects{(dirty > 0 ? $"  ·  {dirty} with unsaved work" : "")}" +
                         $"  ·  Master: {s.Master ?? "–"}";
             ToolTip.SetTip(text, s.Master);
-        }, s.Busy, s.ScanResult, s.Settings);
-        busy.VisibleWhen(() => s.Busy.Value.Count > 0, s.Busy);
+        }, s.Busy, s.Background, s.ScanResult, s.Settings);
+        text.PointerPressed += (_, _) =>
+        {
+            if (s.Busy.Value.Count == 0 && s.PrimerRunning.Value is not null) App.Current.OpenPrimer(null);
+        };
+        busy.VisibleWhen(() => s.Busy.Value.Count > 0 || s.Background.Value.Count > 0, s.Busy, s.Background);
         return new Border
         {
             Height = 26,

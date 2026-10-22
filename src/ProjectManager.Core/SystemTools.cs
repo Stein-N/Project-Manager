@@ -1,4 +1,4 @@
-// Launch IntelliJ, open the file manager / a terminal / links – for Windows, Linux and macOS.
+// Launch IntelliJ, open the file manager / a terminal / links, desktop notifications – for Windows, Linux and macOS.
 
 namespace ProjectManager.Core;
 
@@ -160,6 +160,46 @@ public static class SystemTools
         }
         Open(path);
     }
+
+    /// <summary>
+    /// A desktop notification: <c>notify-send</c> on Linux (with the app's icon and desktop entry), a toast through
+    /// PowerShell on Windows, <c>osascript</c> on macOS.
+    /// </summary>
+    public static void Notify(string appName, string iconName, string title, string body)
+    {
+        switch (Util.Os)
+        {
+            case Os.Windows:
+                Proc.Launch("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", ToastScript(appName, title, body)], noWindow: true);
+                break;
+            case Os.Mac:
+                Proc.Launch("osascript", ["-e", $"display notification {AppleString(body)} with title {AppleString(title)}"]);
+                break;
+            default:
+                Proc.Launch("notify-send", ["-a", appName, "-i", iconName, "-h", $"string:desktop-entry:{iconName}", title, body]);
+                break;
+        }
+    }
+
+    /// <summary>A Windows toast as a PowerShell script (base64 UTF-16 for <c>-EncodedCommand</c>, so nothing needs quoting on the command line).</summary>
+    public static string ToastScript(string appName, string title, string body)
+    {
+        static string Xml(string s) => System.Security.SecurityElement.Escape(s);
+        static string Ps(string s) => s.Replace("'", "''");
+        var toast = $"<toast><visual><binding template='ToastGeneric'><text>{Xml(title)}</text><text>{Xml(body)}</text>" +
+                    $"<text placement='attribution'>{Xml(appName)}</text></binding></visual></toast>";
+        var script = string.Join("\n",
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null",
+            "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null",
+            "$xml = New-Object Windows.Data.Xml.Dom.XmlDocument",
+            $"$xml.LoadXml('{Ps(toast)}')",
+            // the app id of Windows PowerShell: toasts of an unregistered id are dropped
+            @"$id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'",
+            "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id).Show([Windows.UI.Notifications.ToastNotification]::new($xml))");
+        return Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+    }
+
+    private static string AppleString(string s) => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
 
     public static void OpenTerminal(string dir)
     {

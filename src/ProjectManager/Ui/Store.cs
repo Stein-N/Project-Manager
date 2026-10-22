@@ -30,6 +30,14 @@ public sealed class Store
     /// <summary>Labels of the running background work (status bar).</summary>
     public Var<List<(long Id, string Label)>> Busy { get; } = new([]);
     private long _nextBusy;
+    /// <summary>Long work that does not hold up anything else (status bar), e.g. a primer being generated.</summary>
+    public Var<List<(long Id, string Label)>> Background { get; } = new([]);
+    /// <summary>The primer being generated ("1.21.1 → 1.21.4"), null if none – it goes on when the primer window is closed.</summary>
+    public Var<string?> PrimerRunning { get; } = new(null);
+    /// <summary>Last message of the primer generation (primer window).</summary>
+    public Var<(string Text, bool Error)> PrimerStatus { get; } = new(("", false));
+    /// <summary>The primer generated last; the primer window selects it.</summary>
+    public Var<string?> PrimerDone { get; } = new(null);
     public Var<Dictionary<string, GradleState>> Gradle { get; } = new([]);
     public Var<AppInfo> Info { get; } = new(new AppInfo());
     public Var<Settings> Settings { get; } = new(new Settings());
@@ -107,6 +115,50 @@ public sealed class Store
     }
 
     public bool IsBusy => Busy.Value.Count > 0;
+
+    /// <summary>Generates a primer in the background (status bar) and sends a desktop notification when it is done or failed.</summary>
+    public void GeneratePrimer(string from, string to, List<string> loaders, bool ownPorts)
+    {
+        if (PrimerRunning.Value is not null) return;
+        var label = $"{from} → {to}";
+        PrimerRunning.Value = label;
+        PrimerStatus.Value = ($"Generating {label}… (progress in the log window; this can take several minutes)", false);
+        var id = _nextBusy++;
+        Background.Update(b => b.Add((id, $"Generating primer {label}…")));
+        React.Spawn(async () =>
+        {
+            try
+            {
+                var path = await Api.PrimerCreate(from, to, loaders, ownPorts);
+                PrimerStatus.Value = ($"Saved {Path.GetFileName(path)}", false);
+                PrimerDone.Value = path;
+                Notify($"Primer {label} is ready", "Open it with “Primer” in the toolbar.");
+            }
+            catch (Exception e)
+            {
+                PrimerStatus.Value = (e.Message, true);
+                if (!e.Message.StartsWith("Cancelled")) Notify($"Primer {label} failed", e.Message.Split('\n')[0]);
+            }
+            finally
+            {
+                Background.Update(b => b.RemoveAll(x => x.Id == id));
+                PrimerRunning.Value = null;
+            }
+        });
+    }
+
+    /// <summary>A desktop notification; if that is not possible, only a line in the log.</summary>
+    private void Notify(string title, string body) => Task.Run(() =>
+    {
+        try
+        {
+            SystemTools.Notify("MC Mod Project Manager", DesktopEntry.Id, title, body);
+        }
+        catch (PmException e)
+        {
+            Api.Log($"⚠ Notification: {e.Message}");
+        }
+    });
 
     public ModProject? Project(string path) => ScanResult.Value.Projects.FirstOrDefault(p => p.Path == path);
 

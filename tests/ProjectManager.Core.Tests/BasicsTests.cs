@@ -254,6 +254,17 @@ public class ReadmeTests
 
 public class SystemToolsTests
 {
+    [Fact]
+    public void ToastScriptEscapesTheText()
+    {
+        var script = System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(SystemTools.ToastScript("App", "Primer <1> & 'x'", "done")));
+        Assert.Contains("$xml.LoadXml('<toast>", script);
+        Assert.Contains("<text>Primer &lt;1&gt; &amp; &apos;x&apos;</text>", script);
+        // the XML attributes use '' inside the single-quoted PowerShell string
+        Assert.Contains("<binding template=''ToastGeneric''>", script);
+        Assert.Contains("CreateToastNotifier($id).Show(", script);
+    }
+
     private static string Touch(string file)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
