@@ -15,22 +15,21 @@ public sealed partial class Backend
 
     public Task<List<PrimerFile>> Primers() => Run(() => Primer.List(Master()));
 
-    /// <summary>Every Minecraft release since 1.21.1 plus the version folders; only the folders when Mojang cannot be reached.</summary>
+    /// <summary>1.20.1, 1.21.1 and every release since 26.1; without Mojang's list the version folders of that kind.</summary>
     public Task<List<string>> PrimerVersions() => Run(() =>
     {
-        var folders = Scan.Versions;
-        if (_primerManifest is { } cached) return Primer.OfferedVersions(cached, folders);
+        if (_primerManifest is { } cached) return Primer.OfferedVersions(Primer.AllReleases(cached));
         try
         {
             var manifest = Http.GetOk(Primer.VersionManifest);
-            var offered = Primer.OfferedVersions(manifest, folders);
+            var offered = Primer.OfferedVersions(Primer.AllReleases(manifest));
             _primerManifest = manifest;
             return offered;
         }
         catch (PmException e)
         {
             Log($"⚠ Minecraft version list: {e.Message}");
-            return folders.ToList();
+            return Primer.OfferedVersions(Scan.Versions);
         }
     });
 
