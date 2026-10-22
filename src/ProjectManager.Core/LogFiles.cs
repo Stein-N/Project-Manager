@@ -86,11 +86,26 @@ public sealed partial class LogFiles : IDisposable
     {
         lock (_lock)
         {
-            var entries = Parse(Util.ReadOrEmpty(PathOf(day)));
+            var entries = Parse(Read(PathOf(day)));
             var chars = 0;
             var start = entries.Count;
             while (start > 0 && chars + entries[start - 1].Text.Length <= maxChars) chars += entries[--start].Text.Length;
             return entries.Skip(start).ToList();
+        }
+    }
+
+    /// <summary>The file's text, also while it is open for writing (on Windows a plain read fails then); empty if it does not exist.</summary>
+    private static string Read(string file)
+    {
+        try
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
+            return reader.ReadToEnd();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "";
         }
     }
 
