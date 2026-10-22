@@ -55,6 +55,12 @@ public sealed class MainWindow : Window
         Closing += (_, e) =>
         {
             if (App.Current.Exiting) return;
+            // the system is ending the session: never hold up logout or shutdown
+            if (e.CloseReason == WindowCloseReason.OSShutdown)
+            {
+                App.Current.Release();
+                return;
+            }
             e.Cancel = true;
             App.Current.CloseRequested();
         };

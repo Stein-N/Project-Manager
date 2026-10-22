@@ -45,6 +45,8 @@ public partial class App : Application
             Store.Dialogs.Owner = () => Main;
             desktop.MainWindow = Main;
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            // logout / shutdown of the system (session manager): end without asking, Avalonia then closes the windows
+            desktop.ShutdownRequested += (_, _) => Release();
             Api.Rescan();
             ApplyTraySetting();
             if (!StartMinimized || _tray is null)
@@ -101,11 +103,18 @@ public partial class App : Application
     /// <summary>Stops running tasks and ends the app.</summary>
     public void Exit()
     {
+        Release();
+        (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+    }
+
+    /// <summary>Stops running tasks and gives up tray icon and single instance; the main window may close from then on.</summary>
+    public void Release()
+    {
+        if (_exiting) return;
         _exiting = true;
         Api.Gradle.StopAll();
         _tray?.Dispose();
         Instance?.Dispose();
-        (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
     /// <summary>Opens the log window (next to the main window the first time) or brings it to the front.</summary>
