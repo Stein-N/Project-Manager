@@ -330,6 +330,21 @@ public static class W
         }, value);
     }
 
+    /// <summary>
+    /// The drop-down shows at most <paramref name="rows"/> entries and scrolls beyond them. The height of an entry is
+    /// measured when the list opens (it depends on the theme); until then it is estimated.
+    /// </summary>
+    public static ComboBox MaxRows(this ComboBox c, int rows)
+    {
+        const double popupPadding = 10;
+        c.MaxDropDownHeight = rows * 32 + popupPadding;
+        c.DropDownOpened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (c.ContainerFromIndex(0) is { Bounds.Height: > 0 } item) c.MaxDropDownHeight = rows * item.Bounds.Height + popupPadding;
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+        return c;
+    }
+
     /// <summary>A drop-down list; <paramref name="options"/> are (value, label).</summary>
     public static ComboBox Select(Var<string> value, Func<List<(string Value, string Label)>> options, params IVar[] deps)
     {

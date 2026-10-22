@@ -82,8 +82,8 @@ public sealed class PrimerWindow : Window
     {
         var versions = () => _versions.Value.AsEnumerable();
         var form = new W.Form()
-            .Row("From", W.Combo(_from, versions, [_versions], "e.g. 1.21.1"))
-            .Row("To", W.Combo(_to, versions, [_versions], "e.g. 1.21.4"));
+            .Row("From", W.Combo(_from, versions, [_versions], "e.g. 1.21.1").MaxRows(8))
+            .Row("To", W.Combo(_to, versions, [_versions], "e.g. 1.21.4").MaxRows(8));
         var loaders = W.Stack(2, [W.Check("Vanilla (always)", new Var<bool>(true)).Also(c => c.IsEnabled = false),
             .. _loaders.Select(l => (Control)W.Check(l.Loader, l.On))]);
         var ports = W.Check("Include my own ports", _ports,
