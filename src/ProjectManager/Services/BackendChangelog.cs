@@ -113,7 +113,11 @@ public sealed partial class Backend
         var sinceTag = Tags.Latest(Git, t.Path, sourceBranch);
         var candidates = Backport.Candidates(Git, t.Path, sourceBranch, targetBranch, sinceTag, names, types);
         candidates.Reverse();
-        return new BackportCandidates { SinceTag = sinceTag, Candidates = candidates, Types = types, TypesConfigured = configured is not null };
+        return new BackportCandidates
+        {
+            SinceTag = sinceTag, Candidates = candidates, Types = types, TypesConfigured = configured is not null,
+            Primer = Primer.Find(Master(), t.McVersion, s.McVersion)?.Name,
+        };
     });
 
     /// <summary>Commit types ported into the target; empty = all.</summary>
@@ -187,17 +191,24 @@ public sealed partial class Backend
         }
     }
 
+    /// <summary>The part of the primer between both versions that Claude gets, for the target's loader.</summary>
+    private static (string Name, string Text)? PrimerFor(string master, ModProject target, ModProject source) =>
+        Primer.Find(master, target.McVersion, source.McVersion) is { } f
+            ? (f.Name, Primer.Excerpt(Util.ReadOrEmpty(f.Path), target.Loader, Primer.MaxBackportChars))
+            : null;
+
     private static BackportSession Active(BackportSlot slot) => slot.Session ?? throw new PmException("No backport in progress.");
 
     /// <summary>Ports <paramref name="commits"/> (oldest first) from <paramref name="source"/> into <paramref name="target"/>.</summary>
-    public Task<BackportView> BackportStart(string target, string source, List<Commit> commits, bool sync, bool useClaude) => Run(() =>
+    public Task<BackportView> BackportStart(string target, string source, List<Commit> commits, bool sync, bool useClaude, bool usePrimer) => Run(() =>
     {
         var t = Project(target);
         var s = Project(source);
         var master = Master();
+        var primer = usePrimer ? PrimerFor(master, t, s) : null;
         Step(target, $"Porting {commits.Count} commit(s)… (first time: a full checkout)", useClaude, (slot, env) =>
         {
-            var (session, error) = BackportSession.Start(env, master, t, s, commits, sync, useClaude);
+            var (session, error) = BackportSession.Start(env, master, t, s, commits, sync, useClaude, primer);
             slot.Session = session;
             if (error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
             return true;
@@ -206,14 +217,15 @@ public sealed partial class Backend
     });
 
     /// <summary>Brings <paramref name="target"/> to the state of <paramref name="source"/>: all changes since the last sync as one step.</summary>
-    public Task<BackportView> BackportSync(string target, string source, bool sync, bool useClaude) => Run(() =>
+    public Task<BackportView> BackportSync(string target, string source, bool sync, bool useClaude, bool usePrimer) => Run(() =>
     {
         var t = Project(target);
         var s = Project(source);
         var master = Master();
+        var primer = usePrimer ? PrimerFor(master, t, s) : null;
         Step(target, "Syncing… (first time: a full checkout)", useClaude, (slot, env) =>
         {
-            var (session, error) = BackportSession.StartSync(env, master, t, s, sync, useClaude);
+            var (session, error) = BackportSession.StartSync(env, master, t, s, sync, useClaude, primer);
             slot.Session = session;
             if (error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
             return true;

@@ -175,6 +175,8 @@ public static class DetailsView
                 W.Btn("Clone project into this version…", () => React.Spawn(() => Actions.Clone(s, null, null, version)), icon: "clone"),
                 W.Btn("Import local project…", () => React.Spawn(() => Actions.Import(s, version)), icon: "import"),
                 W.Btn("Open folder", () => React.Spawn(() => Actions.OpenFolder(s, dir)), icon: "folder"),
+                W.Btn("Version primer…", () => App.Current.OpenPrimer(version), icon: "upgrade",
+                    title: "What changed for mods up to this version – generate or open the primer"),
                 W.Btn("Delete version folder (if empty)", () => React.Spawn(() => Actions.DeleteVersion(s, version)), icon: "delete"))),
             quick);
     }

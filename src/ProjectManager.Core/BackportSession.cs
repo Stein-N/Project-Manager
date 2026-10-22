@@ -43,6 +43,8 @@ public sealed class BackportSession
     private readonly List<Commit> _ported = [];
     /// <summary>Sync mode: the source commits the one sync commit stands for (they go into the commit message).</summary>
     private List<Commit>? _synced;
+    /// <summary>Part of a version primer Claude gets as reference (name, text).</summary>
+    private (string Name, string Text)? _primer;
     /// <summary>Markdown: what the tool and Claude did, per commit.</summary>
     private readonly List<string> _notes = [];
     /// <summary>Commits after the conflict.</summary>
@@ -54,16 +56,17 @@ public sealed class BackportSession
     private List<FileChange> _changes = [];
     public string Status { get; private set; } = "";
 
-    private BackportSession(ModProject target, ModProject source, string work, bool sync, bool useClaude)
+    private BackportSession(ModProject target, ModProject source, string work, bool sync, bool useClaude, (string Name, string Text)? primer)
     {
-        (Target, Source, Work, _sync, _useClaude) = (target, source, work, sync, useClaude);
+        (Target, Source, Work, _sync, _useClaude, _primer) = (target, source, work, sync, useClaude, primer);
+        if (primer is { } p) _notes.Add($"- Claude gets the primer `{p.Name}` as reference");
     }
 
     /// <summary>Prepares the work worktree of <paramref name="target"/> and ports <paramref name="commits"/> (oldest first).</summary>
     public static (BackportSession Session, Exception? Error) Start(BackportEnv env, string master, ModProject target, ModProject source,
-        List<Commit> commits, bool sync, bool useClaude)
+        List<Commit> commits, bool sync, bool useClaude, (string Name, string Text)? primer = null)
     {
-        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude);
+        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude, primer);
         var error = s.Step(env, () =>
         {
             var branch = s.Target.Branch ?? throw new PmException("The target has no branch");
@@ -81,9 +84,9 @@ public sealed class BackportSession
     /// the same code; the "never port" files stay as in the target.
     /// </summary>
     public static (BackportSession Session, Exception? Error) StartSync(BackportEnv env, string master, ModProject target, ModProject source,
-        bool sync, bool useClaude)
+        bool sync, bool useClaude, (string Name, string Text)? primer = null)
     {
-        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude);
+        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude, primer);
         var error = s.Step(env, () =>
         {
             var branch = s.Target.Branch ?? throw new PmException("The target has no branch");
@@ -373,7 +376,7 @@ public sealed class BackportSession
     {
         var t = Target;
         return new BackportContext(t.Metadata?.Name ?? t.Name, t.Loader, Source.Branch ?? "", Source.EffectiveMc, t.Branch ?? "",
-            t.EffectiveMc, Backport.ClaudeMd(Work));
+            t.EffectiveMc, Backport.ClaudeMd(Work), _primer);
     }
 
     /// <summary>Claude resolves the conflicts of <paramref name="c"/>; then the markers are checked.</summary>

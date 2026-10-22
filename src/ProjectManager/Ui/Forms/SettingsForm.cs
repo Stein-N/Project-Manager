@@ -86,7 +86,7 @@ public static class SettingsForm
                 W.Btn("Check now", () => React.Spawn(() => Actions.CheckUpdate(s, true)), flat: true), W.Spacer()))
             .Row("Claude Code CLI", W.Inline(W.Grow(W.Input(claude, "claude on the PATH")), W.Btn("Detect", DetectClaude)))
             .Row("Changelog model", W.Input(claudeModel, $"{info.DefaultClaudeModel} (default) or opus"))
-            .Row("Backport model", W.Inline(W.Grow(W.Input(backportModel, $"{info.DefaultBackportModel} (default)")), Num(backportBudget),
+            .Row("Backport & primer model", W.Inline(W.Grow(W.Input(backportModel, $"{info.DefaultBackportModel} (default)")), Num(backportBudget),
                 W.Muted("USD per run")))
             .Row("Claude budget per run", W.Inline(Num(budget), W.Muted("USD (0 = no limit), stop after"), Num(timeout), W.Muted("minutes"),
                 W.Spacer()))

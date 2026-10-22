@@ -28,6 +28,7 @@ public static class BackportTab
         var rows = new Var<List<Row>>([]);
         var sync = new Var<bool>(true);
         var useClaude = new Var<bool>(false);
+        var usePrimer = new Var<bool>(true);
         var view = new Var<BackportView>(new BackportView());
         var working = new Var<string?>(null);
         var step = new Var<string>("Commits");
@@ -115,7 +116,7 @@ public static class BackportTab
             if (commits.Count == 0 || src.Length == 0 || !await MayStartAgain()) return;
             var claude = useClaude.Value;
             RunStep("Preparing the work folder and porting… (first time: a full checkout)", claude,
-                () => s.Api.BackportStart(target, src, commits, sync.Value, claude));
+                () => s.Api.BackportStart(target, src, commits, sync.Value, claude, usePrimer.Value));
         }
 
         // everything since the last sync as one step: same code and features, no type rules or markers
@@ -125,7 +126,7 @@ public static class BackportTab
             if (src.Length == 0 || !await MayStartAgain()) return;
             var claude = useClaude.Value;
             RunStep("Preparing the work folder and syncing… (first time: a full checkout)", claude,
-                () => s.Api.BackportSync(target, src, sync.Value, claude));
+                () => s.Api.BackportSync(target, src, sync.Value, claude, usePrimer.Value));
         }
 
         bool Busy() => working.Value is not null || view.Value.Busy;
@@ -174,6 +175,11 @@ public static class BackportTab
                 title: "Everything the source changed since the last sync as one change (3-way): same code and features, " +
                        "type rules and [no-backport] markers do not apply; versions, CI, generated data and changelogs stay as here")
             .EnabledWhen(() => !Busy() && !Waiting() && source.Value.Length > 0, working, view, source);
+        var primerCheck = new ContentControl();
+        primerCheck.Watch(() => primerCheck.Content = candidates.Value.Value?.Primer is { } primer
+            ? W.Check($"Use primer {primer}", usePrimer,
+                "Claude gets the version primer between both versions (summary, vanilla and this mod's loader) as reference for conflicts and build errors")
+            : null, candidates);
         var commitsView = W.Rows(8,
             (W.Inline(W.Btn("Select portable", () => SelectPortable(true), flat: true,
                     title: "Select every commit that is not filtered, marked or already ported"),
@@ -183,7 +189,8 @@ public static class BackportTab
                 W.Check("Take over version and CHANGELOG.md", sync,
                     "Sets the mod part of the version to the one of the source (the Minecraft part stays) and takes over its CHANGELOG.md; the older entry moves to CHANGELOG_FULL.md"),
                 W.Check("Resolve conflicts with Claude", useClaude,
-                    "Every conflict goes to Claude (backport model in the settings); the run only stops when Claude cannot resolve it or skips a commit"))), false));
+                    "Every conflict goes to Claude (backport model in the settings); the run only stops when Claude cannot resolve it or skips a commit"),
+                primerCheck)), false));
 
         // ---------------------------------------------------------------- notes
 

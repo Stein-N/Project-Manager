@@ -343,6 +343,8 @@ public sealed record BackportCandidates
     public List<string> Types { get; init; } = [];
     /// <summary>The types are configured in the settings (otherwise taken from the repo's CLAUDE.md).</summary>
     public bool TypesConfigured { get; init; }
+    /// <summary>File name of a version primer between source and target, if there is one.</summary>
+    public string? Primer { get; init; }
 }
 
 /// <summary>A commit whose cherry-pick stopped with conflicts.</summary>

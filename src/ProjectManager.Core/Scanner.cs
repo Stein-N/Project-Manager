@@ -36,10 +36,10 @@ public static class Scanner
         return repos.OrderBy(r => r.Name.ToLowerInvariant(), StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>Version folders, newest first.</summary>
+    /// <summary>Version folders, newest first (the primers folder is none).</summary>
     public static List<string> VersionFolders(string master)
     {
-        var v = Util.VisibleSubdirs(master).Select(Util.FileName).ToList();
+        var v = Util.VisibleSubdirs(master).Select(Util.FileName).Where(n => n != Primer.DirName).ToList();
         Versions.SortDesc(v);
         return v;
     }

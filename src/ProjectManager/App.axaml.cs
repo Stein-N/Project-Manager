@@ -25,6 +25,7 @@ public partial class App : Application
     public MainWindow? Main { get; private set; }
     public WindowIcon? WindowIcon { get; private set; }
     private LogWindow? _log;
+    private PrimerWindow? _primer;
     private TrayIcon? _tray;
     private bool _exiting;
 
@@ -113,6 +114,7 @@ public partial class App : Application
         if (_exiting) return;
         _exiting = true;
         Api.Gradle.StopAll();
+        Api.PrimerCancel();
         _tray?.Dispose();
         Instance?.Dispose();
     }
@@ -140,6 +142,20 @@ public partial class App : Application
             else _log.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
         _log.Show();
+    }
+
+    /// <summary>Opens the version primer window (or brings it to the front), prepared for the step to <paramref name="to"/>.</summary>
+    public void OpenPrimer(string? to)
+    {
+        if (_primer is { IsVisible: true })
+        {
+            if (to is not null) _primer.Prepare(to);
+            if (_primer.WindowState == WindowState.Minimized) _primer.WindowState = WindowState.Normal;
+            _primer.Activate();
+            return;
+        }
+        _primer = new PrimerWindow(Store, to) { Icon = WindowIcon, WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        _primer.Show();
     }
 
     // ---------------------------------------------------------------- tray

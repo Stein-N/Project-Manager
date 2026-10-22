@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 namespace ProjectManager.Core;
 
 /// <param name="ClaudeMd">CLAUDE.md of the mod repository (target).</param>
+/// <param name="Primer">the part of a version primer between both versions (see <see cref="Core.Primer.Excerpt"/>) and its file name</param>
 public sealed record BackportContext(
     string ModName,
     string? Loader,
@@ -15,7 +16,8 @@ public sealed record BackportContext(
     string SourceMc,
     string TargetName,
     string TargetMc,
-    string? ClaudeMd);
+    string? ClaudeMd,
+    (string Name, string Text)? Primer = null);
 
 public static partial class BackportClaude
 {
@@ -107,6 +109,7 @@ public static partial class BackportClaude
             """);
         sb.Append(Rules).Append('\n');
         AppendClaudeMd(sb, ctx);
+        AppendPrimer(sb, ctx);
         sb.Append($"Original commit:\n<commit>\n{commitDiff.Trim()}\n</commit>\n\n");
         sb.Append(Answer);
         return sb.ToString();
@@ -129,6 +132,7 @@ public static partial class BackportClaude
             """);
         sb.Append(Rules).Append('\n');
         AppendClaudeMd(sb, ctx);
+        AppendPrimer(sb, ctx);
         sb.Append($"Build output (end):\n<build>\n{buildOutput.Trim()}\n</build>\n\n");
         sb.Append(Answer);
         return sb.ToString();
@@ -148,6 +152,16 @@ public static partial class BackportClaude
                   "part):\n<claude-md>\n");
         sb.Append(md.Trim());
         sb.Append("\n</claude-md>\n\n");
+    }
+
+    private static void AppendPrimer(StringBuilder sb, BackportContext ctx)
+    {
+        if (ctx.Primer is not { } p || p.Text.Trim().Length == 0) return;
+        sb.Append($"Version primer ({p.Name}) – a reference for the API differences between the versions. It describes the way " +
+                  "from the older to the newer version; for a backport read it backwards (new → old). It was generated and can " +
+                  "be wrong or incomplete: the actual code of the target always wins.\n<primer>\n");
+        sb.Append(p.Text.Trim());
+        sb.Append("\n</primer>\n\n");
     }
 
     /// <summary>The decision and the answer without the decision line.</summary>

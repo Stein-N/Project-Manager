@@ -102,6 +102,8 @@ public sealed class MainWindow : Window
                 () => React.Spawn(() => CleanupForm.Show(s))),
             new Separator().Classes("vertical"),
             log,
+            ToolButton("Primer", "upgrade", "Version primer: what changed for mods between two Minecraft versions (separate window)",
+                () => App.Current.OpenPrimer(SelectedVersion())),
             W.Spacer(),
             ToolButton("Settings", "settings", "Master path, IntelliJ, Git, Claude", () => React.Spawn(() => Actions.Settings(s))));
         return new Border
