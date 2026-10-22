@@ -36,7 +36,8 @@ public sealed class PrimerWindow : Window
         MinWidth = 640;
         MinHeight = 360;
         var versions = s.Versions();
-        _versions = new Var<List<string>>(versions.ToList());
+        // until Mojang's list is loaded: the offered versions among the folders
+        _versions = new Var<List<string>>(Primer.OfferedVersions(versions));
         _to.Value = to ?? versions.FirstOrDefault() ?? "";
         // the version folder before the target
         _from.Value = versions.SkipWhile(v => v != _to.Value).Skip(1).FirstOrDefault() ?? "";
