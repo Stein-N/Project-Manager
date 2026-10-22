@@ -41,6 +41,8 @@ public sealed class BackportSession
     private readonly bool _useClaude;
     private string? _baseSha;
     private readonly List<Commit> _ported = [];
+    /// <summary>Sync mode: the source commits the one sync commit stands for (they go into the commit message).</summary>
+    private List<Commit>? _synced;
     /// <summary>Markdown: what the tool and Claude did, per commit.</summary>
     private readonly List<string> _notes = [];
     /// <summary>Commits after the conflict.</summary>
@@ -69,6 +71,31 @@ public sealed class BackportSession
             Backport.Prepare(env.Git, s.Target.Path, s.Work, branch, env.Log);
             s._baseSha = env.Git.Output(s.Work, "rev-parse", "HEAD").Trim();
             s.RunQueue(env, commits);
+        });
+        return (s, error);
+    }
+
+    /// <summary>
+    /// Sync mode: everything the source changed since the newest commit the target already has, as one 3-way merge
+    /// (one cherry-pick of a sync commit). Type rules and <c>[no-backport]</c> markers do not apply – the target gets
+    /// the same code; the "never port" files stay as in the target.
+    /// </summary>
+    public static (BackportSession Session, Exception? Error) StartSync(BackportEnv env, string master, ModProject target, ModProject source,
+        bool sync, bool useClaude)
+    {
+        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude);
+        var error = s.Step(env, () =>
+        {
+            var branch = s.Target.Branch ?? throw new PmException("The target has no branch");
+            var sourceBranch = s.Source.Branch ?? throw new PmException("The source has no branch");
+            Backport.Prepare(env.Git, s.Target.Path, s.Work, branch, env.Log);
+            s._baseSha = env.Git.Output(s.Work, "rev-parse", "HEAD").Trim();
+            var (start, commits) = Backport.SyncRange(env.Git, s.Work, sourceBranch, branch);
+            s._synced = commits;
+            env.Log($"Sync {sourceBranch} → {branch}: {commits.Count} commit(s) since {start[..Math.Min(10, start.Length)]}" +
+                    $"{(useClaude ? " (conflicts with Claude)" : "")}    (work folder {s.Work})");
+            var sha = Backport.SyncCommit(env.Git, s.Work, start, sourceBranch, Backport.SyncMessage(sourceBranch, start, commits));
+            s.RunQueue(env, Commits.Log(env.Git, s.Work, "-1", sha));
         });
         return (s, error);
     }
@@ -191,7 +218,7 @@ public sealed class BackportSession
     public BackportApplied Apply(BackportEnv env)
     {
         if (_baseSha is null) throw new PmException("The work folder is no longer at the target commit – discard and start again.");
-        var message = Backport.CommitMessage(_ported, Source.Branch ?? "?", _versionNote);
+        var message = Backport.CommitMessage(_synced ?? _ported, Source.Branch ?? "?", _versionNote);
         var conflicts = Backport.Apply(env.Git, Work, Target.Path, env.Log);
         env.Log($"✔ Backport applied to {Target.Label} as uncommitted changes{(conflicts.Count == 0 ? "" : $" – conflicts in {string.Join(", ", conflicts)}")}");
         return new BackportApplied(conflicts, message);
@@ -300,6 +327,13 @@ public sealed class BackportSession
         }
         if (_conflict is { } c) Status = $"Conflict in {c.Commit.ShortSha} {c.Commit.Message.Subject} – waiting for it to be resolved";
         else if (error is not null) Status = "Stopped";
+        else if (_synced is { } synced)
+        {
+            env.Log($"✔ Sync ready: {synced.Count} commit(s), {_changes.Count} file(s) – nothing committed");
+            Status = _changes.Count == 0
+                ? "Nothing to apply – already in sync or skipped, see Notes"
+                : $"Synced {synced.Count} commit(s) – review, then apply to {Target.McVersion} (uncommitted)";
+        }
         else
         {
             env.Log($"✔ Backport ready: {_ported.Count} commit(s), {_changes.Count} file(s) – nothing committed");

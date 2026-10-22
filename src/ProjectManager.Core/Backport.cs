@@ -236,6 +236,53 @@ public static partial class Backport
 
     private static List<string> NonEmptyLines(string o) => Util.Lines(o).Where(l => l.Trim().Length > 0).ToList();
 
+    // ---------------------------------------------------------------- sync
+
+    /// <summary>
+    /// Sync mode: the base the target already has everything of, and the source commits after it. The source commits
+    /// that are not in the target are walked oldest first (parents before children); the base moves on while they are
+    /// ported (trailer or same patch) or merge commits. Without any, the base is the merge base of both branches.
+    /// </summary>
+    /// <returns>the base and the commits after it that are not ported yet (no merge commits)</returns>
+    public static (string Base, List<Commit> Commits) SyncRange(Git git, string repo, string source, string target)
+    {
+        var mergeBase = git.Value(repo, "merge-base", target, source)
+                        ?? throw new PmException($"{source} and {target} have no common history – a sync needs one.");
+        var commits = Commits.Log(git, repo, "--reverse", "--topo-order", $"{target}..{source}");
+        var trailers = PortedTrailers(git, repo, target);
+        var samePatch = SamePatch(git, repo, source, target);
+        bool Ported(Commit c) => IsPorted(c.Sha, trailers) || samePatch.Contains(c.Sha);
+        var i = 0;
+        while (i < commits.Count && (commits[i].Merge || Ported(commits[i]))) i++;
+        var start = i == 0 ? mergeBase : commits[i - 1].Sha;
+        return (start, commits.Skip(i).Where(c => !c.Merge && !Ported(c)).ToList());
+    }
+
+    /// <summary>
+    /// A commit object with the tree of <paramref name="source"/> on top of <paramref name="baseSha"/> – no branch points to
+    /// it. Its change is everything the source did since the base, so cherry-picking it is the 3-way merge of the sync.
+    /// </summary>
+    public static string SyncCommit(Git git, string work, string baseSha, string source, string message)
+    {
+        var tree = git.Output(work, "rev-parse", $"{source}^{{tree}}").Trim();
+        return git.Output(work, "-c", "user.name=Project Manager", "-c", "user.email=project-manager@localhost",
+            "commit-tree", tree, "-p", baseSha, "-m", message).Trim();
+    }
+
+    /// <summary>Message of the sync commit: what it is (Claude reads it with the diff) and the source commits in it.</summary>
+    public static string SyncMessage(string sourceName, string baseSha, IReadOnlyList<Commit> commits)
+    {
+        var sb = new StringBuilder($"sync with {sourceName}\n\n");
+        sb.Append($"Everything {sourceName} changed since {baseSha[..Math.Min(10, baseSha.Length)]} (the newest commit the target already has) " +
+                  "as one change – the target gets the same code and features, adapted to its version.\n");
+        if (commits.Count > 0)
+        {
+            sb.Append("\nCommits in it:\n");
+            foreach (var c in commits) sb.Append($"- {c.ShortSha} {c.Message.Header}\n");
+        }
+        return sb.ToString().Trim();
+    }
+
     // ---------------------------------------------------------------- version + changelog
 
     /// <summary>

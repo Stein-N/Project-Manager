@@ -384,6 +384,112 @@ public class BackportSessionTests
     }
 }
 
+public class BackportSyncTests
+{
+    private sealed class Repo : IDisposable
+    {
+        public readonly TempDir Tmp = new();
+        public readonly Git G = T.Git();
+        public string Master => Tmp["master"];
+        public string Main => Path.Combine(Master, "26.3/Mod");
+        public string Target => Path.Combine(Master, "1.20.1/Mod");
+
+        public Repo()
+        {
+            Directory.CreateDirectory(Main);
+            T.Sh(Main, "init", "-q", "-b", "main");
+            T.Write(Main, "gradle.properties", "version=26.3-1.0.0\nminecraft_version=26.3\n");
+            T.Write(Main, "src/A.java", "class A {\n    int a = 1;\n}\n");
+            T.CommitAll(Main, "init");
+            T.Sh(Main, "branch", "1.20.1");
+            T.Sh(Main, "worktree", "add", "-q", Target, "1.20.1");
+            T.Write(Target, "gradle.properties", "version=1.20.1-1.0.0\nminecraft_version=1.20.1\n");
+            // an adaptation only the old version needs
+            T.Write(Target, "src/A.java", "class A {\n    int a = 10;\n}\n");
+            T.CommitAll(Target, "target change");
+        }
+
+        public BackportEnv Env => new() { Git = G, Log = Git.NoLog, Model = "m", Timeout = TimeSpan.FromSeconds(60) };
+
+        public ModProject Project(string v) => Scanner.Scan(Master, G).Projects.First(p => p.McVersion == v);
+
+        public void Dispose() => Tmp.Dispose();
+    }
+
+    [Fact]
+    public void BaseMovesOnWhilePorted()
+    {
+        using var r = new Repo();
+        var mergeBase = T.Sh(r.Main, "rev-parse", "HEAD");
+        T.Write(r.Main, "src/B.java", "class B {}\n");
+        var b = T.CommitAll(r.Main, "feat: b");
+        T.Write(r.Main, "src/C.java", "class C {}\n");
+        var c = T.CommitAll(r.Main, "chore: c [no-backport]");
+
+        var (start, commits) = Backport.SyncRange(r.G, r.Target, "main", "1.20.1");
+        Assert.Equal(mergeBase, start);
+        Assert.Equal(["b", "c"], commits.Select(x => x.Message.Subject));
+
+        T.Sh(r.Target, "cherry-pick", "-x", b);
+        (start, commits) = Backport.SyncRange(r.G, r.Target, "main", "1.20.1");
+        Assert.Equal(b, start);
+        Assert.Equal([c], commits.Select(x => x.Sha));
+    }
+
+    [Fact]
+    public void SyncKeepsAdaptationsAndRecordsTheCommits()
+    {
+        using var r = new Repo();
+        T.Write(r.Main, "src/B.java", "class B {}\n");
+        T.CommitAll(r.Main, "feat: b");
+        T.Write(r.Main, "src/C.java", "class C {}\n");
+        T.Write(r.Main, "gradle.properties", "version=26.3-1.1.0\nminecraft_version=26.3\n");
+        T.CommitAll(r.Main, "chore: c [no-backport: 1.20.1]");
+        var tip = T.Sh(r.Main, "rev-parse", "HEAD");
+
+        var (s, error) = BackportSession.StartSync(r.Env, r.Master, r.Project("1.20.1"), r.Project("26.3"), true, false);
+        Assert.Null(error);
+        var v = s.View();
+        Assert.Null(v.Conflict);
+        Assert.True(v.CanApply);
+        Assert.Equal(["gradle.properties", "src/B.java", "src/C.java"], v.Changes.Select(c => c.Path).Order(StringComparer.Ordinal));
+        Assert.Contains("+version=1.20.1-1.1.0", s.Diff(r.G, "gradle.properties", 'M'));
+
+        var applied = s.Apply(r.Env);
+        Assert.Empty(applied.Conflicts);
+        Assert.StartsWith("backport 2 commits from main", applied.Message);
+        Assert.Equal("class A {\n    int a = 10;\n}\n", File.ReadAllText(Path.Combine(r.Target, "src/A.java")));
+        Assert.Equal("1.20.1", T.Sh(r.Target, "rev-parse", "--abbrev-ref", "HEAD"));
+
+        // after the commit the next sync starts at the source tip
+        T.Sh(r.Target, "commit", "-q", "-m", applied.Message);
+        var (start, commits) = Backport.SyncRange(r.G, r.Target, "main", "1.20.1");
+        Assert.Equal(tip, start);
+        Assert.Empty(commits);
+    }
+
+    [Fact]
+    public void ConflictStopsTheSync()
+    {
+        using var r = new Repo();
+        T.Write(r.Main, "src/A.java", "class A {\n    int a = 2;\n}\n");
+        T.CommitAll(r.Main, "fix: a");
+
+        var env = r.Env;
+        var (s, error) = BackportSession.StartSync(env, r.Master, r.Project("1.20.1"), r.Project("26.3"), false, false);
+        Assert.Null(error);
+        var conflict = s.View().Conflict!;
+        Assert.Equal("sync with main", conflict.Commit.Message.Header);
+        Assert.Equal(["src/A.java"], conflict.Files);
+        Assert.Contains("int a = 2", s.Diff(r.G, "src/A.java", 'U'));
+
+        File.WriteAllText(Path.Combine(s.Work, "src/A.java"), "class A {\n    int a = 20;\n}\n");
+        s.ContinueAfterConflict(env);
+        Assert.True(s.View().CanApply);
+        Assert.Contains("(cherry picked from commit", s.Apply(env).Message);
+    }
+}
+
 public class GitHubTests
 {
     [Fact]

@@ -205,6 +205,22 @@ public sealed partial class Backend
         return ViewOf(BackportSlot(target));
     });
 
+    /// <summary>Brings <paramref name="target"/> to the state of <paramref name="source"/>: all changes since the last sync as one step.</summary>
+    public Task<BackportView> BackportSync(string target, string source, bool sync, bool useClaude) => Run(() =>
+    {
+        var t = Project(target);
+        var s = Project(source);
+        var master = Master();
+        Step(target, "Syncing… (first time: a full checkout)", useClaude, (slot, env) =>
+        {
+            var (session, error) = BackportSession.StartSync(env, master, t, s, sync, useClaude);
+            slot.Session = session;
+            if (error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+            return true;
+        });
+        return ViewOf(BackportSlot(target));
+    });
+
     public Task<BackportView> BackportContinue(string target) => Run(() =>
     {
         Step(target, "Continuing…", false, (slot, env) =>

@@ -101,18 +101,31 @@ public static class BackportTab
 
         List<Commit> Selected() => rows.Value.AsEnumerable().Reverse().Where(r => r.On.Value).Select(r => r.Candidate.Commit).ToList();
 
+        async Task<bool> MayStartAgain()
+        {
+            var v = view.Value;
+            return !(v.Active && (v.Ported > 0 || v.Changes.Count > 0)) ||
+                   await s.Dialogs.Confirm("Backport", "Discard the current backport result and start again?", "Start again");
+        }
+
         async Task Port()
         {
             var commits = Selected();
             var src = source.Value;
-            if (commits.Count == 0 || src.Length == 0) return;
-            var v = view.Value;
-            if (v.Active && (v.Ported > 0 || v.Changes.Count > 0) &&
-                !await s.Dialogs.Confirm("Backport", "Discard the current backport result and start again?", "Start again"))
-                return;
+            if (commits.Count == 0 || src.Length == 0 || !await MayStartAgain()) return;
             var claude = useClaude.Value;
             RunStep("Preparing the work folder and porting… (first time: a full checkout)", claude,
                 () => s.Api.BackportStart(target, src, commits, sync.Value, claude));
+        }
+
+        // everything since the last sync as one step: same code and features, no type rules or markers
+        async Task SyncAll()
+        {
+            var src = source.Value;
+            if (src.Length == 0 || !await MayStartAgain()) return;
+            var claude = useClaude.Value;
+            RunStep("Preparing the work folder and syncing… (first time: a full checkout)", claude,
+                () => s.Api.BackportSync(target, src, sync.Value, claude));
         }
 
         bool Busy() => working.Value is not null || view.Value.Busy;
@@ -157,12 +170,16 @@ public static class BackportTab
         var anySelected = new Derived<bool>(() => rows.Value.Any(r => r.On.Value), rows, selectionChanged);
         var portButton = W.Btn("Port selected", () => React.Spawn(Port), primary: true)
             .EnabledWhen(() => !Busy() && !Waiting() && anySelected.Value, working, view, anySelected);
+        var syncButton = W.Btn("Sync all", () => React.Spawn(SyncAll),
+                title: "Everything the source changed since the last sync as one change (3-way): same code and features, " +
+                       "type rules and [no-backport] markers do not apply; versions, CI, generated data and changelogs stay as here")
+            .EnabledWhen(() => !Busy() && !Waiting() && source.Value.Length > 0, working, view, source);
         var commitsView = W.Rows(8,
             (W.Inline(W.Btn("Select portable", () => SelectPortable(true), flat: true,
                     title: "Select every commit that is not filtered, marked or already ported"),
                 W.Btn("None", () => SelectPortable(false), flat: true), W.Spacer(), count), false),
             (table.View, true),
-            (W.Inline(portButton, W.Stack(0,
+            (W.Inline(portButton, syncButton, W.Stack(0,
                 W.Check("Take over version and CHANGELOG.md", sync,
                     "Sets the mod part of the version to the one of the source (the Minecraft part stays) and takes over its CHANGELOG.md; the older entry moves to CHANGELOG_FULL.md"),
                 W.Check("Resolve conflicts with Claude", useClaude,
@@ -306,7 +323,7 @@ public static class BackportTab
         var status = W.Wrapped("");
         status.Watch(() =>
         {
-            status.Text = view.Value.Status.Length == 0 ? "Select commits and click “Port selected”." : view.Value.Status;
+            status.Text = view.Value.Status.Length == 0 ? "Select commits and click “Port selected”, or “Sync all”." : view.Value.Status;
             status.Classes.Set("warn", view.Value.BuildFailed);
         }, view);
 
