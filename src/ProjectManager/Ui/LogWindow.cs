@@ -102,7 +102,8 @@ public sealed class LogWindow : Window
         _list.ContextMenu = new ContextMenu { ItemsSource = new[] { copySelected, copyAll } };
 
         var bar = W.Inline(W.Heading("Log"), W.Spacer(), W.Btn("Copy all", Copy, flat: true),
-            W.Btn("Clear", Clear, icon: "cleanup", flat: true));
+            W.Btn("Open log folder", OpenFolder, icon: "folder", flat: true, title: $"One file per day: {api.LogDir}"),
+            W.Btn("Clear", Clear, icon: "cleanup", flat: true, title: "Empties this window (the log files stay)"));
         bar.Margin = new Thickness(12, 0, 8, 0);
         Content = W.Rows(0, (bar, false), (W.Bordered(_list, "Panel").Margin(8, 0, 8, 8), true));
         Add(api.LogHistory());
@@ -166,6 +167,12 @@ public sealed class LogWindow : Window
     }
 
     private void Copy() => Clipboard?.SetTextAsync(TextOf(_rows));
+
+    private void OpenFolder()
+    {
+        Directory.CreateDirectory(_api.LogDir);
+        _ = _api.OpenPath(_api.LogDir);
+    }
 
     private void Clear()
     {

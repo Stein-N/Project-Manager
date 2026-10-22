@@ -86,6 +86,9 @@ public sealed class Config
 
     public int AutoFetchMinutes => Int("autoFetchMinutes", 10);
 
+    /// <summary>Days the log files are kept (today included).</summary>
+    public int LogKeepDays => Math.Max(1, Int("logKeepDays", 14));
+
     public bool MinimizeToTray => Bool("minimizeToTray", true);
 
     public bool Autostart => Bool("autostart", false);
@@ -122,6 +125,7 @@ public sealed class Config
         Idea = Idea,
         Git = Git,
         AutoFetchMinutes = AutoFetchMinutes,
+        LogKeepDays = LogKeepDays,
         MinimizeToTray = MinimizeToTray,
         Autostart = Autostart,
         CheckUpdates = CheckUpdates,
@@ -140,6 +144,7 @@ public sealed class Config
         SetIdea(s.Idea);
         SetString("git", s.Git.Trim() == "git" ? "" : s.Git);
         Props["autoFetchMinutes"] = s.AutoFetchMinutes.ToString(CultureInfo.InvariantCulture);
+        Props["logKeepDays"] = Math.Max(1, s.LogKeepDays).ToString(CultureInfo.InvariantCulture);
         Props["minimizeToTray"] = s.MinimizeToTray ? "true" : "false";
         SetAutostart(s.Autostart);
         Props["checkUpdates"] = s.CheckUpdates ? "true" : "false";

@@ -19,6 +19,7 @@ public static class SettingsForm
         var idea = new Var<string>(initial.Idea ?? "");
         var git = new Var<string>(initial.Git);
         var fetch = new Var<string>(initial.AutoFetchMinutes.ToString(CultureInfo.InvariantCulture));
+        var logDays = new Var<string>(initial.LogKeepDays.ToString(CultureInfo.InvariantCulture));
         var tray = new Var<bool>(initial.MinimizeToTray);
         var autostart = new Var<bool>(initial.Autostart);
         var updates = new Var<bool>(initial.CheckUpdates);
@@ -54,6 +55,7 @@ public static class SettingsForm
                 Idea = OptPath(idea.Value),
                 Git = git.Value.Trim(),
                 AutoFetchMinutes = (int)Number(fetch, 10),
+                LogKeepDays = Math.Max(1, (int)Number(logDays, 14)),
                 MinimizeToTray = tray.Value,
                 Autostart = autostart.Value,
                 CheckUpdates = updates.Value,
@@ -79,6 +81,7 @@ public static class SettingsForm
             .Row("IntelliJ launcher", W.Inline(W.Grow(W.Input(idea)), W.Btn("Detect", DetectIdea)))
             .Row("Git executable", W.Input(git))
             .Row("Auto-fetch every", W.Inline(Num(fetch), W.Muted("minutes (0 = off)"), W.Spacer()))
+            .Row("Keep log files", W.Inline(Num(logDays), W.Muted("days (one file per day, older ones are deleted on start)"), W.Spacer()))
             .Row("", W.Check("Minimize to system tray", tray,
                 "The close button hides the window in the tray; without it, the close button exits the Project Manager"))
             .Row("", W.Check("Start minimized with the system", autostart))

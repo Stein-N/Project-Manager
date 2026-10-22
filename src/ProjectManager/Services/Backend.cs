@@ -64,7 +64,17 @@ public sealed partial class Backend
     {
         _config = config;
         Git = new Git(config.Git);
+        // today's log of earlier runs, then a line that marks this start
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        _logFiles.CleanUp(today, config.LogKeepDays);
+        foreach (var line in _logFiles.Load(today, MaxLogChars)) Remember(line);
+        Log("── started ──");
     }
+
+    private readonly LogFiles _logFiles = new(LogFiles.DefaultDir);
+
+    /// <summary>Folder of the log files (one per day).</summary>
+    public string LogDir => _logFiles.Dir;
 
     public Config Config()
     {
@@ -161,7 +171,16 @@ public sealed partial class Backend
     /// <summary>A line in the log window.</summary>
     public void Log(string text)
     {
-        var line = new LogLine(DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture), text);
+        var now = DateTime.Now;
+        var line = new LogLine(now.ToString("HH:mm:ss", CultureInfo.InvariantCulture), text);
+        Remember(line);
+        _logFiles.Append(DateOnly.FromDateTime(now), line);
+        LogAdded?.Invoke(line);
+    }
+
+    /// <summary>Keeps a line for the log window (the newest <see cref="MaxLogChars"/> characters).</summary>
+    private void Remember(LogLine line)
+    {
         lock (_log)
         {
             _logChars += line.Text.Length;
@@ -172,7 +191,6 @@ public sealed partial class Backend
                 _log.RemoveFirst();
             }
         }
-        LogAdded?.Invoke(line);
     }
 
     /// <summary>Output of a command, indented below the line that started it.</summary>

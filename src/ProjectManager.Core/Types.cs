@@ -119,6 +119,7 @@ public sealed record Settings
     public string? Idea { get; set; }
     public string Git { get; set; } = "";
     public int AutoFetchMinutes { get; set; }
+    public int LogKeepDays { get; set; } = 14;
     public bool MinimizeToTray { get; set; }
     public bool Autostart { get; set; }
     public bool CheckUpdates { get; set; }
