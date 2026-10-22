@@ -36,10 +36,13 @@ public static partial class Primer
     private const int MaxChunkChars = 200_000;
     private const int MaxPortChars = 60_000;
 
+    /// <summary>The oldest version the primer window offers (any version can still be typed in).</summary>
+    public const string FirstOffered = "1.21.1";
+
     /// <summary>Upper limit for the part of a primer a backport prompt gets.</summary>
     public const int MaxBackportChars = 30_000;
 
-    private const string VersionManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    public const string VersionManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     private const string PatchNotes = "https://launchercontent.mojang.com/v2/javaPatchNotes.json";
     private const string PatchNotesBase = "https://launchercontent.mojang.com/v2/";
     private const string NeoPrimers = "https://raw.githubusercontent.com/neoforged/.github/main/primers/";
@@ -140,15 +143,26 @@ public static partial class Primer
     /// <summary>The Minecraft releases after <paramref name="from"/> up to <paramref name="to"/>, oldest first.</summary>
     public static List<string> Releases(string manifestJson, string from, string to)
     {
-        if (JsonNode.Parse(manifestJson)?["versions"] is not JsonArray versions) throw new PmException("Unexpected Minecraft version manifest");
-        var list = versions
-            .Where(v => Str(v, "type") == "release")
-            .Select(v => Str(v, "id"))
-            .OfType<string>()
-            .Where(v => InRange(v, from, to))
-            .ToList();
+        var list = AllReleases(manifestJson).Where(v => InRange(v, from, to)).ToList();
         list.Sort(Versions.Compare);
         return list;
+    }
+
+    /// <summary>
+    /// What the primer window offers: every release since <see cref="FirstOffered"/> plus the version folders (also
+    /// older ones), newest first.
+    /// </summary>
+    public static List<string> OfferedVersions(string manifestJson, IEnumerable<string> folders)
+    {
+        var list = AllReleases(manifestJson).Where(v => Versions.Compare(v, FirstOffered) >= 0).Union(folders).ToList();
+        Versions.SortDesc(list);
+        return list;
+    }
+
+    private static List<string> AllReleases(string manifestJson)
+    {
+        if (JsonNode.Parse(manifestJson)?["versions"] is not JsonArray versions) throw new PmException("Unexpected Minecraft version manifest");
+        return versions.Where(v => Str(v, "type") == "release").Select(v => Str(v, "id")).OfType<string>().ToList();
     }
 
     private static string? Str(JsonNode? node, string key) => node?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;

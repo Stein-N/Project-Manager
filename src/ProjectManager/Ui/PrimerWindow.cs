@@ -24,6 +24,8 @@ public sealed class PrimerWindow : Window
     private readonly Var<PrimerFile?> _selected = new(null);
     private readonly Var<string> _text = new("");
     private readonly Var<string> _section = new(All);
+    /// <summary>Releases since 1.21.1 and the version folders.</summary>
+    private readonly Var<List<string>> _versions;
 
     public PrimerWindow(Store s, string? to)
     {
@@ -34,6 +36,7 @@ public sealed class PrimerWindow : Window
         MinWidth = 640;
         MinHeight = 360;
         var versions = s.Versions();
+        _versions = new Var<List<string>>(versions.ToList());
         _to.Value = to ?? versions.FirstOrDefault() ?? "";
         // the version folder before the target
         _from.Value = versions.SkipWhile(v => v != _to.Value).Skip(1).FirstOrDefault() ?? "";
@@ -52,6 +55,16 @@ public sealed class PrimerWindow : Window
         PreselectLoaders();
         _selected.Changed += LoadText;
         Reload();
+        React.Spawn(async () =>
+        {
+            try
+            {
+                _versions.Value = await _s.Api.PrimerVersions();
+            }
+            catch (Exception)
+            {
+            }
+        });
     }
 
     /// <summary>Shows the primer for the step to <paramref name="to"/> or prepares a new one for it.</summary>
@@ -67,10 +80,10 @@ public sealed class PrimerWindow : Window
 
     private Control NewPrimer()
     {
-        var versions = () => _s.Versions().AsEnumerable();
+        var versions = () => _versions.Value.AsEnumerable();
         var form = new W.Form()
-            .Row("From", W.Combo(_from, versions, [_s.ScanResult], "e.g. 1.21.1"))
-            .Row("To", W.Combo(_to, versions, [_s.ScanResult], "e.g. 1.21.4"));
+            .Row("From", W.Combo(_from, versions, [_versions], "e.g. 1.21.1"))
+            .Row("To", W.Combo(_to, versions, [_versions], "e.g. 1.21.4"));
         var loaders = W.Stack(2, [W.Check("Vanilla (always)", new Var<bool>(true)).Also(c => c.IsEnabled = false),
             .. _loaders.Select(l => (Control)W.Check(l.Loader, l.On))]);
         var ports = W.Check("Include my own ports", _ports,

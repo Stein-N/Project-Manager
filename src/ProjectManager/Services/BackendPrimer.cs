@@ -10,7 +10,29 @@ public sealed partial class Backend
     private volatile bool _primerCancelled;
     private int _primerRunning;
 
+    /// <summary>Mojang's version manifest, loaded once per start.</summary>
+    private string? _primerManifest;
+
     public Task<List<PrimerFile>> Primers() => Run(() => Primer.List(Master()));
+
+    /// <summary>Every Minecraft release since 1.21.1 plus the version folders; only the folders when Mojang cannot be reached.</summary>
+    public Task<List<string>> PrimerVersions() => Run(() =>
+    {
+        var folders = Scan.Versions;
+        if (_primerManifest is { } cached) return Primer.OfferedVersions(cached, folders);
+        try
+        {
+            var manifest = Http.GetOk(Primer.VersionManifest);
+            var offered = Primer.OfferedVersions(manifest, folders);
+            _primerManifest = manifest;
+            return offered;
+        }
+        catch (PmException e)
+        {
+            Log($"⚠ Minecraft version list: {e.Message}");
+            return folders.ToList();
+        }
+    });
 
     public Task<string> PrimerText(string path) => Run(() => Util.ReadOrEmpty(path));
 

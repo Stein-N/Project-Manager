@@ -76,6 +76,7 @@ public class PrimerTests
     public void ReleasesAndPrimerSteps()
     {
         Assert.Equal(["1.21.2", "1.21.3", "1.21.4"], Primer.Releases(Manifest, "1.21.1", "1.21.4"));
+        Assert.Equal(["1.21.5", "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.20.1"], Primer.OfferedVersions(Manifest, ["1.20.1", "1.21.4"]));
         var steps = Primer.NeoForgedSteps(Readme);
         Assert.Equal(6, steps.Count);
         Assert.Equal(new Primer.PrimerStep("1.19.2", "1.19.3", "1.19.2 -> 1.19.3: Forge Changes", "1.19.3/forge.md", "Forge"), steps[1]);
