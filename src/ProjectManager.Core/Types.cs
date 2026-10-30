@@ -632,7 +632,12 @@ public sealed record GithubRepo(
     bool Private,
     bool Fork,
     bool Archived,
-    string? PushedAt);
+    string? PushedAt,
+    string? SshUrl = null)
+{
+    /// <summary>The URL to clone with: always SSH, so pushes use the SSH key.</summary>
+    public string PreferredUrl => string.IsNullOrWhiteSpace(SshUrl) ? Ssh.ToSshUrl(CloneUrl) : SshUrl;
+}
 
 /// <param name="DownloadUrl">The release's file for this installation.</param>
 public sealed record Release(string Version, string Name, string? PageUrl, string? DownloadUrl, string? FileName, string? Notes);

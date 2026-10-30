@@ -155,6 +155,21 @@ public sealed partial class Backend
         return failed;
     });
 
+    /// <summary>Sets <c>origin</c> of every clone and shared repository with a GitHub HTTPS URL to the SSH URL; returns the failures.</summary>
+    public Task<List<string>> RemotesToSsh() => Run(() =>
+    {
+        var log = SubLogger();
+        var failed = new List<string>();
+        foreach (var (path, label, url) in Ssh.HttpsRemotes(Scan))
+        {
+            var o = Git.RunLogged(path, log, "remote", "set-url", "origin", url);
+            log(o.Ok ? $"✔ {label}: origin → {url}" : $"✖ {label}: {o.Text}");
+            if (!o.Ok) failed.Add($"{label}: {o.Text.Split('\n')[0]}");
+        }
+        Log(failed.Count == 0 ? "✔ All remotes use SSH" : "✖ Not all remotes switched");
+        return failed;
+    });
+
     /// <summary><c>git worktree prune</c> in every repository; returns how many were cleaned up.</summary>
     public Task<int> PruneAll() => Run(() =>
     {

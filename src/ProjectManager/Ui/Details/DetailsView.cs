@@ -133,8 +133,17 @@ public static class DetailsView
             W.SetLabel(convert, $"Convert all clones ({Clones()})…");
             convert.IsEnabled = Clones() > 0;
         }, s.ScanResult);
+        var ssh = W.Btn("Switch remotes to SSH…", () => React.Spawn(() => Actions.RemotesToSsh(s)), icon: "push",
+            title: "Set origin of clones with a GitHub HTTPS URL to the SSH URL, so pushes use your SSH key");
+        ssh.Watch(() =>
+        {
+            var n = Ssh.HttpsRemotes(s.ScanResult.Value).Count;
+            W.SetLabel(ssh, $"Switch remotes to SSH ({n})…");
+            ssh.IsEnabled = n > 0;
+        }, s.ScanResult);
         var grid = W.Grid2(
             convert,
+            ssh,
             W.Btn("Clean up stale worktree entries", () => React.Spawn(() => Actions.PruneAll(s)), icon: "cleanup",
                 title: "git worktree prune – removes entries of worktrees whose folder was deleted"),
             W.Btn("Clean up Gradle caches…", () => React.Spawn(() => CleanupForm.Show(s)), icon: "cleanup"));

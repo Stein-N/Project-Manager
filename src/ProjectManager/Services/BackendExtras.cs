@@ -121,6 +121,18 @@ public sealed partial class Backend
     /// <summary>Whether a GitHub token is set (the clone dialog explains how to get one otherwise).</summary>
     public Task<bool> HasGithubToken() => Run(() => GithubToken().Length > 0);
 
+    /// <summary>Whether an SSH key exists (repositories are cloned over SSH).</summary>
+    public Task<bool> HasSshKey() => Run(() => Ssh.HasKey(Util.Home));
+
+    /// <summary>Creates an SSH key; the public key is returned.</summary>
+    public Task<string> GenerateSshKey() => Run(() =>
+    {
+        var email = Git.Value(Util.Home, "config", "--get", "user.email");
+        var key = Ssh.Generate(Util.Home, email ?? $"{Environment.UserName}@project-manager");
+        Log("SSH key created: ~/.ssh/id_ed25519");
+        return key;
+    });
+
     public Task<List<GithubRepo>> GithubRepos() => Run(() => GitHub.FetchAll(GithubToken()));
 
     /// <summary>Checks which repositories are mods; progress arrives as GitHub events.</summary>

@@ -15,6 +15,23 @@ public static class CloneForm
         return last.EndsWith(".git") ? last[..^4] : last;
     }
 
+    /// <summary>Repositories are cloned over SSH: without a key the user can create one here.</summary>
+    private static async Task EnsureSshKey(Store s)
+    {
+        if (await s.Api.HasSshKey()) return;
+        var choice = await s.Dialogs.Choose("No SSH key found",
+            "Projects are cloned over SSH, so pushes work with your SSH key. There is no key in <code>~/.ssh</code> on this system." +
+            "<br><br>Create a new key (ed25519, no passphrase) now? You then add its public key to your GitHub account.",
+            "Create key", "Later");
+        if (choice != 0) return;
+        var key = await s.Bg("Creating SSH key…", s.Api.GenerateSshKey());
+        if (!key.Ok) return;
+        await s.Dialogs.Message("SSH key created",
+            "Add this public key to GitHub under <b>Settings → SSH and GPG keys → New SSH key</b> " +
+            "(<code>https://github.com/settings/ssh/new</code>); until then cloning and pushing will be refused:" +
+            $"<br><br><code>{Rich.Html(key.Value)}</code>");
+    }
+
     public static Task<Maybe<CloneRequest>> Show(Store s, string? presetUrl, string? presetName, string? presetVersion) =>
         s.Dialogs.Open<CloneRequest>("Clone project", 640, null, done =>
         {
@@ -51,6 +68,7 @@ public static class CloneForm
                 });
             }
             version.Changed += UpdateTarget;
+            React.Spawn(() => EnsureSshKey(s));
             name.Changed += UpdateTarget;
             void Suggest()
             {
@@ -60,8 +78,9 @@ public static class CloneForm
             version.Changed += Suggest;
             void Load()
             {
-                var u = url.Value.Trim();
+                var u = Ssh.ToSshUrl(url.Value);
                 if (u.Length == 0) return;
+                url.Value = u;
                 loading.Value = true;
                 info.Value = ("Loading branches…", false);
                 React.Spawn(async () =>
@@ -101,7 +120,7 @@ public static class CloneForm
                 var repo = await Github(s);
                 if (!repo.Ok) return;
                 nameEdited = false;
-                url.Value = repo.Value.CloneUrl;
+                url.Value = repo.Value.PreferredUrl;
                 Load();
             });
             string RepoText() => worktree.Value && target.Value is { } t
@@ -117,7 +136,7 @@ public static class CloneForm
                     React.Spawn(() => s.Dialogs.Message("Branch missing", "Please select or enter a branch."));
                     return;
                 }
-                done.Resolve(new CloneRequest(url.Value.Trim(), b, version.Value.Trim(), name.Value.Trim(), worktree.Value));
+                done.Resolve(new CloneRequest(Ssh.ToSshUrl(url.Value), b, version.Value.Trim(), name.Value.Trim(), worktree.Value));
             }
 
             var nameInput = W.Input(name);
@@ -126,7 +145,7 @@ public static class CloneForm
                 if (nameInput.IsFocused) nameEdited = true;
             };
             var form = new W.Form()
-                .Row("Git URL", W.Inline(W.Grow(W.Input(url, "https://github.com/user/mod.git")), W.Btn("Browse GitHub…", Browse),
+                .Row("Git URL", W.Inline(W.Grow(W.Input(url, "git@github.com:user/mod.git")), W.Btn("Browse GitHub…", Browse),
                     W.Btn("Load branches", Load).EnabledWhen(() => !loading.Value, loading)))
                 .Row("Minecraft version", W.Combo(version, s.Versions, [s.ScanResult], "Existing version folder or a new one"))
                 .Row("Branch", W.Combo(branch, () => branches.Value, [branches]))

@@ -364,6 +364,13 @@ public static class Worktrees
     private static string NormalizeUrl(string url)
     {
         var u = url.Trim().Replace('\\', '/').ToLowerInvariant().TrimEnd('/');
+        // git@host:owner/repo and ssh://git@host/owner/repo name the same repository as https://host/owner/repo
+        if (u.StartsWith("ssh://")) u = u[6..];
+        if (u.StartsWith("https://")) u = u[8..];
+        else if (u.StartsWith("http://")) u = u[7..];
+        var at = u.IndexOf('@');
+        if (at >= 0 && at < u.IndexOfAny(['/', ':'])) u = u[(at + 1)..];
+        u = u.Replace(':', '/');
         return u.EndsWith(".git") ? u[..^4] : u;
     }
 }

@@ -407,6 +407,29 @@ public static class Actions
         await s.Rescan();
     }
 
+    public static async Task RemotesToSsh(Store s)
+    {
+        var n = Ssh.HttpsRemotes(s.ScanResult.Value).Count;
+        if (n == 0)
+        {
+            await s.Dialogs.Message("Switch to SSH", "All remotes already use SSH.");
+            return;
+        }
+        if (!await s.Api.HasSshKey() &&
+            !await s.Dialogs.Confirm("No SSH key found",
+                "There is no SSH key in <code>~/.ssh</code>; pushes will fail until you create one and add it to GitHub " +
+                "(the Clone dialog can create it).<br><br>Switch the remotes anyway?", "Switch"))
+            return;
+        if (!await s.Dialogs.Confirm("Switch to SSH",
+                $"Change <code>origin</code> of {n} repository(ies) from <code>https://github.com/…</code> to <code>git@github.com:…</code>?<br>" +
+                "Worktrees follow their repository.", "Switch"))
+            return;
+        var failed = await s.Bg($"Switching {n} remote(s)…", s.Api.RemotesToSsh());
+        if (!failed.Ok) return;
+        if (failed.Value.Count > 0) await s.Error("Not all switched", $"{string.Join("\n\n", failed.Value)}\n\nSee the log for details.");
+        await s.Rescan();
+    }
+
     public static async Task PruneAll(Store s)
     {
         if ((await s.Bg("Cleaning up…", s.Api.PruneAll())).Ok) await s.Rescan();

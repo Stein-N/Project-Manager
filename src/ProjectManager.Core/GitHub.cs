@@ -150,6 +150,7 @@ public static partial class GitHub
             B(o?["private"]),
             B(o?["fork"]),
             B(o?["archived"]),
-            S(o?["pushed_at"]))).ToList();
+            S(o?["pushed_at"]),
+            S(o?["ssh_url"]))).ToList();
     }
 }

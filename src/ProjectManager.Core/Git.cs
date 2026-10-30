@@ -38,6 +38,10 @@ public sealed class Git(string executable)
         var start = Proc.Command(_executable, args, dir);
         // never wait for a password prompt in the (non-existent) terminal
         start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        // ssh has no terminal either: trust github.com on first contact, never wait for a passphrase or host key question
+        if (Environment.GetEnvironmentVariable("GIT_SSH_COMMAND") is not { Length: > 0 } &&
+            Environment.GetEnvironmentVariable("GIT_SSH") is not { Length: > 0 })
+            start.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new";
         var text = new System.Text.StringBuilder();
         try
         {
