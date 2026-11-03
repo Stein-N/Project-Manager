@@ -373,6 +373,8 @@ public sealed record BackportView
     public bool BuildFailed { get; init; }
     /// <summary>The work folder is still at the target commit (nothing was committed).</summary>
     public bool CanApply { get; init; }
+    /// <summary>The whole source was taken over 1:1; Claude adapts it to this version as a whole.</summary>
+    public bool TakeOver { get; init; }
 }
 
 /// <summary>Result of applying a backport to the target.</summary>

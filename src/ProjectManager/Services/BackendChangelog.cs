@@ -233,6 +233,37 @@ public sealed partial class Backend
         return ViewOf(BackportSlot(target));
     });
 
+    /// <summary>Takes over the whole code of <paramref name="source"/> 1:1; Claude then adapts it to the target's version.</summary>
+    public Task<BackportView> BackportTakeOver(string target, string source, bool sync, bool useClaude, bool usePrimer) => Run(() =>
+    {
+        var t = Project(target);
+        var s = Project(source);
+        var master = Master();
+        var primer = usePrimer ? PrimerFor(master, t, s) : null;
+        var label = useClaude ? "Taking over and adapting with Claude… (output in the log window)" : "Taking over… (first time: a full checkout)";
+        Step(target, label, useClaude, (slot, env) =>
+        {
+            var (session, error) = BackportSession.StartTakeOver(env, master, t, s, sync, useClaude, primer);
+            slot.Session = session;
+            if (error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+            return true;
+        });
+        return ViewOf(BackportSlot(target));
+    });
+
+    /// <summary>Claude adapts the taken-over code to the target's version (again: goes on where it stopped).</summary>
+    public Task<BackportView> BackportAdapt(string target) => Run(() =>
+    {
+        var slot = BackportSlot(target);
+        if (slot.Building) throw new PmException("The build is still running.");
+        Step(target, "Claude is adapting the code… (output in the log window)", true, (s, env) =>
+        {
+            Active(s).AdaptWithClaude(env);
+            return true;
+        });
+        return ViewOf(slot);
+    });
+
     public Task<BackportView> BackportContinue(string target) => Run(() =>
     {
         Step(target, "Continuing…", false, (slot, env) =>

@@ -259,6 +259,8 @@ public class BackportTests
         Assert.Equal("backport 2 commits from main\n\n- fix(net): sync\n- feat: thing\n- version 1.1.0 and its changelog\n\n" +
                      "(cherry picked from commit aaaaaaa1111)\n(cherry picked from commit bbbbbbb2222)",
             Backport.CommitMessage([a, b], "main", "version 1.1.0 and its changelog"));
+        Assert.Equal("take over main 1:1\n\n- fix(net): sync\n\n(cherry picked from commit aaaaaaa1111)",
+            Backport.CommitMessage([a], "main", null, Backport.TakeOverHeader("main")));
     }
 }
 
@@ -487,6 +489,186 @@ public class BackportSyncTests
         s.ContinueAfterConflict(env);
         Assert.True(s.View().CanApply);
         Assert.Contains("(cherry picked from commit", s.Apply(env).Message);
+    }
+}
+
+public class BackportTakeOverTests
+{
+    private sealed class Repo : IDisposable
+    {
+        public readonly TempDir Tmp = new();
+        public readonly Git G = T.Git();
+        public string Master => Tmp["master"];
+        public string Main => Path.Combine(Master, "26.3/Mod");
+        public string Target => Path.Combine(Master, "1.20.1/Mod");
+
+        /// <param name="orphan">the target branch shares no history with main</param>
+        public Repo(bool orphan = false)
+        {
+            Directory.CreateDirectory(Main);
+            T.Sh(Main, "init", "-q", "-b", "main");
+            T.Write(Main, "gradle.properties", "version=26.3-1.0.0\nminecraft_version=26.3\n");
+            T.Write(Main, "src/A.java", "class A {\n    int a = 1;\n}\n");
+            T.Write(Main, "src/generated/resources/data.json", "{\"v\": 26}\n");
+            T.Write(Main, ".github/workflows/build.yml", "java: 25\n");
+            T.CommitAll(Main, "init");
+            T.Sh(Main, "branch", "1.20.1");
+            T.Sh(Main, "worktree", "add", "-q", Target, "1.20.1");
+            if (orphan)
+            {
+                T.Sh(Target, "checkout", "-q", "--orphan", "tmp");
+                T.Sh(Target, "rm", "-q", "-r", "-f", ".");
+            }
+            T.Write(Target, "gradle.properties", "version=1.20.1-1.0.0\nminecraft_version=1.20.1\n");
+            T.Write(Target, "src/A.java", "class A {\n    int a = 10;\n}\n");
+            T.Write(Target, "src/Compat.java", "class Compat {}\n");
+            T.Write(Target, "src/generated/resources/data.json", "{\"v\": 20}\n");
+            T.Write(Target, ".github/workflows/build.yml", "java: 17\n");
+            T.CommitAll(Target, "target setup");
+            if (orphan) T.Sh(Target, "branch", "-M", "1.20.1");
+        }
+
+        /// <summary>A rewrite in main: A goes, New comes, the version and the generated data change.</summary>
+        public string Rewrite()
+        {
+            T.Sh(Main, "rm", "-q", "src/A.java");
+            T.Write(Main, "src/New.java", "class New {\n    int n = 1;\n}\n");
+            T.CommitAll(Main, "refactor!: rewrite");
+            T.Write(Main, "gradle.properties", "version=26.3-2.0.0\nminecraft_version=26.3\n");
+            T.Write(Main, "src/generated/resources/data.json", "{\"v\": 27}\n");
+            T.Write(Main, "src/generated/resources/more.json", "{}\n");
+            T.Write(Main, ".github/workflows/build.yml", "java: 26\n");
+            return T.CommitAll(Main, "chore: release 2.0.0 [no-backport]");
+        }
+
+        public BackportEnv Env(string? claude = null) =>
+            new() { Git = G, Log = Git.NoLog, Claude = claude, Model = "m", Timeout = TimeSpan.FromSeconds(60) };
+
+        public ModProject Project(string v) => Scanner.Scan(Master, G).Projects.First(p => p.McVersion == v);
+
+        public void Dispose() => Tmp.Dispose();
+    }
+
+    [Fact]
+    public void TakesOverTheSourceTreeAndKeepsTheVersionFiles()
+    {
+        using var r = new Repo();
+        var tip = r.Rewrite();
+
+        var (s, error) = BackportSession.StartTakeOver(r.Env(), r.Master, r.Project("1.20.1"), r.Project("26.3"), true, false);
+        Assert.Null(error);
+        var v = s.View();
+        Assert.True(v.TakeOver);
+        Assert.Null(v.Conflict);
+        Assert.True(v.CanApply);
+        Assert.StartsWith("Taken over 1:1 – let Claude adapt it to 1.20.1", v.Status);
+        // 1:1: the target's adaptation and its own file are gone, the source's new file is there
+        Assert.Equal(["M gradle.properties", "D src/A.java", "D src/Compat.java", "A src/New.java"], v.Changes.OrderBy(c => c.Path, StringComparer.Ordinal).Select(c => $"{c.Status} {c.Path}"));
+        Assert.Contains("+version=1.20.1-2.0.0", s.Diff(r.G, "gradle.properties", 'M'));
+        Assert.Contains("generated data changed in the source (2 file(s) under src/generated/", v.Notes);
+        Assert.Contains("kept as in the target: `.github/workflows/build.yml`", v.Notes);
+
+        var applied = s.Apply(r.Env());
+        Assert.Empty(applied.Conflicts);
+        Assert.StartsWith("take over main 1:1\n\n- refactor!: rewrite\n- chore: release 2.0.0\n- version 2.0.0", applied.Message);
+        Assert.Equal(2, applied.Message.Split("(cherry picked from commit ").Length - 1);
+        Assert.False(File.Exists(Path.Combine(r.Target, "src/A.java")));
+        Assert.False(File.Exists(Path.Combine(r.Target, "src/Compat.java")));
+        Assert.Equal("class New {\n    int n = 1;\n}\n", T.Read(r.Target, "src/New.java"));
+        Assert.Equal("{\"v\": 20}\n", T.Read(r.Target, "src/generated/resources/data.json"));
+        Assert.Equal("java: 17\n", T.Read(r.Target, ".github/workflows/build.yml"));
+
+        // after the commit the target has everything: nothing to port, the next sync starts at the source tip
+        T.Sh(r.Target, "commit", "-q", "-m", applied.Message);
+        Assert.Empty(Backport.TakeOverCommits(r.G, r.Target, "main", "1.20.1"));
+        Assert.Equal(tip, Backport.SyncRange(r.G, r.Target, "main", "1.20.1").Base);
+        Assert.All(Backport.Candidates(r.G, r.Target, "main", "1.20.1", null, ["1.20.1"], []),
+            c => Assert.Equal(CandidateState.AlreadyPorted, c.State));
+    }
+
+    [Fact]
+    public void NeedsNoCommonHistory()
+    {
+        using var r = new Repo(orphan: true);
+        r.Rewrite();
+        Assert.Null(r.G.Value(r.Target, "merge-base", "main", "1.20.1"));
+        Assert.Equal(3, Backport.TakeOverCommits(r.G, r.Target, "main", "1.20.1").Count);
+
+        var (s, error) = BackportSession.StartTakeOver(r.Env(), r.Master, r.Project("1.20.1"), r.Project("26.3"), false, false);
+        Assert.Null(error);
+        Assert.Equal(["src/A.java", "src/Compat.java", "src/New.java"], s.View().Changes.Select(c => c.Path).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void NothingToTakeOverWhenTheCodeIsTheSame()
+    {
+        using var r = new Repo();
+        T.Write(r.Target, "src/A.java", "class A {\n    int a = 1;\n}\n");
+        T.Sh(r.Target, "rm", "-q", "src/Compat.java");
+        T.CommitAll(r.Target, "same code as main");
+
+        var (s, error) = BackportSession.StartTakeOver(r.Env(), r.Master, r.Project("1.20.1"), r.Project("26.3"), true, false);
+        Assert.Null(error);
+        Assert.Empty(s.View().Changes);
+        Assert.False(s.View().CanApply);
+        Assert.StartsWith("Nothing to apply", s.View().Status);
+    }
+
+    [Fact]
+    public void ClaudeAdaptsAndGoesOnWhereItStopped()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var r = new Repo();
+        r.Rewrite();
+        // first run: adapts New.java, but is not finished; second run: done
+        var prompts = r.Tmp["prompts"];
+        Directory.CreateDirectory(prompts);
+        var fake = r.Tmp["claude"];
+        const string first = """{"type":"result","subtype":"success","is_error":false,"result":"DECISION: skip\n\n### Offen\n- B fehlt","total_cost_usd":0.5,"usage":{}}""";
+        const string second = """{"type":"result","subtype":"success","is_error":false,"result":"DECISION: backport\n\n### Was wurde angepasst\n- `New`: n = 120","total_cost_usd":0.25,"usage":{}}""";
+        File.WriteAllText(fake, $$"""
+            #!/bin/sh
+            if [ -f "{{prompts}}/1" ]; then
+              cat > "{{prompts}}/2"
+              printf 'class New {\n    int n = 120;\n}\n' > src/New.java
+              printf '%s\n' '{{second}}'
+            else
+              cat > "{{prompts}}/1"
+              printf 'class New {\n    int n = 12;\n}\n' > src/New.java
+              printf '%s\n' '{{first}}'
+            fi
+
+            """);
+        File.SetUnixFileMode(fake, (UnixFileMode)Convert.ToInt32("755", 8));
+
+        var env = r.Env(fake);
+        var (s, error) = BackportSession.StartTakeOver(env, r.Master, r.Project("1.20.1"), r.Project("26.3"), true, true);
+        Assert.Null(error);
+        var p1 = File.ReadAllText(Path.Combine(prompts, "1"));
+        Assert.Contains("The whole code of main was taken over 1:1", p1);
+        Assert.Contains(BackportClaude.TakeOverRules, p1);
+        Assert.Contains(" refactor!: rewrite\n", p1);
+        Assert.DoesNotContain("You worked on this before", p1);
+        Assert.Contains("#### Adapting to 1.20.1 – Claude: **not finished** ($0.50)", s.View().Notes);
+        Assert.StartsWith("Claude did not finish adapting to 1.20.1", s.View().Status);
+        Assert.Equal("class New {\n    int n = 12;\n}\n", T.Read(s.Work, "src/New.java"));
+
+        s.AdaptWithClaude(env);
+        Assert.Contains("You worked on this before and stopped", File.ReadAllText(Path.Combine(prompts, "2")));
+        var v = s.View();
+        Assert.Contains("#### Adapting to 1.20.1 (2. run) – Claude: **adapted** ($0.25)\n\n### Was wurde angepasst", v.Notes);
+        Assert.StartsWith("Taken over 1:1 and adapted to 1.20.1 by Claude", v.Status);
+        Assert.Contains("+    int n = 120;", s.Diff(r.G, "src/New.java", 'A'));
+        Assert.True(v.CanApply);
+    }
+
+    [Fact]
+    public void BuildPromptOfATakeOverUsesItsRules()
+    {
+        var ctx = new BackportContext("Mod", "NeoForge", "main", "26.3", "1.20.1", "1.20.1", null, TakeOver: true);
+        var p = BackportClaude.BuildPrompt(ctx, [], "error");
+        Assert.Contains(BackportClaude.TakeOverRules, p);
+        Assert.DoesNotContain(BackportClaude.Rules, p);
     }
 }
 

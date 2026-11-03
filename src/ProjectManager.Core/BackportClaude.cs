@@ -9,6 +9,7 @@ namespace ProjectManager.Core;
 
 /// <param name="ClaudeMd">CLAUDE.md of the mod repository (target).</param>
 /// <param name="Primer">the part of a version primer between both versions (see <see cref="Core.Primer.Excerpt"/>) and its file name</param>
+/// <param name="TakeOver">the whole source was taken over 1:1 (<see cref="BackportClaude.TakeOverRules"/> apply)</param>
 public sealed record BackportContext(
     string ModName,
     string? Loader,
@@ -17,7 +18,8 @@ public sealed record BackportContext(
     string TargetName,
     string TargetMc,
     string? ClaudeMd,
-    (string Name, string Text)? Primer = null);
+    (string Name, string Text)? Primer = null,
+    bool TakeOver = false);
 
 public static partial class BackportClaude
 {
@@ -56,15 +58,25 @@ public static partial class BackportClaude
         Restricted = true,
     };
 
-    public const string Rules = """
-        Rules for backports:
-        - Keep the BEHAVIOR of the original commit, not its exact wording. Adapt the code to the Minecraft and
-          loader APIs of the target version (look at how the target's code does similar things).
+    /// <summary>Examples of API differences, part of both rule sets.</summary>
+    private const string Differences = """
         - Typical differences between versions (examples, check the actual code):
           NeoForge `net.neoforged.*` vs Forge `net.minecraftforge.*`; `NeoForge.EVENT_BUS` vs `MinecraftForge.EVENT_BUS`;
           `ResourceLocation.fromNamespaceAndPath(ns, path)` vs `new ResourceLocation(ns, path)`;
           data components (`stack.get(DataComponents.…)`) vs NBT (`stack.getTag()`);
           `CustomPacketPayload` + `StreamCodec` vs `SimpleChannel`; `neoforge.mods.toml` vs `mods.toml`.
+        """;
+
+    private const string NoCommit = """
+        - Do NOT commit, do not stage, do not switch branches, do not push. Leave all changes in the working tree.
+          Commands that are not allowed are denied automatically – do not look for workarounds.
+        """;
+
+    public const string Rules = """
+        Rules for backports:
+        - Keep the BEHAVIOR of the original commit, not its exact wording. Adapt the code to the Minecraft and
+          loader APIs of the target version (look at how the target's code does similar things).
+        """ + "\n" + Differences + "\n" + """
         - Never change: gradle.properties, mods.toml, neoforge.mods.toml, anything under src/generated/ or .github/,
           CHANGELOG.md, CHANGELOG_FULL.md. Versions, dependency ranges, datagen output and changelogs are handled by
           the tool. Do not add dependencies.
@@ -73,10 +85,26 @@ public static partial class BackportClaude
           remove the file with `git rm <path>` if the change does not apply to the target.
         - If there is no reasonable equivalent in the target version, do not guess: answer with DECISION: skip and
           the reason.
-        - Do NOT commit, do not stage, do not switch branches, do not push. Leave all changes in the working tree.
-          Commands that are not allowed are denied automatically – do not look for workarounds.
+        """ + "\n" + NoCommit + "\n";
 
-        """;
+    /// <summary>Rules when the whole source was taken over 1:1 (a rewrite): the source's code stays, only the version is adapted.</summary>
+    public const string TakeOverRules = """
+        Rules for a take-over:
+        - The code and the features of the source stay. Adapt it to the Minecraft and loader APIs of the target
+          version – do not rewrite it, and do not bring back the target's old code: take only API calls and the build
+          setup from it.
+        """ + "\n" + Differences + "\n" + """
+        - gradle.properties, mods.toml and neoforge.mods.toml belong to the target: never change versions or
+          dependency ranges in them. Only if the taken-over code cannot work without it, add a missing entry (e.g. a
+          property the build script reads, a new mixin config) and list it under "Bitte prüfen".
+        - Never change anything under src/generated/ or .github/, CHANGELOG.md or CHANGELOG_FULL.md – datagen output
+          and changelogs are handled by the tool.
+        - Keep a dependency the source added only if it exists for the target version; list it under "Bitte prüfen".
+        - Do not delete or disable tests or features to make something compile. If something has no equivalent in the
+          target version, keep as much of it as possible and list it under "Bitte prüfen" – do not guess.
+        - Files only the target had were removed by the take-over. Bring one back (`git show HEAD:<path>`, then write
+          it) only if the target version needs it, e.g. a compatibility class.
+        """ + "\n" + NoCommit + "\n";
 
     private const string Answer = """
         When you are done, answer with exactly this format (the notes in German):
@@ -91,6 +119,24 @@ public static partial class BackportClaude
         For DECISION: skip only write the reason below the decision line.
 
         """;
+
+    private const string TakeOverAnswer = """
+        When you are done, answer with exactly this format (the notes in German):
+        DECISION: backport      (or: DECISION: skip, if it does not compile yet and you could not finish)
+
+        ### Was wurde angepasst
+        - `<Datei/Klasse>`: <Änderung und Grund>
+
+        ### Offen
+        - <was noch nicht kompiliert oder fehlt, oder "nichts">
+
+        ### Bitte prüfen
+        - <Stellen, bei denen du unsicher bist, oder "nichts Besonderes">
+
+        """;
+
+    /// <summary>Source commits named in a take-over prompt; the rest is only counted.</summary>
+    private const int MaxListedCommits = 80;
 
     /// <summary>Prompt for a commit whose cherry-pick stopped with conflicts.</summary>
     public static string ConflictPrompt(BackportContext ctx, Commit commit, string commitDiff, IReadOnlyList<string> conflicts)
@@ -130,11 +176,56 @@ public static partial class BackportClaude
 
 
             """);
-        sb.Append(Rules).Append('\n');
+        sb.Append(ctx.TakeOver ? TakeOverRules : Rules).Append('\n');
         AppendClaudeMd(sb, ctx);
         AppendPrimer(sb, ctx);
         sb.Append($"Build output (end):\n<build>\n{buildOutput.Trim()}\n</build>\n\n");
         sb.Append(Answer);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Prompt after a take-over: the whole tree of the source is in the work folder (except the "never port" files),
+    /// Claude adapts it to the target's version.
+    /// </summary>
+    /// <param name="commits">the source commits the take-over brings (oldest first)</param>
+    /// <param name="changedFiles">files that differ from the target</param>
+    /// <param name="again">Claude worked on it before and stopped; its changes are in the working tree</param>
+    public static string TakeOverPrompt(BackportContext ctx, IReadOnlyList<Commit> commits, int changedFiles, bool again)
+    {
+        var sb = Intro(ctx);
+        sb.Append($"""
+            The whole code of {ctx.SourceName} was taken over 1:1 into this worktree ({changedFiles} file(s) differ from the
+            target). The source was rewritten in large parts, so its changes are not ported commit by commit. Only
+            gradle.properties, mods.toml, neoforge.mods.toml, CHANGELOG.md, CHANGELOG_FULL.md, .github/ and src/generated/
+            were kept as in the target. HEAD is still the target's previous state: `git diff HEAD --stat` lists what
+            changed, `git show HEAD:<path>` shows how the target did something before (its Minecraft and loader API
+            calls, its build setup).
+
+            Task: adapt the taken-over code to Minecraft {ctx.TargetMc} so that it compiles and works like in {ctx.SourceName}.
+            1. Build setup: build.gradle, settings.gradle and gradle/ come from the source. Where they are specific to
+               the Minecraft or loader version (Gradle plugins and their versions, Minecraft, loader and mappings
+               dependencies, Java version), use the target's setup from HEAD; keep what the source added on top of it
+               if it works for the target.
+            2. Code: replace Minecraft and loader APIs that do not exist in {ctx.TargetMc} with their equivalent there.
+            3. Run `./gradlew compileJava` and fix the errors until it compiles; then `./gradlew build` if there is time.
+
+
+            """);
+        if (again)
+            sb.Append("You worked on this before and stopped: your earlier changes are in the working tree. Run " +
+                      "`./gradlew compileJava` to see what is left and go on from there.\n\n");
+        sb.Append(TakeOverRules).Append('\n');
+        AppendClaudeMd(sb, ctx);
+        AppendPrimer(sb, ctx);
+        if (commits.Count > 0)
+        {
+            sb.Append($"Commits of {ctx.SourceName} the take-over brings (oldest first):\n");
+            foreach (var c in commits.Take(MaxListedCommits)) sb.Append($"- {c.ShortSha} {c.Message.Header}\n");
+            if (commits.Count > MaxListedCommits) sb.Append($"- … and {commits.Count - MaxListedCommits} more\n");
+            sb.Append('\n');
+        }
+        sb.Append(TakeOverAnswer);
         return sb.ToString();
     }
 

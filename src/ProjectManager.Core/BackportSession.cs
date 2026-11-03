@@ -41,8 +41,13 @@ public sealed class BackportSession
     private readonly bool _useClaude;
     private string? _baseSha;
     private readonly List<Commit> _ported = [];
-    /// <summary>Sync mode: the source commits the one sync commit stands for (they go into the commit message).</summary>
+    /// <summary>Sync and take-over mode: the source commits the one sync commit stands for (they go into the commit message).</summary>
     private List<Commit>? _synced;
+    /// <summary>Take-over mode: the whole source tree 1:1, then Claude adapts it to the target's version.</summary>
+    private bool _takeOver;
+    /// <summary>Take-over: null = not adapted by Claude yet, true = Claude finished, false = Claude stopped before it was done.</summary>
+    private bool? _adapted;
+    private int _adaptRuns;
     /// <summary>Part of a version primer Claude gets as reference (name, text).</summary>
     private (string Name, string Text)? _primer;
     /// <summary>Markdown: what the tool and Claude did, per commit.</summary>
@@ -101,6 +106,45 @@ public sealed class BackportSession
             s.RunQueue(env, Commits.Log(env.Git, s.Work, "-1", sha));
         });
         return (s, error);
+    }
+
+    /// <summary>
+    /// Take-over mode, for rewrites that change the whole code base (a 3-way merge would conflict everywhere): the tree
+    /// of the source 1:1 – one cherry-pick of a commit with the source tree on top of the target itself, so it cannot
+    /// conflict. The "never port" files stay as in the target. Then Claude adapts the code to the target's version:
+    /// with <paramref name="useClaude"/> right away, otherwise later with <see cref="AdaptWithClaude"/>.
+    /// </summary>
+    public static (BackportSession Session, Exception? Error) StartTakeOver(BackportEnv env, string master, ModProject target, ModProject source,
+        bool sync, bool useClaude, (string Name, string Text)? primer = null)
+    {
+        var s = new BackportSession(target, source, Backport.WorkDir(master, target.Name, target.McVersion), sync, useClaude, primer)
+        {
+            _takeOver = true,
+        };
+        var error = s.Step(env, () =>
+        {
+            var branch = s.Target.Branch ?? throw new PmException("The target has no branch");
+            var sourceBranch = s.Source.Branch ?? throw new PmException("The source has no branch");
+            Backport.Prepare(env.Git, s.Target.Path, s.Work, branch, env.Log);
+            var head = env.Git.Output(s.Work, "rev-parse", "HEAD").Trim();
+            s._baseSha = head;
+            var commits = Backport.TakeOverCommits(env.Git, s.Work, sourceBranch, branch);
+            s._synced = commits;
+            env.Log($"Take over {sourceBranch} → {branch} 1:1: {commits.Count} commit(s) the target does not have" +
+                    $"{(useClaude ? ", then Claude adapts it" : "")}    (work folder {s.Work})");
+            var sha = Backport.SyncCommit(env.Git, s.Work, head, sourceBranch, Backport.TakeOverMessage(sourceBranch, commits.Count));
+            s.RunQueue(env, Commits.Log(env.Git, s.Work, "-1", sha));
+            if (useClaude && s._changes.Count > 0 && !env.Cancel.IsCancelled) s.Adapt(env);
+        });
+        return (s, error);
+    }
+
+    /// <summary>Take-over: Claude adapts the code to the target's version (again: goes on where it stopped).</summary>
+    public void AdaptWithClaude(BackportEnv env)
+    {
+        if (!_takeOver) throw new PmException("Only a take-over is adapted as a whole – use “Fix build with Claude”.");
+        if (_changes.Count == 0) throw new PmException("Nothing taken over to adapt.");
+        Throw(Step(env, () => Adapt(env)));
     }
 
     /// <summary>Runs a step, then the status line and the safety check; returns the error of the step.</summary>
@@ -221,7 +265,8 @@ public sealed class BackportSession
     public BackportApplied Apply(BackportEnv env)
     {
         if (_baseSha is null) throw new PmException("The work folder is no longer at the target commit – discard and start again.");
-        var message = Backport.CommitMessage(_synced ?? _ported, Source.Branch ?? "?", _versionNote);
+        var sourceName = Source.Branch ?? "?";
+        var message = Backport.CommitMessage(_synced ?? _ported, sourceName, _versionNote, _takeOver ? Backport.TakeOverHeader(sourceName) : null);
         var conflicts = Backport.Apply(env.Git, Work, Target.Path, env.Log);
         env.Log($"✔ Backport applied to {Target.Label} as uncommitted changes{(conflicts.Count == 0 ? "" : $" – conflicts in {string.Join(", ", conflicts)}")}");
         return new BackportApplied(conflicts, message);
@@ -252,6 +297,7 @@ public sealed class BackportSession
             Changes = _conflict is { } cf ? cf.Files.Select(f => new FileChange('U', f)).ToList() : _changes.ToList(),
             BuildFailed = BuildFailed,
             CanApply = _baseSha is not null && _conflict is null && _changes.Count > 0,
+            TakeOver = _takeOver,
         };
     }
 
@@ -266,11 +312,12 @@ public sealed class BackportSession
             env.Log($"Porting {c.ShortSha} {c.Message.Subject}");
             var checkpoint = Backport.Checkpoint(env.Git, Work);
             var r = Backport.Pick(env.Git, Work, c.Sha, env.Log);
-            foreach (var path in r.Reverted)
-            {
-                _notes.Add($"- `{c.ShortSha}`: kept as in the target: `{path}`");
-                if (path.Contains("src/generated/")) _notes.Add("- generated data changed in the source – run `runData` in this version");
-            }
+            // one note for the generated data: a sync or take-over can touch hundreds of its files
+            var generated = r.Reverted.Count(p => p.Contains("src/generated/"));
+            foreach (var path in r.Reverted.Where(p => !p.Contains("src/generated/"))) _notes.Add($"- `{c.ShortSha}`: kept as in the target: `{path}`");
+            if (generated > 0)
+                _notes.Add($"- `{c.ShortSha}`: generated data changed in the source ({generated} file(s) under src/generated/, kept as in the target) – " +
+                           "run `runData` in this version");
             switch (r.State)
             {
                 case PickState.Ok:
@@ -330,6 +377,17 @@ public sealed class BackportSession
         }
         if (_conflict is { } c) Status = $"Conflict in {c.Commit.ShortSha} {c.Commit.Message.Subject} – waiting for it to be resolved";
         else if (error is not null) Status = "Stopped";
+        else if (_takeOver)
+        {
+            env.Log($"✔ Take-over ready: {_changes.Count} file(s) – nothing committed");
+            var mc = Target.McVersion;
+            Status = _changes.Count == 0 ? "Nothing to apply – this version already has the code of the source" : _adapted switch
+            {
+                null => $"Taken over 1:1 – let Claude adapt it to {mc} (“Adapt with Claude”) or adapt it yourself, then run the build",
+                true => $"Taken over 1:1 and adapted to {mc} by Claude – review, run the build, then apply to {mc} (uncommitted)",
+                false => $"Claude did not finish adapting to {mc} – see Notes; adapt again, fix it yourself or run the build",
+            };
+        }
         else if (_synced is { } synced)
         {
             env.Log($"✔ Sync ready: {synced.Count} commit(s), {_changes.Count} file(s) – nothing committed");
@@ -376,7 +434,34 @@ public sealed class BackportSession
     {
         var t = Target;
         return new BackportContext(t.Metadata?.Name ?? t.Name, t.Loader, Source.Branch ?? "", Source.EffectiveMc, t.Branch ?? "",
-            t.EffectiveMc, Backport.ClaudeMd(Work), _primer);
+            t.EffectiveMc, Backport.ClaudeMd(Work), _primer, _takeOver);
+    }
+
+    /// <summary>Take-over: one Claude run that adapts the whole taken-over code to the target's version.</summary>
+    private void Adapt(BackportEnv env)
+    {
+        var prompt = BackportClaude.TakeOverPrompt(Context(), _synced ?? [], _changes.Count, _adaptRuns > 0);
+        _adaptRuns++;
+        var heading = $"#### Adapting to {Target.McVersion}{(_adaptRuns > 1 ? $" ({_adaptRuns}. run)" : "")}";
+        try
+        {
+            var o = CallClaude(env, prompt, $"adapting the take-over to {Target.McVersion}");
+            if (!o.Ok)
+            {
+                _adapted = false;
+                _notes.Add($"{heading} – Claude: {StatusName(o.Status)} – {o.Text}{DenialNotes(o.Denials)}\n\n" +
+                           "_What Claude changed until then is kept in the work folder._");
+                return;
+            }
+            var (decision, notes) = BackportClaude.Parse(o.Text);
+            _adapted = decision != Decision.Skip;
+            var name = decision == Decision.Skip ? "not finished" : "adapted";
+            _notes.Add($"{heading} – Claude: **{name}** (${Money(o.CostUsd)})\n\n{notes}{DenialNotes(o.Denials)}");
+        }
+        finally
+        {
+            _changes = Backport.Changes(env.Git, Work);
+        }
     }
 
     /// <summary>Claude resolves the conflicts of <paramref name="c"/>; then the markers are checked.</summary>

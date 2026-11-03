@@ -129,6 +129,24 @@ public static class BackportTab
                 () => s.Api.BackportSync(target, src, sync.Value, claude, usePrimer.Value));
         }
 
+        // for rewrites: the whole code of the source 1:1, then Claude adapts it to this version
+        async Task TakeOver()
+        {
+            var src = source.Value;
+            if (src.Length == 0 || !await MayStartAgain()) return;
+            var from = sources.FirstOrDefault(o => o.Path == src);
+            var claude = useClaude.Value;
+            var question =
+                $"Take over the whole code of {Html(from?.McVersion ?? "the source")} 1:1?<br>Files only {Html(p.McVersion)} has are removed; " +
+                "versions, CI, generated data and changelogs stay as here. Nothing changes here until you apply the result.<br><br>" +
+                (claude
+                    ? $"Claude then adapts the whole code base to {Html(p.McVersion)} – this can take long and cost more than a conflict."
+                    : "“Resolve conflicts with Claude” is off: afterwards click “Adapt with Claude” or adapt it yourself.");
+            if (!await s.Dialogs.Confirm("Backport", question, "Take over")) return;
+            RunStep(claude ? "Taking over and adapting with Claude… (output in the log window)" : "Preparing the work folder and taking over…",
+                claude, () => s.Api.BackportTakeOver(target, src, sync.Value, claude, usePrimer.Value));
+        }
+
         bool Busy() => working.Value is not null || view.Value.Busy;
         bool Waiting() => view.Value.Conflict is not null;
 
@@ -175,22 +193,39 @@ public static class BackportTab
                 title: "Everything the source changed since the last sync as one change (3-way): same code and features, " +
                        "type rules and [no-backport] markers do not apply; versions, CI, generated data and changelogs stay as here")
             .EnabledWhen(() => !Busy() && !Waiting() && source.Value.Length > 0, working, view, source);
+        var takeOverButton = W.Btn("Take over 1:1", () => React.Spawn(TakeOver),
+                title: "For rewrites that change the whole code base: the code of the source 1:1 (no 3-way merge, files only this " +
+                       "version has are removed); versions, CI, generated data and changelogs stay as here. Then Claude adapts the code " +
+                       "to this Minecraft version")
+            .EnabledWhen(() => !Busy() && !Waiting() && source.Value.Length > 0, working, view, source);
         var primerCheck = new ContentControl();
         primerCheck.Watch(() => primerCheck.Content = candidates.Value.Value?.Primer is { } primer
             ? W.Check($"Use primer {primer}", usePrimer,
                 "Claude gets the version primer between both versions (summary, vanilla and this mod's loader) as reference for conflicts and build errors")
             : null, candidates);
+        // the options move below the buttons when the window is narrow
+        var actions = new WrapPanel();
+        foreach (var c in new Control[]
+                 {
+                     portButton, syncButton, takeOverButton, W.Stack(0,
+                         W.Check("Take over version and CHANGELOG.md", sync,
+                             "Sets the mod part of the version to the one of the source (the Minecraft part stays) and takes over its CHANGELOG.md; the older entry moves to CHANGELOG_FULL.md"),
+                         W.Check("Resolve conflicts with Claude", useClaude,
+                             "Every conflict goes to Claude (backport model in the settings); the run only stops when Claude cannot resolve it or skips a commit. " +
+                             "After “Take over 1:1” Claude adapts the whole code to this version"),
+                         primerCheck),
+                 })
+        {
+            c.Margin = new Thickness(0, 0, 8, 4);
+            c.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+            actions.Children.Add(c);
+        }
         var commitsView = W.Rows(8,
             (W.Inline(W.Btn("Select portable", () => SelectPortable(true), flat: true,
                     title: "Select every commit that is not filtered, marked or already ported"),
                 W.Btn("None", () => SelectPortable(false), flat: true), W.Spacer(), count), false),
             (table.View, true),
-            (W.Inline(portButton, syncButton, W.Stack(0,
-                W.Check("Take over version and CHANGELOG.md", sync,
-                    "Sets the mod part of the version to the one of the source (the Minecraft part stays) and takes over its CHANGELOG.md; the older entry moves to CHANGELOG_FULL.md"),
-                W.Check("Resolve conflicts with Claude", useClaude,
-                    "Every conflict goes to Claude (backport model in the settings); the run only stops when Claude cannot resolve it or skips a commit"),
-                primerCheck)), false));
+            (actions, false));
 
         // ---------------------------------------------------------------- notes
 
@@ -330,7 +365,9 @@ public static class BackportTab
         var status = W.Wrapped("");
         status.Watch(() =>
         {
-            status.Text = view.Value.Status.Length == 0 ? "Select commits and click “Port selected”, or “Sync all”." : view.Value.Status;
+            status.Text = view.Value.Status.Length == 0
+                ? "Select commits and click “Port selected”, or “Sync all” – or “Take over 1:1” after a rewrite."
+                : view.Value.Status;
             status.Classes.Set("warn", view.Value.BuildFailed);
         }, view);
 
@@ -406,9 +443,14 @@ public static class BackportTab
                 title: "Claude fixes the errors of the last build in the work folder")
             .EnabledWhen(() => HasResult() && !view.Value.Building && view.Value.Ported > 0, busyDeps)
             .VisibleWhen(() => view.Value.BuildFailed, view);
-        var discard = W.Btn("Discard", () => React.Spawn(Discard)).EnabledWhen(() => !busy() && view.Value.Active, busyDeps);
+        var adapt = W.Btn("Adapt with Claude",
+                () => runStep("Claude is adapting the code… (output in the log window)", true, () => s.Api.BackportAdapt(target)),
+                title: $"Claude adapts the taken-over code to {p.McVersion} until it compiles (again: goes on where it stopped)")
+            .EnabledWhen(() => HasResult() && !view.Value.Building, busyDeps)
+            .VisibleWhen(() => view.Value.TakeOver, view);
+        var discard =W.Btn("Discard", () => React.Spawn(Discard)).EnabledWhen(() => !busy() && view.Value.Active, busyDeps);
         var apply = W.Btn($"Apply to {p.McVersion}", () => React.Spawn(Apply), primary: true)
             .EnabledWhen(() => HasResult() && view.Value.CanApply && !view.Value.Building, busyDeps);
-        return W.Rows(8, (status, false), (conflict, false), (split, true), (W.Inline(W.Spacer(), cancel, build, fix, discard, apply), false));
+        return W.Rows(8, (status, false), (conflict, false), (split, true), (W.Inline(W.Spacer(), cancel, adapt, build, fix, discard, apply), false));
     }
 }

@@ -283,6 +283,33 @@ public static partial class Backport
         return sb.ToString().Trim();
     }
 
+    // ---------------------------------------------------------------- take over 1:1
+
+    /// <summary>
+    /// Take-over mode: the source commits the target does not have yet (no merge commits, none ported already). After a
+    /// take-over all of them are in the target – their trailers go into the commit message, so later runs start after
+    /// them. Unlike a sync it needs no common history.
+    /// </summary>
+    public static List<Commit> TakeOverCommits(Git git, string repo, string source, string target)
+    {
+        var trailers = PortedTrailers(git, repo, target);
+        var samePatch = SamePatch(git, repo, source, target);
+        return Commits.Log(git, repo, "--reverse", "--topo-order", $"{target}..{source}")
+            .Where(c => !c.Merge && !IsPorted(c.Sha, trailers) && !samePatch.Contains(c.Sha))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Message of the take-over commit (<see cref="SyncCommit"/> on top of the target itself, so picking it gives the
+    /// source tree 1:1 and cannot conflict); Claude and the notes show its subject.
+    /// </summary>
+    public static string TakeOverMessage(string sourceName, int commits) =>
+        $"take over {sourceName} 1:1\n\nThe whole code of {sourceName} ({commits} commit(s) the target does not have), " +
+        "adapted to the target's version afterwards.";
+
+    /// <summary>First line of the commit message after a take-over.</summary>
+    public static string TakeOverHeader(string sourceName) => $"take over {sourceName} 1:1";
+
     // ---------------------------------------------------------------- version + changelog
 
     /// <summary>
@@ -434,10 +461,11 @@ public static partial class Backport
     }
 
     /// <summary>Commit message for the target: the ported commits plus their cherry-pick trailers (so later runs see them).</summary>
-    public static string CommitMessage(IReadOnlyList<Commit> ported, string sourceName, string? versionNote)
+    /// <param name="header">first line instead of the one of a single commit or "backport N commits from …"</param>
+    public static string CommitMessage(IReadOnlyList<Commit> ported, string sourceName, string? versionNote, string? header = null)
     {
         var sb = new StringBuilder();
-        if (ported.Count == 1)
+        if (header is null && ported.Count == 1)
         {
             var only = ported[0];
             sb.Append(only.Message.Header);
@@ -447,7 +475,7 @@ public static partial class Backport
         }
         else
         {
-            sb.Append($"backport {ported.Count} commits from {sourceName}\n\n");
+            sb.Append($"{header ?? $"backport {ported.Count} commits from {sourceName}"}\n\n");
             foreach (var c in ported) sb.Append($"- {c.Message.Header}\n");
             if (versionNote is not null) sb.Append($"- {versionNote}\n");
         }
