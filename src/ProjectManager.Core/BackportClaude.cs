@@ -28,7 +28,9 @@ public static partial class BackportClaude
     [
         "Read", "Edit", "Write", "Glob", "Grep", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
         "Bash(git ls-files:*)", "Bash(git grep:*)", "Bash(git ls-tree:*)", "Bash(git cat-file:*)", "Bash(git blame:*)", "Bash(git rm:*)",
-        "Bash(./gradlew build:*)", "Bash(./gradlew compileJava:*)",
+        "Bash(diff:*)", "Bash(./gradlew build:*)", "Bash(./gradlew compileJava:*)",
+        // single subprojects of a multi-loader build: ./gradlew :fabric:compileJava, ./gradlew :common:build
+        "Bash(./gradlew *compileJava*)", "Bash(./gradlew *:build*)",
     ];
 
     /// <summary>Denied explicitly as well, so a broader allow rule can never let them through.</summary>
@@ -38,6 +40,8 @@ public static partial class BackportClaude
         "Bash(git reset:*)", "Bash(git rebase:*)", "Bash(git worktree:*)", "Bash(git cherry-pick:*)", "Bash(git merge:*)",
         "Bash(git stash:*)", "Bash(git tag:*)", "Bash(git restore:*)", "Bash(git clean:*)", "Bash(git update-ref:*)",
         "Bash(git config:*)", "Bash(git remote:*)", "Bash(git fetch:*)", "Bash(git pull:*)", "Bash(git add:*)", "Bash(rm:*)",
+        // the gradle rules match whatever follows the task: no uploads (mod-publish-plugin, maven-publish)
+        "Bash(./gradlew *publish*)", "Bash(./gradlew *Publish*)",
         "WebFetch", "WebSearch",
     ];
 
@@ -70,6 +74,11 @@ public static partial class BackportClaude
     private const string NoCommit = """
         - Do NOT commit, do not stage, do not switch branches, do not push. Leave all changes in the working tree.
           Commands that are not allowed are denied automatically – do not look for workarounds.
+        - Bash runs only: git status/diff/log/show/ls-files/grep/ls-tree/cat-file/blame/rm, `diff`, `./gradlew build`
+          and `./gradlew compileJava` (also per subproject, e.g. `./gradlew :fabric:compileJava`), and read-only
+          helpers (ls, head, tail, grep, wc). You are already in the work folder: no `cd`, no loops, one command (with
+          pipes) per call, filter output with grep/head/tail. Change files only with Edit/Write, never with sed or a
+          shell redirect. Files outside the work folder cannot be read.
         """;
 
     public const string Rules = """

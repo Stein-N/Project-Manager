@@ -315,8 +315,10 @@ public class BackportClaudeTests
         var allowed = After("--allowedTools");
         var denied = After("--disallowedTools");
         Assert.True(allowed.Contains("Bash(git rm:*)") && allowed.Contains("Bash(./gradlew build:*)"));
+        Assert.True(allowed.Contains("Bash(./gradlew *compileJava*)") && allowed.Contains("Bash(./gradlew *:build*)"));
         Assert.False(allowed.Contains("git commit") || allowed.Contains("git checkout") || allowed.Contains("git add"));
         Assert.True(denied.Contains("Bash(git commit:*)") && denied.Contains("Bash(git push:*)") && denied.Contains("Bash(rm:*)"));
+        Assert.Contains("Bash(./gradlew *publish*)", denied);
     }
 }
 
