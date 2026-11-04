@@ -32,50 +32,79 @@ public static class CloneForm
             $"<br><br><code>{Rich.Html(key.Value)}</code>");
     }
 
-    public static Task<Maybe<CloneRequest>> Show(Store s, string? presetUrl, string? presetName, string? presetVersion) =>
-        s.Dialogs.Open<CloneRequest>("Clone project", 640, null, done =>
+    /// <summary>One Minecraft version of the clone dialog: its folder, the branch checked out there and where it ends up.</summary>
+    private sealed class Entry(string version)
+    {
+        public Var<string> Version { get; } = new(version);
+        public Var<string> Branch { get; } = new("");
+        public TargetInfo? Target { get; set; }
+    }
+
+    /// <summary>One request per Minecraft version, each into its own version folder.</summary>
+    public static Task<Maybe<List<CloneRequest>>> Show(Store s, string? presetUrl, string? presetName, string? presetVersion) =>
+        s.Dialogs.Open<List<CloneRequest>>("Clone project", 640, null, done =>
         {
             var url = new Var<string>(presetUrl ?? "");
             var nameEdited = presetName is not null;
             var name = new Var<string>(presetName ?? "");
-            var version = new Var<string>(presetVersion ?? "");
-            var branch = new Var<string>("");
+            var entries = new Var<List<Entry>>([]);
+            // ticks when the target of an entry is known, so the texts and the Clone button follow
+            var targets = new Var<int>(0);
             var branches = new Var<List<string>>([]);
             string? defaultBranch = null;
             var worktree = new Var<bool>(true);
             var info = new Var<(string Text, bool Error)>(("", false));
             var loading = new Var<bool>(false);
-            var target = new Var<TargetInfo?>(null);
 
             // the project name follows the URL until it is edited
             url.Changed += () =>
             {
                 if (!nameEdited) name.Value = NameFromUrl(url.Value);
             };
-            void UpdateTarget()
+            void UpdateTarget(Entry e)
             {
-                var (v, n) = (version.Value, name.Value);
+                var (v, n) = (e.Version.Value, name.Value);
                 React.Spawn(async () =>
                 {
+                    TargetInfo? t;
                     try
                     {
-                        target.Value = await s.Api.TargetInfo(v, n);
+                        t = await s.Api.TargetInfo(v, n);
                     }
                     catch (Exception)
                     {
-                        target.Value = null;
+                        t = null;
                     }
+                    // an answer for a version or name that has been changed meanwhile is outdated
+                    if (e.Version.Value != v || name.Value != n) return;
+                    e.Target = t;
+                    targets.Value++;
                 });
             }
-            version.Changed += UpdateTarget;
             React.Spawn(() => EnsureSshKey(s));
-            name.Changed += UpdateTarget;
-            void Suggest()
+            name.Changed += () => entries.Value.ForEach(UpdateTarget);
+            void Suggest(Entry e)
             {
-                if (branches.Value.Count == 0 || version.Value.Trim().Length == 0) return;
-                if ((Commits.BestBranch(branches.Value, version.Value.Trim()) ?? defaultBranch) is { } b) branch.Value = b;
+                var v = e.Version.Value.Trim();
+                if (branches.Value.Count == 0 || v.Length == 0) return;
+                if ((Commits.BestBranch(branches.Value, v) ?? defaultBranch) is { } b) e.Branch.Value = b;
             }
-            version.Changed += Suggest;
+            void Add(string version)
+            {
+                var e = new Entry(version);
+                e.Version.Changed += () =>
+                {
+                    e.Target = null;
+                    targets.Value++;
+                    UpdateTarget(e);
+                    Suggest(e);
+                };
+                entries.Update(list => list.Add(e));
+                UpdateTarget(e);
+                Suggest(e);
+            }
+            void Remove(Entry e) => entries.Update(list => list.Remove(e));
+            Add(presetVersion ?? "");
             void Load()
             {
                 var u = Ssh.ToSshUrl(url.Value);
@@ -90,9 +119,9 @@ public static class CloneForm
                         var r = await s.Api.RemoteBranches(u);
                         info.Value = ($"{r.Branches.Count} branches found{(r.DefaultBranch is { } d ? $" · default: {d}" : "")}", false);
                         defaultBranch = r.DefaultBranch;
-                        if (!r.Branches.Contains(branch.Value)) branch.Value = "";
+                        foreach (var e in entries.Value.Where(e => !r.Branches.Contains(e.Branch.Value))) e.Branch.Value = "";
                         branches.Value = r.Branches;
-                        Suggest();
+                        entries.Value.ForEach(Suggest);
                     }
                     catch (Exception e)
                     {
@@ -106,7 +135,6 @@ public static class CloneForm
                 });
             }
             if (presetUrl is { } pu && pu.Trim().Length > 0) Load();
-            UpdateTarget();
             void Browse() => React.Spawn(async () =>
             {
                 if (!await s.Api.HasGithubToken())
@@ -123,20 +151,35 @@ public static class CloneForm
                 url.Value = repo.Value.PreferredUrl;
                 Load();
             });
-            string RepoText() => worktree.Value && target.Value is { } t
-                ? t.RepoExists ? $"Repository {Util.FileName(t.Repo)} already exists – only a new worktree will be created." : $"New shared repository: {t.Repo}"
+            string RepoText() => worktree.Value && entries.Value.Select(e => e.Target).FirstOrDefault(t => t is not null) is { } t
+                ? t.RepoExists
+                    ? $"Repository {Util.FileName(t.Repo)} already exists – only new worktrees will be created."
+                    : $"New shared repository: {t.Repo}"
                 : "";
-            bool CanClone() => target.Value is { Exists: false } && url.Value.Trim().Length > 0;
+            bool CanClone() => url.Value.Trim().Length > 0 && entries.Value.Count > 0 && entries.Value.All(e => e.Target is { Exists: false });
+            string? Problem()
+            {
+                var versions = entries.Value.Select(e => e.Version.Value.Trim()).ToList();
+                if (versions.Any(v => v.Length == 0)) return "Please select or enter a Minecraft version in every row.";
+                if (versions.Distinct().Count() < versions.Count) return "Each Minecraft version can only be cloned once.";
+                var chosen = entries.Value.Select(e => e.Branch.Value.Trim()).ToList();
+                if (chosen.Any(b => b.Length == 0)) return "Please select or enter a branch for every version.";
+                if (worktree.Value && chosen.Distinct().Count() < chosen.Count)
+                    return "A branch can only be checked out in one worktree – choose a different branch for each version.";
+                return null;
+            }
             void Submit()
             {
                 if (!CanClone()) return;
-                var b = branch.Value.Trim();
-                if (b.Length == 0)
+                if (Problem() is { } problem)
                 {
-                    React.Spawn(() => s.Dialogs.Message("Branch missing", "Please select or enter a branch."));
+                    React.Spawn(() => s.Dialogs.Message("Clone not possible", problem));
                     return;
                 }
-                done.Resolve(new CloneRequest(Ssh.ToSshUrl(url.Value), b, version.Value.Trim(), name.Value.Trim(), worktree.Value));
+                var u = Ssh.ToSshUrl(url.Value);
+                done.Resolve(entries.Value
+                    .Select(e => new CloneRequest(u, e.Branch.Value.Trim(), e.Version.Value.Trim(), name.Value.Trim(), worktree.Value))
+                    .ToList());
             }
 
             var nameInput = W.Input(name);
@@ -144,21 +187,37 @@ public static class CloneForm
             {
                 if (nameInput.IsFocused) nameEdited = true;
             };
+            var rows = new StackPanel { Spacing = 6 };
+            rows.Watch(() =>
+            {
+                rows.Children.Clear();
+                foreach (var e in entries.Value)
+                {
+                    var version = W.Combo(e.Version, s.Versions, [s.ScanResult], "Minecraft version");
+                    version.Width = 190;
+                    var branch = W.Combo(e.Branch, () => branches.Value, [branches], "Branch");
+                    var remove = W.Btn("✕", () => Remove(e), title: "Remove this version");
+                    remove.Classes.Add("link");
+                    remove.IsVisible = entries.Value.Count > 1;
+                    rows.Children.Add(W.Inline(version, W.Grow(branch), remove));
+                }
+                rows.Children.Add(W.Inline(W.Btn("Add version", () => Add(""), icon: "add",
+                    title: "Clone the project into one more Minecraft version folder"), W.Spacer()));
+            }, entries);
             var form = new W.Form()
                 .Row("Git URL", W.Inline(W.Grow(W.Input(url, "git@github.com:user/mod.git")), W.Btn("Browse GitHub…", Browse),
                     W.Btn("Load branches", Load).EnabledWhen(() => !loading.Value, loading)))
-                .Row("Minecraft version", W.Combo(version, s.Versions, [s.ScanResult], "Existing version folder or a new one"))
-                .Row("Branch", W.Combo(branch, () => branches.Value, [branches]))
+                .Row("Versions", rows, top: true)
                 .Row("Project name", nameInput)
                 .Row("", W.Check("Create as worktree (one shared repository per mod in .repos)", worktree,
                     "All versions of a mod share Git objects and branches – commits in one version are visible in all of them right away."))
-                .Row("", W.Muted(RepoText, worktree, target));
-            var targetText = W.Muted(() => target.Value switch
+                .Row("", W.Muted(RepoText, worktree, targets, entries));
+            var targetText = W.Muted(() => string.Join("\n", entries.Value.Select(e => e.Target switch
             {
                 null => "Target: –",
                 { Exists: true } t => $"Target: {t.Path} (already exists)",
                 var t => $"Target: {t.Path}",
-            }, target);
+            })), targets, entries);
             var infoText = W.Text("");
             infoText.Watch(() =>
             {
@@ -166,8 +225,9 @@ public static class CloneForm
                 infoText.Classes.Set("error", info.Value.Error);
                 infoText.Classes.Set("muted", !info.Value.Error);
             }, info);
-            return Dialogs.Layout(W.Stack(6, (Control)form, targetText, infoText),
-                Dialogs.Footer(W.Btn("Cancel", done.Cancel), W.Btn("Clone", Submit, primary: true).EnabledWhen(CanClone, target, url)));
+            var clone = W.Btn("Clone", Submit, primary: true).EnabledWhen(CanClone, targets, entries, url);
+            clone.Watch(() => W.SetLabel(clone, entries.Value.Count > 1 ? $"Clone {entries.Value.Count} versions" : "Clone"), entries);
+            return Dialogs.Layout(W.Stack(6, (Control)form, targetText, infoText), Dialogs.Footer(W.Btn("Cancel", done.Cancel), clone));
         });
 
     // ---------------------------------------------------------------- GitHub

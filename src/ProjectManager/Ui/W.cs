@@ -237,14 +237,16 @@ public static class W
     {
         public Grid Grid { get; } = new() { ColumnDefinitions = new ColumnDefinitions("Auto,14,*") };
 
-        public Form Row(string label, Control? value)
+        /// <param name="top">The label sits next to the first line of a value that is several lines high.</param>
+        public Form Row(string label, Control? value, bool top = false)
         {
             if (value is null) return this;
             if (Grid.RowDefinitions.Count > 0) Grid.RowDefinitions.Add(new RowDefinition(6, GridUnitType.Pixel));
             Grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             var row = Grid.RowDefinitions.Count - 1;
             var l = Text(label, "label");
-            l.VerticalAlignment = VerticalAlignment.Center;
+            l.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Center;
+            if (top) l.Margin = new Thickness(0, 5, 0, 0);
             Grid.SetRow(l, row);
             Grid.SetColumn(value, 2);
             Grid.SetRow(value, row);

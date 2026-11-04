@@ -285,9 +285,17 @@ public static class Actions
         if (await RequireMaster(s) is null) return;
         var r = await CloneForm.Show(s, url, name, version);
         if (!r.Ok) return;
-        var request = r.Value;
-        var target = await s.Bg($"Cloning {request.Name} ({request.Branch})…", s.Api.CloneProject(request));
-        if (target.Ok) await AfterCreate(s, target.Value, $"{request.Name} has been cloned.");
+        // one version after the other: with worktrees the first one creates the shared repository the others use
+        var targets = new List<string>();
+        foreach (var request in r.Value)
+        {
+            var target = await s.Bg($"Cloning {request.Name} {request.Version} ({request.Branch})…", s.Api.CloneProject(request));
+            if (!target.Ok) break;
+            targets.Add(target.Value);
+        }
+        if (targets.Count == 0) return;
+        if (r.Value.Count == 1) await AfterCreate(s, targets[0], $"{r.Value[0].Name} has been cloned.");
+        else await s.ReloadAndSelect(targets[0]);
     }
 
     public static async Task Import(Store s, string? version)
