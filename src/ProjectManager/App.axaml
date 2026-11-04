@@ -24,6 +24,7 @@
     <SolidColorBrush x:Key="SelectionInactive" Color="#dfe1e5" />
     <SolidColorBrush x:Key="Hover" Color="#dfe1e5" />
     <SolidColorBrush x:Key="RowHover" Color="#0a000000" />
+    <SolidColorBrush x:Key="TreeHover" Color="#ebecf0" />
     <SolidColorBrush x:Key="Green" Color="#208a3c" />
     <SolidColorBrush x:Key="GreenBg" Color="#e6f7e9" />
     <SolidColorBrush x:Key="Red" Color="#db3b4b" />
@@ -236,6 +237,14 @@
     <Style Selector="ListBox">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <!-- hover comes before selection: the last matching style wins, so a selected row keeps its color under the pointer -->
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#f5f8fe" />
+    </Style>
+    <!-- the tree sits on the grey sidebar, where the light blue hover above is invisible -->
+    <Style Selector="ListBox.tree ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource TreeHover}" />
+    </Style>
     <Style Selector="ListBox.tree ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource SelectionInactive}" />
     </Style>
@@ -244,9 +253,6 @@
     </Style>
     <Style Selector="ListBox.table ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource Selection}" />
-    </Style>
-    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#f5f8fe" />
     </Style>
 
     <Style Selector="Separator.vertical">
