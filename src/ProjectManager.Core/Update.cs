@@ -1,7 +1,7 @@
 // Looks for a newer GitHub release of the tool, downloads the file for this kind of installation and puts it in place:
 // the program file or AppImage is replaced (same path, so autostart entries and shortcuts stay valid; a program folder
-// the user may not write to, e.g. C:\Program Files, with administrator rights), a deb package is installed with
-// pkexec dpkg -i.
+// the user may not write to, e.g. C:\Program Files or /usr/local/bin, with administrator rights), a deb package is
+// installed with pkexec dpkg -i.
 
 using System.Diagnostics;
 using System.Reflection;
@@ -14,7 +14,7 @@ namespace ProjectManager.Core;
 /// <summary>How the running program was installed; decides which release file an update takes and how it is put in place.</summary>
 public abstract record Install(string Program)
 {
-    /// <summary>A plain program file (Windows, or the Linux binary copied somewhere).</summary>
+    /// <summary>A plain program file (Windows, or the Linux binary copied or unpacked from the tar.gz somewhere).</summary>
     public sealed record ProgramFile(string Path) : Install(Path);
 
     /// <summary>Linux: the AppImage (not the binary in its read-only mount).</summary>
@@ -23,13 +23,20 @@ public abstract record Install(string Program)
     /// <summary>Linux: installed by the deb package under /usr – updated by the package manager.</summary>
     public sealed record Deb(string Path) : Install(Path);
 
+    /// <summary>Program file of the deb package.</summary>
+    public const string DebProgram = "/usr/bin/project-manager";
+
+    /// <summary>File list dpkg keeps for the installed package – only there an update may go through dpkg.</summary>
+    private const string DebFileList = "/var/lib/dpkg/info/mc-mod-project-manager.list";
+
     public static Install Detect()
     {
         if (OperatingSystem.IsLinux())
         {
             if (Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } image) return new AppImage(image);
             var exe = Update.RunningExecutable();
-            return exe.StartsWith("/usr/") ? new Deb(exe) : new ProgramFile(exe);
+            // a binary under /usr is not necessarily the deb package (tar.gz in /usr/local, systems without dpkg)
+            return exe == DebProgram && File.Exists(DebFileList) ? new Deb(exe) : new ProgramFile(exe);
         }
         return new ProgramFile(Update.RunningExecutable());
     }
@@ -171,9 +178,10 @@ public static class Update
             {
                 Replace(exe, old, downloaded);
             }
-            catch (PmException e) when (OperatingSystem.IsWindows() && e.InnerException is UnauthorizedAccessException)
+            catch (PmException e) when (e.InnerException is UnauthorizedAccessException)
             {
-                ReplaceElevated(exe, old, downloaded);
+                if (OperatingSystem.IsWindows()) ReplaceElevated(exe, old, downloaded);
+                else InstallElevated(exe, downloaded);
             }
         }
         try
@@ -252,6 +260,29 @@ public static class Update
             case 0: return;
             case 126: throw new PmException("The update was cancelled (no administrator rights).");
             default: throw new PmException($"Could not install {package}:\n{o.Stdout}{o.Stderr}");
+        }
+    }
+
+    /// <summary>
+    /// Linux/macOS: puts the new version in place as root (<c>pkexec</c> asks for the password), for a program folder
+    /// the user may not write to, e.g. /usr/local/bin. <c>install</c> removes the running file before writing the new one.
+    /// </summary>
+    private static void InstallElevated(string exe, string downloaded)
+    {
+        ProcResult o;
+        try
+        {
+            o = Proc.Output(Proc.Command("pkexec", ["install", "-m", "755", downloaded, exe]));
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or PmException)
+        {
+            throw new PmException($"Could not start pkexec to put the new version in place: {e.Message}", e);
+        }
+        switch (o.ExitCode)
+        {
+            case 0: return;
+            case 126: throw new PmException("The update was cancelled (no administrator rights).");
+            default: throw new PmException($"Could not put the new version in place ({exe}):\n{o.Stdout}{o.Stderr}");
         }
     }
 

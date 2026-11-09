@@ -32,6 +32,7 @@ dotnet publish src/ProjectManager -r linux-x64 -c Release --self-contained \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish    # or -r win-x64
 packaging/linux/build-deb.sh publish/project-manager <version> dist
 packaging/linux/build-appimage.sh publish/project-manager <version> dist
+packaging/linux/build-tarball.sh publish/project-manager <version> dist
 ```
 
 Debug builds can open a project tab or a dialog right at the start, to look at a view without clicking:
@@ -44,3 +45,8 @@ Raising `<Version>` in `Directory.Build.props` on `main` builds Windows and Linu
 release (`.github/workflows/release.yml`). The program files `Project-Manager-windows-x64.exe` and
 `Project-Manager-linux-x64`, the deb package and the AppImage are what the built-in updater downloads – the same file
 names as before, so installations of the former Rust version update to this one.
+
+The tar.gz archive is for distributions without dpkg (Arch, Fedora …). It is laid out like an install prefix, so it is
+unpacked straight into one: `tar -xzf <archive> -C ~/.local` (updates without a password) or
+`sudo tar -xzf <archive> -C /usr/local` (updates ask for the password via pkexec). The updater then replaces only
+`bin/project-manager` with `Project-Manager-linux-x64`.

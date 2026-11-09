@@ -2,8 +2,8 @@
 # The version lives in Directory.Build.props (<Version>1.2.3</Version>); if the release v<version> exists already,
 # nothing happens. Versions with a suffix (1.2.0-beta.1) become pre-releases.
 #
-# Assets: the program file per platform (used by the built-in updater) plus the deb package, the AppImage and the
-# Windows installer – the same files as the releases of the Rust versions, so their updater finds them.
+# Assets: the program file per platform (used by the built-in updater) plus the deb package, the AppImage, a tar.gz
+# archive (distributions without dpkg) and the Windows installer – the same files as the releases of the Rust versions, so their updater finds them.
 # Notes: the commit titles since the previous release (the app shows them as its changelog).
 name: Release
 
@@ -89,6 +89,7 @@ jobs:
           cp publish/project-manager dist/Project-Manager-linux-x64
           packaging/linux/build-deb.sh publish/project-manager "$VERSION" dist
           packaging/linux/build-appimage.sh publish/project-manager "$VERSION" dist
+          packaging/linux/build-tarball.sh publish/project-manager "$VERSION" dist
           ls -la dist
 
       - uses: actions/upload-artifact@v5
