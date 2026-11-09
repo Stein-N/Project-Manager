@@ -1,6 +1,7 @@
 // Start with the system: the same entries the Rust version wrote (Tauri autostart plugin), so an existing setting is
 // taken over – Windows: HKCU\…\Run value "MC Mod Project Manager", Linux: ~/.config/autostart/MC Mod Project Manager.desktop.
-// The app then starts with --minimized.
+// The app then starts with --minimized. The Flatpak writes the entry of the host (not the one in its sandbox) and starts
+// with flatpak run.
 
 using ProjectManager.Core;
 
@@ -15,9 +16,14 @@ public static class Autostart
     private static string Program =>
         Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } image ? image : Update.RunningExecutable();
 
+    /// <summary>The command line of the entry on Linux.</summary>
+    private static string Exec => Host.FlatpakId is { } id ? $"flatpak run {id}" : $"\"{Program}\"";
+
+    // in the sandbox XDG_CONFIG_HOME is the app's own folder (~/.var/app/<id>/config); flatpak keeps the host's in HOST_XDG_CONFIG_HOME
     private static string DesktopFile =>
-        Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } c ? c : Path.Combine(Util.Home, ".config"),
-            "autostart", $"{Name}.desktop");
+        Path.Combine(Environment.GetEnvironmentVariable(Host.IsFlatpak ? "HOST_XDG_CONFIG_HOME" : "XDG_CONFIG_HOME") is { Length: > 0 } c
+            ? c
+            : Path.Combine(Util.Home, ".config"), "autostart", $"{Name}.desktop");
 
     /// <summary>Whether the entry exists; null if that cannot be told on this system.</summary>
     public static bool? IsEnabled()
@@ -43,7 +49,7 @@ public static class Autostart
             Directory.CreateDirectory(Path.GetDirectoryName(DesktopFile)!);
             Util.WriteText(DesktopFile,
                 $"[Desktop Entry]\nType=Application\nVersion=1.0\nName={Name}\nComment={Name} startup script\n" +
-                $"Exec=\"{Program}\" {AutostartFlag.Minimized}\nStartupNotify=false\nTerminal=false\n");
+                $"Exec={Exec} {AutostartFlag.Minimized}\nStartupNotify=false\nTerminal=false\n");
         }
     }
 

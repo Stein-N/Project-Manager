@@ -31,7 +31,7 @@ public static partial class Gradle
         w = Util.Absolute(w);
         var list = args.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Append("--console=plain");
         var start = Util.IsWindows ? Proc.Command("cmd.exe", ["/c", w, .. list], project)
-            : !IsExecutable(w) ? Proc.Command("sh", [w, .. list], project) // gradlew without the executable bit (copied folders)
+            : !Host.IsExecutable(w) ? Proc.Command("sh", [w, .. list], project) // gradlew without the executable bit (copied folders)
             : Proc.Command(w, list, project);
         using var process = Proc.SpawnMerged(start, output);
         try
@@ -41,19 +41,6 @@ public static partial class Gradle
         catch (Exception)
         {
             return -1;
-        }
-    }
-
-    private static bool IsExecutable(string path)
-    {
-        if (OperatingSystem.IsWindows()) return true;
-        try
-        {
-            return (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
-        }
-        catch (IOException)
-        {
-            return false;
         }
     }
 }

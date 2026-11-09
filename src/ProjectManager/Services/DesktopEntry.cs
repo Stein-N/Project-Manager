@@ -1,6 +1,6 @@
 // Linux: Wayland compositors take the window icon from the desktop file that matches the app id (project-manager), not
 // from the window. Without one KDE shows a generic "W", so the app installs a desktop file and its icon in
-// ~/.local/share – unless a package (deb) installed one under /usr already.
+// ~/.local/share – unless a package (deb) installed one under /usr already, or it runs as a Flatpak, which exports its own.
 
 using ProjectManager.Core;
 
@@ -15,7 +15,7 @@ public static class DesktopEntry
 
     public static void Install()
     {
-        if (!OperatingSystem.IsLinux()) return;
+        if (!OperatingSystem.IsLinux() || Host.IsFlatpak) return;
         var data = Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } d ? d
             : Environment.GetEnvironmentVariable("HOME") is { Length: > 0 } h ? Path.Combine(h, ".local", "share")
             : null;

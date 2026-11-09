@@ -1,5 +1,6 @@
 // Child processes (git, Gradle, Claude, IntelliJ …): no console window on Windows, stdout and stderr read line by line
-// into one stream, and stopping a process together with everything it started.
+// into one stream, and stopping a process together with everything it started. In the Flatpak sandbox every child
+// process runs on the host (Host.Wrap).
 
 using System.Diagnostics;
 using System.Text;
@@ -32,10 +33,14 @@ public static class Proc
         return start;
     }
 
+    /// <summary>Starts a process – in the Flatpak sandbox on the host.</summary>
+    private static Process Start(ProcessStartInfo start, bool detached = false) =>
+        Process.Start(Host.Wrap(start, detached)) ?? throw new PmException($"Could not start {start.FileName}");
+
     /// <summary>Runs to the end and returns the exit code and output; stdin gets <paramref name="input"/> or is closed.</summary>
     public static ProcResult Output(ProcessStartInfo start, string? input = null)
     {
-        using var p = Process.Start(start) ?? throw new PmException($"Could not start {start.FileName}");
+        using var p = Start(start);
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         WriteInput(p, input);
@@ -67,7 +72,7 @@ public static class Proc
     /// </summary>
     public static RunningProcess SpawnMerged(ProcessStartInfo start, Action<string> each, string? input = null)
     {
-        var p = Process.Start(start) ?? throw new PmException($"Could not start {start.FileName}");
+        var p = Start(start);
         var gate = new object();
         void Line(string line)
         {
@@ -123,7 +128,7 @@ public static class Proc
         if (dir is not null) start.WorkingDirectory = dir;
         try
         {
-            using var p = Process.Start(start);
+            using var p = Start(start, detached: true);
         }
         catch (System.ComponentModel.Win32Exception e)
         {

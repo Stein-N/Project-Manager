@@ -1,7 +1,7 @@
 // Looks for a newer GitHub release of the tool, downloads the file for this kind of installation and puts it in place:
 // the program file or AppImage is replaced (same path, so autostart entries and shortcuts stay valid; a program folder
 // the user may not write to, e.g. C:\Program Files or /usr/local/bin, with administrator rights), a deb package is
-// installed with pkexec dpkg -i.
+// installed with pkexec dpkg -i, a Flatpak is updated from its repository with flatpak update.
 
 using System.Diagnostics;
 using System.Reflection;
@@ -23,6 +23,9 @@ public abstract record Install(string Program)
     /// <summary>Linux: installed by the deb package under /usr – updated by the package manager.</summary>
     public sealed record Deb(string Path) : Install(Path);
 
+    /// <summary>Linux: the Flatpak – updated from its repository (GitHub Pages), started with <c>flatpak run &lt;id&gt;</c>.</summary>
+    public sealed record Flatpak(string AppId) : Install(AppId);
+
     /// <summary>Program file of the deb package.</summary>
     public const string DebProgram = "/usr/bin/project-manager";
 
@@ -33,6 +36,7 @@ public abstract record Install(string Program)
     {
         if (OperatingSystem.IsLinux())
         {
+            if (Host.FlatpakId is { } id) return new Flatpak(id);
             if (Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } image) return new AppImage(image);
             var exe = Update.RunningExecutable();
             // a binary under /usr is not necessarily the deb package (tar.gz in /usr/local, systems without dpkg)
@@ -46,6 +50,8 @@ public abstract record Install(string Program)
     {
         AppImage => name.EndsWith("_amd64.AppImage"),
         Deb => name.EndsWith("_amd64.deb"),
+        // the release has a Flatpak build; the update itself comes from the repository, not this file
+        Flatpak => name.EndsWith("_x86_64.flatpak"),
         _ => name == Update.AssetName(),
     };
 }
@@ -161,12 +167,66 @@ public static class Update
     private static string DownloadDir => Path.Combine(Path.GetTempPath(), "project-manager-update");
 
     /// <summary>
+    /// Installs the new version of the Flatpak with <c>flatpak update</c> on the host; the running one goes on until the
+    /// restart (<see cref="InstallAndRestart"/>).
+    /// </summary>
+    public static void UpdateFlatpak(Install.Flatpak flatpak)
+    {
+        var before = FlatpakCommit(flatpak.AppId);
+        ProcResult r;
+        try
+        {
+            r = Proc.Output(Proc.Command("flatpak", ["update", "-y", "--noninteractive", flatpak.AppId]));
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or PmException)
+        {
+            throw new PmException($"Could not start flatpak update: {e.Message}", e);
+        }
+        if (!r.Success) throw new PmException($"flatpak update failed:\n{(r.Stdout + r.Stderr).Trim()}");
+        // GitHub Pages may still deliver the previous state of the repository for some minutes after a release
+        if (before is not null && FlatpakCommit(flatpak.AppId) == before)
+            throw new PmException("The Flatpak repository does not offer the new version yet (GitHub Pages can take a few minutes " +
+                                  "after a release). Please try again later.");
+    }
+
+    /// <summary>The installed commit of the app, null if flatpak cannot tell.</summary>
+    private static string? FlatpakCommit(string appId)
+    {
+        try
+        {
+            var r = Proc.Output(Proc.Command("flatpak", ["info", "--show-commit", appId]));
+            return r.Success ? r.Stdout.Trim() : null;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or PmException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Starts the Flatpak again once this instance has ended (it holds the single instance until then); the waiting
+    /// happens on the host, since the new instance runs in a sandbox of its own and cannot see this process.
+    /// </summary>
+    private static void RestartFlatpak(Install.Flatpak flatpak)
+    {
+        const string script = "i=0\n" +
+                              "while [ $i -lt 150 ] && flatpak ps --columns=application | grep -qxF \"$1\"; do sleep 0.1; i=$((i+1)); done\n" +
+                              "exec flatpak run \"$1\"";
+        Proc.Launch("/bin/sh", ["-c", script, "sh", flatpak.AppId]);
+    }
+
+    /// <summary>
     /// Puts the downloaded version in place and starts it; the caller exits right afterwards. The new instance waits
     /// until this process has ended.
     /// </summary>
     public static void InstallAndRestart(string downloaded)
     {
         var install = Install.Detect();
+        if (install is Install.Flatpak flatpak)
+        {
+            RestartFlatpak(flatpak);
+            return;
+        }
         if (install is Install.Deb) InstallDeb(downloaded);
         else
         {
@@ -336,7 +396,7 @@ public static class Update
             catch (Exception)
             {
             }
-            if (install is Install.Deb) return;
+            if (install is Install.Deb or Install.Flatpak) return;
             var old = Path.ChangeExtension(install.Program, "old");
             for (var i = 0; i < 20; i++)
             {

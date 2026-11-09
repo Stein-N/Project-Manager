@@ -8,7 +8,7 @@ public static class SystemTools
 
     /// <summary>Looks for an IntelliJ installation of the current platform.</summary>
     public static string? DetectIntellij() =>
-        IntellijCandidates(Util.Os, Util.SystemEnv(), Util.Home, Util.PathDirs()).FirstOrDefault(File.Exists);
+        Host.FirstExisting(IntellijCandidates(Util.Os, Util.SystemEnv(), Util.Home, Util.PathDirs()));
 
     /// <summary>Possible IntelliJ launchers in order of preference (Ultimate before Community, newest first).</summary>
     public static List<string> IntellijCandidates(Os os, IReadOnlyDictionary<string, string> env, string home, IReadOnlyList<string> pathDirs)
@@ -109,25 +109,12 @@ public static class SystemTools
         {
             if (file.EndsWith(".cmd") || file.EndsWith(".bat")) Proc.Launch("cmd.exe", ["/c", ide, project], noWindow: true);
             else if (file.EndsWith(".app")) Proc.Launch("open", ["-na", ide, "--args", project]);
-            else if (!Util.IsWindows && !IsExecutable(ide)) Proc.Launch("sh", [ide, project]); // script without the executable bit
+            else if (!Util.IsWindows && !Host.IsExecutable(ide)) Proc.Launch("sh", [ide, project]); // script without the executable bit
             else Proc.Launch(ide, [project]);
         }
         catch (PmException e)
         {
             throw new PmException($"Could not start {ide}: {e.Message}", e);
-        }
-    }
-
-    private static bool IsExecutable(string path)
-    {
-        if (OperatingSystem.IsWindows()) return true;
-        try
-        {
-            return (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
-        }
-        catch (IOException)
-        {
-            return false;
         }
     }
 
@@ -205,11 +192,12 @@ public static class SystemTools
             case Os.Mac:
                 return ["open", "-a", "Terminal", dir];
             default:
-                if (env.TryGetValue("TERMINAL", out var t) && t.Trim() is { Length: > 0 } term &&
-                    Util.FindOnPath(term, pathDirs) is not null)
-                    return [term];
-                return LinuxTerminals.FirstOrDefault(c => Util.FindOnPath(c[0], pathDirs) is not null)
-                    ?.Select(a => a.Replace("%d", dir)).ToList();
+            {
+                var commands = LinuxTerminals.Select(c => c.Select(a => a.Replace("%d", dir)).ToList()).ToList();
+                if (env.TryGetValue("TERMINAL", out var t) && t.Trim() is { Length: > 0 } term) commands.Insert(0, [term]);
+                var found = Util.FirstOnPath(commands.Select(c => c[0]).ToList(), pathDirs);
+                return commands.FirstOrDefault(c => c[0] == found);
+            }
         }
     }
 }

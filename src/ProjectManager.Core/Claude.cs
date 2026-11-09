@@ -96,7 +96,7 @@ public static class Claude
     /// <summary>The configured executable, otherwise <c>claude</c> on the PATH or in the usual install locations.</summary>
     public static string? Find(string configured)
     {
-        if (configured.Trim().Length > 0) return File.Exists(configured.Trim()) ? configured.Trim() : null;
+        if (configured.Trim().Length > 0) return Host.Exists(configured.Trim()) ? configured.Trim() : null;
         string[] names = Util.IsWindows ? ["claude.exe", "claude.cmd"] : ["claude"];
         var dirs = Util.PathDirs();
         dirs.Add(Path.Combine(Util.Home, ".local", "bin"));

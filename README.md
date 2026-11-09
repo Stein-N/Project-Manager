@@ -11,7 +11,7 @@ repository per mod), changelogs (drafts by Claude Code) and a cleanup of the Gra
 | `src/ProjectManager.Core` | All logic: projects, git, worktrees, changelog, Gradle cache cleanup, Claude, updates |
 | `src/ProjectManager` | The app ([Avalonia](https://avaloniaui.net/)): user interface in the IntelliJ New UI style, tray icon, autostart, single instance, log window |
 | `tests/ProjectManager.Core.Tests` | Tests of the logic (xUnit; they need git on the PATH) |
-| `packaging` | deb package, AppImage and Windows installer |
+| `packaging` | deb package, AppImage, tar.gz, Flatpak and Windows installer |
 
 Settings are stored in `~/.mc-project-manager/config.properties` (the same file the former Java and Rust versions
 used, so an existing setup is taken over).
@@ -50,3 +50,32 @@ The tar.gz archive is for distributions without dpkg (Arch, Fedora …). It is l
 unpacked straight into one: `tar -xzf <archive> -C ~/.local` (updates without a password) or
 `sudo tar -xzf <archive> -C /usr/local` (updates ask for the password via pkexec). The updater then replaces only
 `bin/project-manager` with `Project-Manager-linux-x64`.
+
+### Flatpak
+
+```sh
+flatpak install --user https://stein-n.github.io/Project-Manager/project-manager.flatpakref
+```
+
+The Flatpak repository lives on GitHub Pages; every release replaces it with the new version (the release also has the
+bundle `…_x86_64.flatpak`, which adds the repository for updates as well). Updates come with `flatpak update`, the
+software center or the update dialog of the app (it runs `flatpak update` on the host and restarts).
+
+The sandbox is open on purpose: git, Gradle, Claude, IntelliJ, the terminal and links run on the host through
+`flatpak-spawn --host` (`src/ProjectManager.Core/Host.cs`), with the PATH of a login shell, and the app reads and
+writes project folders anywhere. Settings stay in `~/.mc-project-manager`, so switching from another package keeps them.
+
+Build it locally (needs `flatpak-builder` and `org.freedesktop.Platform`/`Sdk` 25.08 from Flathub):
+`packaging/flatpak/build-flatpak.sh publish/project-manager <version> site dist`.
+
+One-time setup for the release workflow:
+
+1. A signing key without a passphrase, stored as the repository secret `FLATPAK_GPG_PRIVATE_KEY`:
+   ```sh
+   gpg --batch --passphrase '' --quick-gen-key "MC Mod Project Manager Flatpak" ed25519 sign never
+   gpg --armor --export-secret-keys "MC Mod Project Manager Flatpak"   # → the secret
+   ```
+   Keep a backup: installations only accept updates signed with this key.
+2. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+
+Without the secret the workflow builds no Flatpak and the release comes without it.

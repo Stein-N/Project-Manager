@@ -152,17 +152,24 @@ public static class Util
     public static string Home =>
         Environment.GetEnvironmentVariable(IsWindows ? "USERPROFILE" : "HOME") is { Length: > 0 } h ? h : ".";
 
+    /// <summary>The folders programs are looked up in (in the Flatpak sandbox the host's PATH).</summary>
     public static List<string> PathDirs() =>
-        (Environment.GetEnvironmentVariable("PATH") ?? "")
-        .Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .ToList();
+        Host.SearchPath.Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
 
     /// <summary><paramref name="program"/> as an absolute path, or found in one of <paramref name="dirs"/>.</summary>
-    public static string? FindOnPath(string program, IEnumerable<string> dirs)
+    public static string? FindOnPath(string program, IEnumerable<string> dirs) =>
+        Host.FirstExisting(PathCandidates(program, dirs));
+
+    /// <summary>The first of <paramref name="programs"/> that is found (<see cref="FindOnPath"/>), with a single lookup.</summary>
+    public static string? FirstOnPath(IReadOnlyList<string> programs, IReadOnlyList<string> dirs)
     {
-        if (program.Contains('/') || program.Contains('\\')) return File.Exists(program) ? program : null;
-        return dirs.Select(d => System.IO.Path.Combine(d, program)).FirstOrDefault(File.Exists);
+        var candidates = programs.SelectMany(p => PathCandidates(p, dirs).Select(file => (Program: p, File: file))).ToList();
+        var found = Host.FirstExisting(candidates.Select(c => c.File));
+        return found is null ? null : candidates.First(c => c.File == found).Program;
     }
+
+    private static IEnumerable<string> PathCandidates(string program, IEnumerable<string> dirs) =>
+        program.Contains('/') || program.Contains('\\') ? [program] : dirs.Select(d => System.IO.Path.Combine(d, program));
 
     /// <summary>Environment variables of this process.</summary>
     public static SortedDictionary<string, string> SystemEnv()

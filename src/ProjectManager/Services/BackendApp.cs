@@ -24,7 +24,7 @@ public sealed partial class Backend
     /// <summary>The configured IntelliJ launcher, otherwise a detected one (remembered in the settings).</summary>
     public string? IdeaPath()
     {
-        if (Config().Idea is { } p && File.Exists(p)) return p;
+        if (Config().Idea is { } p && Host.Exists(p)) return p;
         if (SystemTools.DetectIntellij() is not { } detected) return null;
         try
         {
@@ -91,8 +91,19 @@ public sealed partial class Backend
 
     public Task<List<ChangelogEntry>> Changelog() => Run(Update.Changelog);
 
+    /// <summary>
+    /// Downloads the new version; returns what <see cref="InstallUpdate"/> puts in place. A Flatpak installs it right
+    /// away with flatpak update (the running version goes on until the restart).
+    /// </summary>
     public Task<string> DownloadUpdate(Release release) => Run(() =>
     {
+        if (Install.Detect() is Install.Flatpak flatpak)
+        {
+            Log($"Updating the Flatpak to {release.Version} (flatpak update) …");
+            Update.UpdateFlatpak(flatpak);
+            Log($"✔ Version {release.Version} installed");
+            return flatpak.AppId;
+        }
         Log($"Downloading {release.FileName ?? "the update"} …");
         var file = Update.Download(release);
         Log($"✔ Downloaded {file}");

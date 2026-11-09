@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream data of the Flatpak (software centers show it); build-flatpak.sh fills in the version and the date. -->
+<component type="desktop-application">
+  <id>io.github.Stein_N.ProjectManager</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>MC Mod Project Manager</name>
+  <summary>Manage Minecraft mod projects and versions</summary>
+  <developer id="io.github.stein_n">
+    <name>Stein-N</name>
+  </developer>
+  <description>
+    <p>
+      Desktop tool for Minecraft mod projects in master/Minecraft version/project: git worktrees with one shared
+      repository per mod, changelogs drafted by Claude Code and a cleanup of the Gradle caches.
+    </p>
+    <p>
+      git, Gradle, Claude Code and IntelliJ IDEA are the ones installed on the system – the app starts them outside its
+      sandbox.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.Stein_N.ProjectManager.desktop</launchable>
+  <url type="homepage">https://github.com/Stein-N/Project-Manager</url>
+  <url type="bugtracker">https://github.com/Stein-N/Project-Manager/issues</url>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="@VERSION@" date="@DATE@" />
+  </releases>
+</component>

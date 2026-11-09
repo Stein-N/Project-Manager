@@ -12,6 +12,8 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Flatpak: temp files and the single instance socket where the host and every instance of the app see them
+        Host.ShareTempWithHost();
         // after an update the previous version may still be ending; it holds the single instance until then
         var after = Array.IndexOf(args, Update.AfterUpdateFlag);
         if (after >= 0 && after + 1 < args.Length && int.TryParse(args[after + 1], out var pid)) Update.WaitForExit(pid);

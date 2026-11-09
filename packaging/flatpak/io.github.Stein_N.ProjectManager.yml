@@ -1,0 +1,51 @@
+# Flatpak of the published program file. build-flatpak.sh puts the files next to this manifest and builds it.
+#
+# The sandbox is open on purpose: the app runs git, Gradle, Claude, IntelliJ, a terminal … on the host through
+# flatpak-spawn --host (the org.freedesktop.Flatpak service on the session bus, which also carries the tray icon), and
+# works on project folders anywhere on the host.
+app-id: io.github.Stein_N.ProjectManager
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: project-manager
+# the desktop file and icon of the other packages; the export needs them named after the app id
+rename-desktop-file: project-manager.desktop
+rename-icon: project-manager
+finish-args:
+  - --share=network
+  - --share=ipc
+  # Avalonia 11 draws through X11 (XWayland on Wayland)
+  - --socket=x11
+  - --device=dri
+  - --filesystem=host
+  - --socket=session-bus
+build-options:
+  # a single-file .NET program carries its assemblies behind the ELF part: stripping it would break it
+  no-debuginfo: true
+  strip: false
+modules:
+  - name: project-manager
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 project-manager /app/bin/project-manager
+      - install -Dm644 project-manager.desktop /app/share/applications/project-manager.desktop
+      - install -Dm644 32x32.png /app/share/icons/hicolor/32x32/apps/project-manager.png
+      - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/project-manager.png
+      - install -Dm644 256x256.png /app/share/icons/hicolor/256x256/apps/project-manager.png
+      - install -Dm644 512x512.png /app/share/icons/hicolor/512x512/apps/project-manager.png
+      - install -Dm644 io.github.Stein_N.ProjectManager.metainfo.xml /app/share/metainfo/io.github.Stein_N.ProjectManager.metainfo.xml
+    sources:
+      - type: file
+        path: project-manager
+      - type: file
+        path: project-manager.desktop
+      - type: file
+        path: 32x32.png
+      - type: file
+        path: 128x128.png
+      - type: file
+        path: 256x256.png
+      - type: file
+        path: 512x512.png
+      - type: file
+        path: io.github.Stein_N.ProjectManager.metainfo.xml

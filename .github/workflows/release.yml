@@ -5,6 +5,15 @@
 # Assets: the program file per platform (used by the built-in updater) plus the deb package, the AppImage, a tar.gz
 # archive (distributions without dpkg) and the Windows installer – the same files as the releases of the Rust versions, so their updater finds them.
 # Notes: the commit titles since the previous release (the app shows them as its changelog).
+#
+# Flatpak: the repository on GitHub Pages (https://stein-n.github.io/Project-Manager) gets the new version before the
+# release appears, so the app's updater finds it there; the release carries the bundle. Needs the secret
+# FLATPAK_GPG_PRIVATE_KEY (ASCII-armored key without a passphrase, it signs the repository) and GitHub Pages with the
+# source "GitHub Actions" – without the secret the release comes without a Flatpak and Pages stays as it is.
+#
+# Dry run (Run workflow with "dry run" ticked; always on a branch other than main): builds everything – the Flatpak
+# unsigned if the secret is missing – even if the release exists already, but neither deploys Pages nor creates a
+# release; the files stay as artifacts of the run.
 name: Release
 
 on:
@@ -12,6 +21,11 @@ on:
     branches: [main]
     paths: [Directory.Build.props]
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run – build only, no Pages deployment, no release (always on branches other than main)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,11 +49,14 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       exists: ${{ steps.check.outputs.exists }}
+      dry: ${{ steps.version.outputs.dry }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Read version
         id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run == true || github.ref != 'refs/heads/main' }}
         run: |
           version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n1 | tr -d '[:space:]')
           if [ -z "$version" ]; then
@@ -48,6 +65,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "dry=$DRY_RUN" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
       - name: Check for an existing release
@@ -55,8 +73,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          DRY_RUN: ${{ steps.version.outputs.dry }}
         run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+          if [ "$DRY_RUN" = true ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Dry run – building $TAG without releasing it."
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release $TAG exists already – nothing to do."
           else
@@ -94,7 +116,7 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: linux
+          name: release-linux
           path: dist/*
 
   windows:
@@ -134,11 +156,81 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: windows
+          name: release-windows
           path: dist/*
 
+  flatpak:
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    # flatpak, flatpak-builder and the runtime of the manifest; flatpak-builder needs --privileged for its sandbox
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    outputs:
+      signed: ${{ steps.key.outputs.signed }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-linux
+          path: linux
+
+      - name: Import the signing key
+        id: key
+        env:
+          KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          DRY_RUN: ${{ needs.version.outputs.dry }}
+        run: |
+          if [ -z "$KEY" ]; then
+            if [ "$DRY_RUN" = true ]; then
+              echo "::warning::The secret FLATPAK_GPG_PRIVATE_KEY is missing – the Flatpak of this dry run is unsigned."
+            else
+              echo "::warning::The secret FLATPAK_GPG_PRIVATE_KEY is missing – this release comes without a Flatpak."
+            fi
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "$KEY" | gpg --batch --import
+          fingerprint=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
+          echo "FLATPAK_GPG_KEY=$fingerprint" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        if: steps.key.outputs.signed == 'true' || needs.version.outputs.dry == 'true'
+        run: packaging/flatpak/build-flatpak.sh linux/Project-Manager-linux-x64 "$VERSION" site dist
+
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.key.outputs.signed == 'true' || needs.version.outputs.dry == 'true'
+        with:
+          path: site
+
+      - uses: actions/upload-artifact@v5
+        if: steps.key.outputs.signed == 'true' || needs.version.outputs.dry == 'true'
+        with:
+          name: release-flatpak
+          path: dist/*
+
+  pages:
+    needs: [version, flatpak]
+    if: needs.flatpak.outputs.signed == 'true' && needs.version.outputs.dry == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
+
   release:
-    needs: [version, linux, windows]
+    needs: [version, linux, windows, flatpak, pages]
+    # pages is skipped without the signing key; the release then comes without a Flatpak
+    if: ${{ !cancelled() && needs.version.outputs.dry == 'false' && needs.windows.result == 'success' && needs.flatpak.result == 'success' && needs.pages.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -148,6 +240,7 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           path: dist
+          pattern: release-*
           merge-multiple: true
 
       - name: Create release
