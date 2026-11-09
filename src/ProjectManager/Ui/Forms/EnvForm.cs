@@ -84,11 +84,10 @@ public static class EnvForm
             };
 
             var intro = Rich.Text(
-                "Stored as <code>.env</code> in the master folder and passed to the <b>publish</b> and <b>publishMods</b> tasks – read them in the " +
-                "build script with <code>providers.environmentVariable(\"MODRINTH_API\")</code>. <code>CLAUDE_API</code> holds Claude tokens from " +
+                "Stored as <code>.env</code> in the master folder. <code>CLAUDE_API</code> holds Claude tokens from " +
                 "<code>claude setup-token</code> (Pro/Max; API keys <code>sk-ant-api…</code> work too), several separated by <code>;</code> – the next one " +
-                "is used when a token fails. It is not passed to Gradle. <code>GITHUB_TOKEN</code> (personal access token) lets the clone dialog list your " +
-                "GitHub and organization repositories; it is not passed to Gradle either.");
+                "is used when a token fails. <code>GITHUB_TOKEN</code> (personal access token) lets the clone dialog list your " +
+                "GitHub and organization repositories.");
             intro.FontSize = 12;
             var body = W.Rows(8, (intro, false), (table.View, true));
             return Dialogs.Layout(body, Dialogs.Footer(

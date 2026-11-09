@@ -1,47 +1,5 @@
 namespace ProjectManager.Core.Tests;
 
-public class TypesTests
-{
-    [Fact]
-    public void ConstraintsRoundTripInBothSyntaxes()
-    {
-        var cases = new (ModLoader, string, VersionConstraint)[]
-        {
-            (ModLoader.Fabric, "*", new VersionConstraint.Any()),
-            (ModLoader.Fabric, "0.19.5", new VersionConstraint.Exact("0.19.5")),
-            (ModLoader.Fabric, ">=${fabric_loader}", new VersionConstraint.AtLeast("${fabric_loader}")),
-            (ModLoader.Fabric, ">=1.0 <2.0", new VersionConstraint.Range("1.0", "2.0", false)),
-            (ModLoader.Fabric, ">=1.0 <=2.0", new VersionConstraint.Range("1.0", "2.0", true)),
-            (ModLoader.Fabric, "~${minecraft_version}", new VersionConstraint.Custom("~${minecraft_version}")),
-            (ModLoader.NeoForge, "*", new VersionConstraint.Any()),
-            (ModLoader.NeoForge, "[26.1]", new VersionConstraint.Exact("26.1")),
-            (ModLoader.NeoForge, "[${neoforge_version},)", new VersionConstraint.AtLeast("${neoforge_version}")),
-            (ModLoader.Forge, "[62,63)", new VersionConstraint.Range("62", "63", false)),
-            (ModLoader.Forge, "[1.0,2.0]", new VersionConstraint.Range("1.0", "2.0", true)),
-            (ModLoader.Forge, "(1.0,)", new VersionConstraint.Custom("(1.0,)")),
-        };
-        foreach (var (loader, text, constraint) in cases)
-        {
-            Assert.Equal(constraint, VersionConstraint.Parse(loader, text));
-            Assert.Equal(text, constraint.Format(loader));
-        }
-        Assert.Equal(new VersionConstraint.Exact("1.2"), VersionConstraint.Parse(ModLoader.Fabric, "=1.2"));
-        Assert.Equal(new VersionConstraint.Custom("1.21.x"), VersionConstraint.Parse(ModLoader.Fabric, "1.21.x"));
-        Assert.Equal(new VersionConstraint.Custom("1.0"), VersionConstraint.Parse(ModLoader.Forge, "1.0"));
-    }
-
-    [Fact]
-    public void TaskLabelsAndLoaders()
-    {
-        Assert.Equal("Game test server", new RunTask(":forge:runGameTestServer", "").Label);
-        Assert.Equal("Publish mods", new RunTask("publishMods", "").Label);
-        Assert.Equal("fabric", new RunTask(":fabric:runGametests", "").Project);
-        Assert.Equal("fabric", Gradle.LoaderOf(":fabric:runClient"));
-        Assert.Equal("", Gradle.LoaderOf("build"));
-        Assert.Equal("", Gradle.LoaderOf("tasks --all"));
-    }
-}
-
 public class UtilTests
 {
     [Fact]
@@ -108,15 +66,14 @@ public class ConfigTests
     }
 
     [Fact]
-    public void BackportTypes()
+    public void SavingDropsSettingsOfRemovedFeatures()
     {
         var c = new Config();
-        Assert.Null(c.BackportTypes("My Mod", "1.20.1"));
-        c.SetBackportTypes("My Mod", "1.20.1", ["fix"]);
-        Assert.Equal(["fix"], c.BackportTypes("My Mod", "1.20.1"));
-        c.SetBackportTypes("My Mod", "1.20.1", []);
-        Assert.Empty(c.BackportTypes("My Mod", "1.20.1")!);
-        Assert.True(c.Props.ContainsKey("backport.types.My_Mod.1.20.1"));
+        c.Props["backportModel"] = "opus";
+        c.Props["backport.types.My_Mod.1.20.1"] = "fix";
+        c.Apply(c.Settings());
+        Assert.False(c.Props.ContainsKey("backportModel"));
+        Assert.False(c.Props.ContainsKey("backport.types.My_Mod.1.20.1"));
     }
 }
 
@@ -133,7 +90,6 @@ public class GitTests
         Assert.Equal("main", status.Branch);
         Assert.Equal(1, status.Changes);
         Assert.Equal(["1.20.1", "main"], T.Git().Branches(repo));
-        Assert.Equal("main", T.Git().DefaultBranch(repo));
         Assert.False(T.Git().Run(repo, "rev-parse", "--verify", "nope").Ok);
     }
 }
@@ -188,9 +144,6 @@ public class MetadataTests
         Assert.Equal("1.2.3", m.Version);
         Assert.Equal(["Nico", "Helper"], m.Authors);
         Assert.NotNull(m.Icon);
-        Assert.Equal(3, m.Dependencies.Count);
-        Assert.Equal("~1.21 || 1.21.1", m.Dependencies[1].Version);
-        Assert.False(m.Dependencies[2].Required);
     }
 
     [Fact]
@@ -208,9 +161,6 @@ public class MetadataTests
         Assert.Equal("examplemod", m.Id);
         Assert.Equal("Example # not a comment", m.Name);
         Assert.Equal("First line\nsecond line", m.Description);
-        Assert.Equal(2, m.Dependencies.Count);
-        Assert.True(m.Dependencies[0].Required);
-        Assert.False(m.Dependencies[1].Required);
         Assert.EndsWith("neoforge/src/main/resources/META-INF/neoforge.mods.toml", m.File.Replace('\\', '/'));
     }
 
@@ -227,15 +177,13 @@ public class MetadataTests
     }
 
     [Fact]
-    public void ForgeMandatoryFlag()
+    public void DependencyTablesDoNotOverrideTheMod()
     {
         using var tmp = new TempDir();
         T.Write(tmp.Path, "src/main/resources/META-INF/mods.toml",
             "[[mods]]\nmodId=\"old\"\n[[dependencies.old]]\n    modId=\"forge\"\n    mandatory=true\n" +
             "[[dependencies.old]]\n    modId=\"curios\"\n    mandatory=false\n");
-        var m = Metadata.Read(tmp.Path, T.Props())!;
-        Assert.True(m.Dependencies[0].Required);
-        Assert.False(m.Dependencies[1].Required);
+        Assert.Equal("old", Metadata.Read(tmp.Path, T.Props())!.Id);
     }
 }
 
@@ -254,17 +202,6 @@ public class ReadmeTests
 
 public class SystemToolsTests
 {
-    [Fact]
-    public void ToastScriptEscapesTheText()
-    {
-        var script = System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(SystemTools.ToastScript("App", "Primer <1> & 'x'", "done")));
-        Assert.Contains("$xml.LoadXml('<toast>", script);
-        Assert.Contains("<text>Primer &lt;1&gt; &amp; &apos;x&apos;</text>", script);
-        // the XML attributes use '' inside the single-quoted PowerShell string
-        Assert.Contains("<binding template=''ToastGeneric''>", script);
-        Assert.Contains("CreateToastNotifier($id).Show(", script);
-    }
-
     private static string Touch(string file)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);

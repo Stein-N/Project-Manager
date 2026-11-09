@@ -13,15 +13,11 @@ public sealed partial class Backend
     {
         var result = Config().Master is { } master && Directory.Exists(master) ? Scanner.Scan(master, Git) : ScanResult.Empty;
         lock (_log) _scan = result;
-        lock (_mainBranches) _mainBranches.Clear();
         Scanned?.Invoke(result);
         return result;
     }
 
     public Task<ReadmeDoc?> Readme(string project) => Run(() => Core.Readme.Load(project));
-
-    /// <summary>Main branch of the project's repository.</summary>
-    public Task<string?> MainBranch(string project) => Run(() => MainBranchOf(Project(project)));
 
     // ---------------------------------------------------------------- versions
 
@@ -325,7 +321,7 @@ public sealed partial class Backend
         return new TagInfo(Tags.Suggest(p.ModVersion, p.EffectiveMc), latest, latest is null ? 0 : Tags.CommitsSince(Git, project, latest, "HEAD"));
     });
 
-    /// <summary>Creates a tag at HEAD and optionally pushes it; the backport continues from the newest tag.</summary>
+    /// <summary>Creates a tag at HEAD and optionally pushes it.</summary>
     public Task CreateTag(string project, string name, string message, bool push) => Run(() =>
     {
         name = name.Trim();

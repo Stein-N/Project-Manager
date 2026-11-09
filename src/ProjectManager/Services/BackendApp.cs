@@ -18,7 +18,6 @@ public sealed partial class Backend
                 ? "Claude Code login – set CLAUDE_API (tokens from claude setup-token) to use other accounts"
                 : $"{tokens.Count} token(s) from CLAUDE_API, tried in order",
             DefaultClaudeModel = Core.Config.DefaultClaudeModel,
-            DefaultBackportModel = Core.Config.DefaultBackportModel,
         };
     });
 
@@ -104,7 +103,6 @@ public sealed partial class Backend
     public Task InstallUpdate(string file) => Run(() =>
     {
         Update.InstallAndRestart(file);
-        Gradle.StopAll();
     });
 
     // ---------------------------------------------------------------- system
@@ -130,7 +128,4 @@ public sealed partial class Backend
         Log($"Opening {Util.FileName(path)} in IntelliJ …");
         SystemTools.OpenInIntellij(ide, path);
     });
-
-    /// <summary>Running Gradle tasks; the UI asks before exiting while some run.</summary>
-    public int RunningTasks => Gradle.RunningCount;
 }

@@ -38,18 +38,6 @@ public static class Http
         }
     }
 
-    /// <summary>The body of a successful request; an error for anything but 200.</summary>
-    public static string GetOk(string url)
-    {
-        var r = Get(url);
-        return r.Status switch
-        {
-            200 => r.Body,
-            404 => throw new PmException($"not found ({url})"),
-            var s => throw new PmException($"HTTP {s} ({url})"),
-        };
-    }
-
     /// <summary>Downloads <paramref name="url"/> into <paramref name="file"/>.</summary>
     public static void Download(string url, string file)
     {

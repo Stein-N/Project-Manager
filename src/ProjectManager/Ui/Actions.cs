@@ -161,7 +161,6 @@ public static class Actions
             case "cleanup": React.Spawn(() => CleanupForm.Show(s)); break;
             case "env": React.Spawn(() => EnvForm.Show(s)); break;
             case "import": React.Spawn(() => SimpleForms.Import(s, null)); break;
-            case "types": React.Spawn(() => SimpleForms.Types(s, "Mod 1.20.1", ["fix"])); break;
             case "message": React.Spawn(() => s.Dialogs.Confirm("Remove project", "Really <b>permanently delete</b> the project folder?<br><code>/x/y</code><br><br><span class=\"error\"><b>Warning:</b> 2 uncommitted change(s).<br>These will be lost!</span>", "Delete")); break;
             case "error": React.Spawn(() => s.Error("Error", "git fetch failed:\nfatal: could not read from remote repository")); break;
             case "commit" when project is not null: React.Spawn(() => CommitForm.Show(s, project, "")); break;
@@ -233,25 +232,9 @@ public static class Actions
     {
         var file = await s.Bg("Downloading update…", s.Api.DownloadUpdate(release));
         if (!file.Ok) return;
-        var running = s.Api.RunningTasks;
-        var warning = running > 0 ? $"<br><b>{running} Gradle task(s) are still running and will be stopped.</b>" : "";
-        if (await s.Dialogs.Confirm("Update", $"Version {Html(release.Version)} is ready.<br>Restart now?{warning}", "Restart") &&
+        if (await s.Dialogs.Confirm("Update", $"Version {Html(release.Version)} is ready.<br>Restart now?", "Restart") &&
             await s.Bg("Restarting…", s.Api.InstallUpdate(file.Value)))
             App.Current.Exit();
-    }
-
-    // ---------------------------------------------------------------- close / exit
-
-    /// <summary>Asks when Gradle tasks are running; true if the app may exit.</summary>
-    private static async Task<bool> ConfirmExit(Store s)
-    {
-        var running = s.Api.RunningTasks;
-        return running == 0 || await s.Dialogs.Confirm("Exit", $"{running} Gradle task(s) are still running. Stop them and exit?", "Exit");
-    }
-
-    public static async Task Exit(Store s)
-    {
-        if (await ConfirmExit(s)) App.Current.Exit();
     }
 
     // ---------------------------------------------------------------- versions and projects
@@ -494,135 +477,12 @@ public static class Actions
             await s.ReloadAndSelect(p.Path);
     }
 
-    // ---------------------------------------------------------------- gradle
-
-    public static async Task RunTask(Store s, ModProject p, string task)
-    {
-        var name = task[(task.LastIndexOf(':') + 1)..];
-        if (Core.RunTask.IsPublishTask(name))
-        {
-            var check = await s.Bg("Checking…", s.Api.PublishCheck(p.Path));
-            if (!check.Ok) return;
-            var c = check.Value;
-            var vars = c.Vars.Count == 0 ? "No variables in <code>.env</code>." : $"Environment from <code>.env</code>: {Html(string.Join(", ", c.Vars))}";
-            if (c.Missing.Count > 0) vars += $"<br><span class=\"warn\">Missing or empty: {Html(string.Join(", ", c.Missing))}</span>";
-            if (c.ChangelogWarning is { } w) vars += $"<br><span class=\"warn\">{Html(w)}</span>";
-            var text = $"<b>gradlew {Html(task)}</b><br>This publishes the mod (Maven / Modrinth / CurseForge …) for {Html(p.Label)}.<br>{vars}<br><br>Run it now?";
-            if (!await s.Dialogs.Confirm("Publish", text, "Publish")) return;
-        }
-        try
-        {
-            await s.Api.RunTask(p.Path, task);
-        }
-        catch (Exception e)
-        {
-            await s.Error("Gradle", e.Message);
-        }
-    }
-
-    public static async Task StopTask(Store s, ModProject p, string task)
-    {
-        try
-        {
-            await s.Api.StopTask(p.Path, task);
-        }
-        catch (Exception e)
-        {
-            await s.Error("Gradle", e.Message);
-        }
-    }
-
-    public static async Task DetectTasks(Store s, ModProject p)
-    {
-        if ((await s.Bg("Detecting run configurations…", s.Api.DetectTasks(p.Path))).Ok) s.Tick.Value++;
-    }
-
-    public static async Task BuildAll(Store s, string modName)
-    {
-        var results = await s.Bg($"Building all versions of {modName}…", s.Api.BuildAllVersions(modName));
-        if (results.Ok && results.Value.Count > 0)
-            await s.Dialogs.Message($"Build results – {modName}", string.Join("<br>", results.Value.Select(Html)));
-    }
+    // ---------------------------------------------------------------- .env
 
     public static async Task EditEnv(Store s)
     {
         if (await RequireMaster(s) is null) return;
         await EnvForm.Show(s);
         s.Tick.Value++;
-    }
-
-    // ---------------------------------------------------------------- dependencies
-
-    private static void AddChange(Store s, string project, VersionChange change) =>
-        s.VersionChanges.Update(c =>
-        {
-            if (!c.TryGetValue(project, out var list)) c[project] = list = [];
-            list.Add(change);
-        });
-
-    /// <summary>Sets one version and remembers the change for the commit message.</summary>
-    public static async Task SetDependency(Store s, ModProject p, DependencyEntry entry, string version)
-    {
-        if (version == entry.Value) return;
-        var change = new VersionChange(entry.Label, entry.Value, version);
-        if (await s.Bg("Updating…", s.Api.SetDependency(p.Path, entry, version)))
-        {
-            AddChange(s, p.Path, change);
-            await s.ReloadAndSelect(p.Path);
-        }
-    }
-
-    /// <summary>Changes how a dependency declared in a mod file is evaluated (the change stays uncommitted).</summary>
-    public static async Task SetDeclaredDependency(Store s, ModProject p, string file, DeclaredDependency dep, string text,
-        VersionConstraint constraint)
-    {
-        var label = $"{dep.ModId} ({file[(file.LastIndexOf('/') + 1)..]})";
-        var old = await s.Bg("Updating…", s.Api.SetDeclaredDependency(p.Path, file, dep.RawId, constraint));
-        if (!old.Ok) return;
-        AddChange(s, p.Path, new VersionChange(label, old.Value, text));
-        await s.ReloadAndSelect(p.Path);
-    }
-
-    /// <summary>Every entry to its newest stable version.</summary>
-    public static async Task UpdateAllDependencies(Store s, ModProject p, List<DependencyRow> rows)
-    {
-        var updates = rows.Where(r => r.Latest is { } l && Versions.IsNewer(l, r.Entry.Value)).Select(r => (r.Entry, Version: r.Latest!)).ToList();
-        if (updates.Count == 0) return;
-        var list = updates.Select(u => $"{Html(u.Entry.Label)}: {Html(u.Entry.Value)} → {Html(u.Version)}");
-        if (!await s.Dialogs.Confirm("Update dependencies", $"Update {updates.Count} version(s)?<br><br>{string.Join("<br>", list)}", "Update"))
-            return;
-        foreach (var (entry, version) in updates)
-        {
-            if (!await s.Bg("Updating…", s.Api.SetDependency(p.Path, entry, version))) break;
-            AddChange(s, p.Path, new VersionChange(entry.Label, entry.Value, version));
-        }
-        await s.ReloadAndSelect(p.Path);
-    }
-
-    /// <summary>Commit dialog with a message that lists the version changes.</summary>
-    public static async Task CommitVersionChanges(Store s, ModProject p)
-    {
-        var changes = s.VersionChanges.Value.GetValueOrDefault(p.Path) ?? [];
-        if (await Commit(s, p, VersionCommitMessage(changes))) s.VersionChanges.Update(c => c.Remove(p.Path));
-    }
-
-    /// <summary><c>build: update Fabric API to 0.2</c> for one change, a list for several (the last change per entry counts).</summary>
-    public static string VersionCommitMessage(List<VersionChange> changes)
-    {
-        // several changes of the same entry: from the first old to the last new version
-        var merged = new List<VersionChange>();
-        foreach (var c in changes)
-        {
-            var i = merged.FindIndex(m => m.Label == c.Label);
-            if (i >= 0) merged[i] = merged[i] with { New = c.New };
-            else merged.Add(c);
-        }
-        merged.RemoveAll(m => m.Old == m.New);
-        return merged.Count switch
-        {
-            0 => "build: update dependencies",
-            1 => $"build: update {merged[0].Label} to {merged[0].New}\n\n{merged[0].Label} {merged[0].Old} → {merged[0].New}",
-            _ => $"build: update dependencies\n\n{string.Join("\n", merged.Select(m => $"- {m.Label} {m.Old} → {m.New}"))}",
-        };
     }
 }

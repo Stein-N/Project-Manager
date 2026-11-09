@@ -11,9 +11,6 @@ public sealed class Config
     /// <summary>Changelogs: Sonnet writes them as good as Opus for this task, faster and with less usage.</summary>
     public const string DefaultClaudeModel = "sonnet";
 
-    /// <summary>Backports are harder than changelogs: Opus by default.</summary>
-    public const string DefaultBackportModel = "claude-opus-5-5";
-
     /// <summary>Folder of the settings and other per-user files.</summary>
     public static string Dir => Path.Combine(Util.Home, ".mc-project-manager");
 
@@ -80,8 +77,6 @@ public sealed class Config
 
     public string ClaudeModel => String("claudeModel") is { Length: > 0 } m ? m : DefaultClaudeModel;
 
-    public string BackportModel => String("backportModel") is { Length: > 0 } m ? m : DefaultBackportModel;
-
     public int ClaudeTimeoutMinutes => Math.Max(1, Int("claudeTimeoutMinutes", 15));
 
     public int AutoFetchMinutes => Int("autoFetchMinutes", 10);
@@ -103,20 +98,6 @@ public sealed class Config
 
     public double ClaudeMaxBudgetUsd => Math.Max(0, Double("claudeMaxBudgetUsd", 1.0));
 
-    public double BackportMaxBudgetUsd => Math.Max(0, Double("backportMaxBudgetUsd", 5.0));
-
-    /// <summary>Commit types backported from <paramref name="modName"/> into <paramref name="target"/>; empty = all types, null = not configured.</summary>
-    public List<string>? BackportTypes(string modName, string target)
-    {
-        if (!Props.TryGetValue(BackportKey(modName, target), out var value)) return null;
-        var v = value.Trim();
-        if (v.Length == 0 || v == "*") return [];
-        return v.Split(',').Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
-    }
-
-    /// <summary><paramref name="types"/> empty = all types.</summary>
-    public void SetBackportTypes(string modName, string target, IReadOnlyCollection<string> types) =>
-        Props[BackportKey(modName, target)] = types.Count == 0 ? "*" : string.Join(",", types);
 
     /// <summary>All settings at once (settings dialog).</summary>
     public Settings Settings() => new()
@@ -132,9 +113,7 @@ public sealed class Config
         SkippedVersion = SkippedVersion,
         Claude = Claude,
         ClaudeModel = ClaudeModel,
-        BackportModel = BackportModel,
         ClaudeMaxBudgetUsd = ClaudeMaxBudgetUsd,
-        BackportMaxBudgetUsd = BackportMaxBudgetUsd,
         ClaudeTimeoutMinutes = ClaudeTimeoutMinutes,
     };
 
@@ -151,16 +130,10 @@ public sealed class Config
         SetSkippedVersion(s.SkippedVersion);
         SetString("claude", s.Claude);
         SetString("claudeModel", s.ClaudeModel.Trim() == DefaultClaudeModel ? "" : s.ClaudeModel);
-        SetString("backportModel", s.BackportModel.Trim() == DefaultBackportModel ? "" : s.BackportModel);
         Props["claudeMaxBudgetUsd"] = Num(Math.Max(0, s.ClaudeMaxBudgetUsd));
-        Props["backportMaxBudgetUsd"] = Num(Math.Max(0, s.BackportMaxBudgetUsd));
         Props["claudeTimeoutMinutes"] = Math.Max(1, s.ClaudeTimeoutMinutes).ToString(CultureInfo.InvariantCulture);
-    }
-
-    private static string BackportKey(string modName, string target)
-    {
-        static string Clean(string s) =>
-            new(s.Select(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-' ? c : '_').ToArray());
-        return $"backport.types.{Clean(modName)}.{Clean(target)}";
+        // settings of the removed backport and primer
+        foreach (var key in Props.Keys.Where(k => k is "backportModel" or "backportMaxBudgetUsd" || k.StartsWith("backport.types.")).ToList())
+            Props.Remove(key);
     }
 }

@@ -36,10 +36,10 @@ public static class Scanner
         return repos.OrderBy(r => r.Name.ToLowerInvariant(), StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>Version folders, newest first (the primers folder is none).</summary>
+    /// <summary>Version folders, newest first.</summary>
     public static List<string> VersionFolders(string master)
     {
-        var v = Util.VisibleSubdirs(master).Select(Util.FileName).Where(n => n != Primer.DirName).ToList();
+        var v = Util.VisibleSubdirs(master).Select(Util.FileName).ToList();
         Versions.SortDesc(v);
         return v;
     }
@@ -55,7 +55,6 @@ public static class Scanner
             Path = dir,
             Git = isGit,
             LinkedWorktree = File.Exists(dotGit),
-            GradleWrapper = Gradle.Wrapper(dir) is not null,
             Readme = Readme.Find(dir),
         };
         if (isGit)

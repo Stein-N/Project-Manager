@@ -222,7 +222,7 @@ public static class Util
         return string.IsNullOrEmpty(name) ? path : name;
     }
 
-    /// <summary>Sub folders, not starting with "." (hidden folders like .repos and .backport are not projects).</summary>
+    /// <summary>Sub folders, not starting with "." (hidden folders like .repos are not projects).</summary>
     public static List<string> VisibleSubdirs(string dir) => Subdirs(dir).Where(p => !FileName(p).StartsWith('.')).ToList();
 
     /// <summary>All sub folders, sorted.</summary>
@@ -393,7 +393,4 @@ public static class Util
             ? $"{Math.Round(value, MidpointRounding.ToEven).ToString("0", inv)} {units[unit]}"
             : $"{value.ToString("0.0", inv)} {units[unit]}";
     }
-
-    /// <summary>Milliseconds since the epoch.</summary>
-    public static long NowMillis() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 }

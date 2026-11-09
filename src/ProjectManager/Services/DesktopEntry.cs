@@ -33,7 +33,7 @@ public static class DesktopEntry
         // a debug build only adds a hidden entry (for the icon), it never replaces the launcher of the installed app
         if (debug && File.Exists(entry)) return;
         var desktop = "[Desktop Entry]\nType=Application\nName=MC Mod Project Manager\n" +
-                      $"Comment=Manage Minecraft mod projects, versions and backports\nExec=\"{exe}\"\nIcon={Id}\n" +
+                      $"Comment=Manage Minecraft mod projects and versions\nExec=\"{exe}\"\nIcon={Id}\n" +
                       $"StartupWMClass={Id}\nCategories=Development;\nTerminal=false\n{(debug ? "NoDisplay=true\n" : "")}";
         try
         {

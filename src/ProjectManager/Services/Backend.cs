@@ -7,54 +7,26 @@ using ProjectManager.Core;
 
 namespace ProjectManager.Services;
 
-/// <summary>One backport: the session plus what can be read while a step runs.</summary>
-public sealed class BackportSlot
-{
-    public readonly object Lock = new();
-    public BackportSession? Session;
-    /// <summary>Label of the running step.</summary>
-    public volatile string? Busy;
-    public ClaudeCancel Cancel = new();
-    public volatile bool Building;
-    public volatile bool ClaudeRunning;
-    /// <summary>Output of the running build, handed to the session when it ends.</summary>
-    public readonly List<string> BuildLines = [];
-}
-
 public sealed partial class Backend
 {
-    /// <summary>The log keeps this many characters; Gradle runs can produce a lot of output.</summary>
+    /// <summary>The log keeps this many characters.</summary>
     private const int MaxLogChars = 400_000;
 
     private Config _config;
     private readonly object _configLock = new();
     public Git Git { get; }
-    public GradleRunner Gradle { get; } = new();
-    /// <summary>Projects whose Gradle tasks are being detected right now.</summary>
-    private readonly HashSet<string> _detecting = [];
     private readonly LinkedList<LogLine> _log = new();
     private int _logChars;
     /// <summary>The last scan (tray menu, sibling lookups).</summary>
     private ScanResult _scan = ScanResult.Empty;
-    private readonly Dictionary<string, string?> _mainBranches = [];
     /// <summary>Running changelog generations per project.</summary>
     private readonly Dictionary<string, ClaudeCancel> _changelogRuns = [];
-    /// <summary>Backports per target project; they survive switching between projects.</summary>
-    private readonly Dictionary<string, BackportSlot> _backports = [];
     public int AutoFetchRunning;
-    /// <summary>Available dependency versions (official repositories), loaded at start and cached on disk.</summary>
-    private Catalog? _versions = VersionLists.LoadCached();
-    private int _versionsLoading;
 
     // events (raised on worker threads)
     public event Action<LogLine>? LogAdded;
-    public event Action<GradleState>? GradleChanged;
     /// <summary>The projects should be rescanned, e.g. after an auto-fetch.</summary>
     public event Action? RescanRequested;
-    /// <summary>The available dependency versions were loaded.</summary>
-    public event Action? VersionsLoaded;
-    /// <summary>A backport step ended outside of a command, e.g. its build (payload: the target path).</summary>
-    public event Action<string>? BackportChanged;
     /// <summary>Mod detection in the GitHub dialog.</summary>
     public event Action<GithubProgress>? GithubProgressed;
     /// <summary>A new scan result (tray menu).</summary>
@@ -122,49 +94,11 @@ public sealed partial class Backend
 
     public string GithubToken() => GitHub.Token(EnvFile.ToMap(EnvVars()), Util.SystemEnv());
 
-    /// <summary>.env for the Gradle publish tasks – without the Claude and GitHub tokens, Gradle does not need them.</summary>
-    public SortedDictionary<string, string> PublishEnv()
-    {
-        var env = EnvFile.ToMap(EnvVars());
-        env.Remove(Claude.Variable);
-        env.Remove(GitHub.Variable);
-        return env;
-    }
-
     public ModProject Project(string path) =>
         Scan.Projects.FirstOrDefault(p => p.Path == path) ?? throw new PmException($"Unknown project {path} – refresh the list.");
 
     /// <summary>Other worktrees of the same repository.</summary>
     public List<ModProject> Siblings(ModProject p) => Scan.Projects.Where(p.SameRepo).ToList();
-
-    /// <summary>Main branch of the project's repository (cached per repository).</summary>
-    public string? MainBranchOf(ModProject p)
-    {
-        var key = p.CommonDir ?? p.Path;
-        lock (_mainBranches)
-        {
-            if (_mainBranches.TryGetValue(key, out var cached)) return cached;
-        }
-        var branch = Git.DefaultBranch(p.Path);
-        lock (_mainBranches) _mainBranches[key] = branch;
-        return branch;
-    }
-
-    public BackportSlot BackportSlot(string target)
-    {
-        lock (_backports)
-        {
-            if (!_backports.TryGetValue(target, out var slot)) _backports[target] = slot = new BackportSlot();
-            return slot;
-        }
-    }
-
-    public GradleState GradleStateOf(string project)
-    {
-        bool detecting;
-        lock (_detecting) detecting = _detecting.Contains(project);
-        return new GradleState(project, Gradle.RunningTasks(project), detecting);
-    }
 
     // ---------------------------------------------------------------- log
 
@@ -196,8 +130,22 @@ public sealed partial class Backend
     /// <summary>Output of a command, indented below the line that started it.</summary>
     public Action<string> SubLogger() => line => Log($"    {line}");
 
+
     /// <summary>Output of a project's task, tagged with the project (<c>[1.21.1/Mod] …</c>).</summary>
     public Action<string> TaggedLogger(string tag) => line => Log($"    [{tag}] {line}");
+
+    /// <summary>Label of a project for the log, "" if it is unknown.</summary>
+    private string LabelOf(string project)
+    {
+        try
+        {
+            return Project(project).Label;
+        }
+        catch (PmException)
+        {
+            return "";
+        }
+    }
 
     public List<LogLine> LogHistory()
     {
@@ -212,8 +160,6 @@ public sealed partial class Backend
             _logChars = 0;
         }
     }
-
-    public void EmitGradle(string project) => GradleChanged?.Invoke(GradleStateOf(project));
 
     /// <summary>Asks the UI to rescan (after an auto-fetch).</summary>
     public void RequestRescan() => RescanRequested?.Invoke();

@@ -25,9 +25,7 @@ public static class SettingsForm
         var updates = new Var<bool>(initial.CheckUpdates);
         var claude = new Var<string>(initial.Claude);
         var claudeModel = new Var<string>(initial.ClaudeModel);
-        var backportModel = new Var<string>(initial.BackportModel);
         var budget = new Var<string>(initial.ClaudeMaxBudgetUsd.ToString(CultureInfo.InvariantCulture));
-        var backportBudget = new Var<string>(initial.BackportMaxBudgetUsd.ToString(CultureInfo.InvariantCulture));
         var timeout = new Var<string>(initial.ClaudeTimeoutMinutes.ToString(CultureInfo.InvariantCulture));
         static string? OptPath(string t) => t.Trim().Length == 0 ? null : t.Trim();
 
@@ -62,9 +60,7 @@ public static class SettingsForm
                 SkippedVersion = initial.SkippedVersion,
                 Claude = claude.Value.Trim(),
                 ClaudeModel = claudeModel.Value.Trim(),
-                BackportModel = backportModel.Value.Trim(),
                 ClaudeMaxBudgetUsd = Number(budget, 1),
-                BackportMaxBudgetUsd = Number(backportBudget, 5),
                 ClaudeTimeoutMinutes = Math.Max(1, (int)Number(timeout, 15)),
             });
         }
@@ -89,8 +85,6 @@ public static class SettingsForm
                 W.Btn("Check now", () => React.Spawn(() => Actions.CheckUpdate(s, true)), flat: true), W.Spacer()))
             .Row("Claude Code CLI", W.Inline(W.Grow(W.Input(claude, "claude on the PATH")), W.Btn("Detect", DetectClaude)))
             .Row("Changelog model", W.Input(claudeModel, $"{info.DefaultClaudeModel} (default) or opus"))
-            .Row("Backport & primer model", W.Inline(W.Grow(W.Input(backportModel, $"{info.DefaultBackportModel} (default)")), Num(backportBudget),
-                W.Muted("USD per run")))
             .Row("Claude budget per run", W.Inline(Num(budget), W.Muted("USD (0 = no limit), stop after"), Num(timeout), W.Muted("minutes"),
                 W.Spacer()))
             .Row("Claude sign-in", W.Wrapped(info.ClaudeSignIn, "muted"))

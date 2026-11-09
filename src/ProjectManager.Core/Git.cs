@@ -120,18 +120,6 @@ public sealed class Git(string executable)
         return names;
     }
 
-    /// <summary>
-    /// The main branch of a repo: the default branch of <c>origin</c> (<c>origin/HEAD</c>), otherwise a local
-    /// <c>main</c> or <c>master</c>; null if none of them exists.
-    /// </summary>
-    public string? DefaultBranch(string repo)
-    {
-        if (Value(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD") is { } head &&
-            head.StartsWith("origin/"))
-            return head["origin/".Length..].Trim();
-        return new[] { "main", "master" }.FirstOrDefault(n => Run(repo, "show-ref", "--verify", "--quiet", $"refs/heads/{n}").Ok);
-    }
-
     /// <summary>Branches of a remote repository without cloning it, and its default branch.</summary>
     public (List<string> Branches, string? Default) RemoteBranches(string url)
     {

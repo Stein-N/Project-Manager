@@ -13,9 +13,9 @@ public class ClaudeTests
     private const string OkOauth = """{"type":"result","subtype":"success","is_error":false,"result":"via oauth","total_cost_usd":0.01,"usage":{}}""";
     private const string OkApiKey = """{"type":"result","subtype":"success","is_error":false,"result":"via api key","total_cost_usd":0.01,"usage":{}}""";
 
-    private static ClaudeRequest Request(string dir, ClaudeTools tools, string? model = null) => new()
+    private static ClaudeRequest Request(string dir, string? model = null) => new()
     {
-        WorkDir = dir, Prompt = "prompt", Tools = tools, Model = model, MaxBudgetUsd = 1.5, Timeout = TimeSpan.FromSeconds(60),
+        WorkDir = dir, Prompt = "prompt", Model = model, MaxBudgetUsd = 1.5, Timeout = TimeSpan.FromSeconds(60),
     };
 
     private static string ArgAfter(List<string> cmd, string flag) => cmd[cmd.IndexOf(flag) + 1];
@@ -58,16 +58,9 @@ public class ClaudeTests
     }
 
     [Fact]
-    public void ParsesPermissionDenials()
-    {
-        const string r = """{"type":"result","subtype":"success","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash","tool_input":{"command":"git commit -am x"}},{"tool_name":"Write","tool_input":{"file_path":"C:\\x\\outside.txt","content":"x"}}]}""";
-        Assert.Equal(["Bash: git commit -am x", "Write: C:\\x\\outside.txt"], Claude.Outcome(Claude.Parse(r)!).Denials);
-    }
-
-    [Fact]
     public void CommandWithoutTools()
     {
-        var cmd = Claude.Command("claude", Request(".", new ClaudeTools()), "mcp.json", false);
+        var cmd = Claude.Command("claude", Request("."), "mcp.json", false);
         Assert.Equal("claude", cmd[0]);
         foreach (var flag in new[] { "-p", "--strict-mcp-config", "--no-session-persistence" }) Assert.Contains(flag, cmd);
         Assert.Equal("", ArgAfter(cmd, "--tools"));
@@ -78,22 +71,12 @@ public class ClaudeTests
     }
 
     [Fact]
-    public void CommandWithTools()
+    public void CommandOptions()
     {
-        var tools = new ClaudeTools
-        {
-            Available = ["Read", "Edit"], Allowed = ["Bash(git diff:*)"], Disallowed = ["Bash(git commit:*)", "Bash(git push:*)"],
-            PermissionMode = "dontAsk",
-        };
-        var cmd = Claude.Command("C:/x/claude.cmd", Request(".", tools, "haiku"), "m", false);
+        var cmd = Claude.Command("C:/x/claude.cmd", Request(".", "haiku"), "m", false);
         Assert.Equal(["cmd.exe", "/c"], cmd.Take(2));
-        Assert.Equal("Read,Edit", ArgAfter(cmd, "--tools"));
-        Assert.Equal("Bash(git diff:*)", ArgAfter(cmd, "--allowedTools"));
-        Assert.Equal("Bash(git commit:*),Bash(git push:*)", ArgAfter(cmd, "--disallowedTools"));
-        Assert.Equal("dontAsk", ArgAfter(cmd, "--permission-mode"));
-        Assert.Equal("none", ArgAfter(cmd, "--permission-prompts"));
         Assert.Equal("haiku", ArgAfter(cmd, "--model"));
-        var keyed = Request(".", new ClaudeTools()) with { Tokens = ["k"] };
+        var keyed = Request(".") with { Tokens = ["k"] };
         Assert.Contains("--bare", Claude.Command("claude", keyed, "m", true));
     }
 
@@ -135,7 +118,7 @@ public class ClaudeTests
         using var tmp = new TempDir();
         var fake = FakeCli(tmp.Path, $"{Print(Init)}\necho not json\n{Print(Result)}");
         var lines = new List<string>();
-        var o = Claude.Run(fake, Request(tmp.Path, new ClaudeTools()), l => lines.Add(l), new ClaudeCancel());
+        var o = Claude.Run(fake, Request(tmp.Path), l => lines.Add(l), new ClaudeCancel());
         Assert.True(o.Ok, o.Text);
         Assert.Equal("## 1.0.0", o.Text);
         Assert.Contains("not json", lines);
@@ -148,7 +131,7 @@ public class ClaudeTests
         if (OperatingSystem.IsWindows()) return;
         using var tmp = new TempDir();
         var fake = FakeCli(tmp.Path, "echo Error: not logged in\nexit 3");
-        var o = Claude.Run(fake, Request(tmp.Path, new ClaudeTools()), _ => { }, new ClaudeCancel());
+        var o = Claude.Run(fake, Request(tmp.Path), _ => { }, new ClaudeCancel());
         Assert.Equal(ClaudeStatus.Error, o.Status);
         Assert.True(o.Text.Contains("code 3") && o.Text.Contains("not logged in"), o.Text);
     }
@@ -159,7 +142,7 @@ public class ClaudeTests
         if (OperatingSystem.IsWindows()) return;
         using var tmp = new TempDir();
         var fake = FakeCli(tmp.Path, "sleep 30");
-        var r = Request(tmp.Path, new ClaudeTools()) with { Timeout = TimeSpan.FromMilliseconds(500) };
+        var r = Request(tmp.Path) with { Timeout = TimeSpan.FromMilliseconds(500) };
         var watch = System.Diagnostics.Stopwatch.StartNew();
         Assert.Equal(ClaudeStatus.Timeout, Claude.Run(fake, r, _ => { }, new ClaudeCancel()).Status);
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10));
@@ -170,7 +153,7 @@ public class ClaudeTests
             Thread.Sleep(500);
             cancel.Cancel();
         }).Start();
-        Assert.Equal(ClaudeStatus.Cancelled, Claude.Run(fake, Request(tmp.Path, new ClaudeTools()), _ => { }, cancel).Status);
+        Assert.Equal(ClaudeStatus.Cancelled, Claude.Run(fake, Request(tmp.Path), _ => { }, cancel).Status);
     }
 
     /// <summary>Answers by token prefix: bad… → 401, broken… → 400, otherwise success naming the variable it got the token from.</summary>
@@ -179,7 +162,7 @@ public class ClaudeTests
         $"  *) if [ -n \"$CLAUDE_CODE_OAUTH_TOKEN\" ]; then {Print(OkOauth)}; else {Print(OkApiKey)}; fi;;\nesac");
 
     private static ClaudeOutcome RunKeys(string dir, string[] keys, Action<string> log) =>
-        Claude.Run(KeyCli(dir), Request(dir, new ClaudeTools()) with { Tokens = [.. keys] }, log, new ClaudeCancel());
+        Claude.Run(KeyCli(dir), Request(dir) with { Tokens = [.. keys] }, log, new ClaudeCancel());
 
     [Fact]
     public void TokensAreRotated()

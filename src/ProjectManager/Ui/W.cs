@@ -184,8 +184,6 @@ public static class W
 
     public static Control Grid2(params Control?[] items) => Columns(2, 8, items);
 
-    public static Control Grid3(params Control?[] items) => Columns(3, 6, items);
-
     public static ScrollViewer Scroll(Control content, bool horizontal = false) => new()
     {
         Content = content,

@@ -1,4 +1,4 @@
-// Release tags: create, push and find the last one of a branch (the backport only offers commits since then).
+// Release tags: create, push and find the last one of a branch.
 
 namespace ProjectManager.Core;
 

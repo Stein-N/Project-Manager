@@ -1,5 +1,5 @@
-// MC Mod Project Manager: manages Minecraft mod projects in <master>/<mc version>/<project> – git worktrees, Gradle
-// tasks, changelogs and backports with Claude. The logic is in ProjectManager.Core, the UI here (Avalonia).
+// MC Mod Project Manager: manages Minecraft mod projects in <master>/<mc version>/<project> – git worktrees and
+// changelogs with Claude. The logic is in ProjectManager.Core, the UI here (Avalonia).
 
 using Avalonia;
 using ProjectManager.Core;

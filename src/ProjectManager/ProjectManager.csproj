@@ -9,7 +9,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <Description>MC Mod Project Manager – Minecraft mod projects, worktrees, Gradle, changelogs and backports</Description>
+    <Description>MC Mod Project Manager – Minecraft mod projects, worktrees and changelogs</Description>
   </PropertyGroup>
 
   <ItemGroup>

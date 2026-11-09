@@ -90,7 +90,7 @@ public static class Proc
     });
 
     /// <summary>
-    /// Stops a process and every process it started (e.g. the Minecraft client of a Gradle task).
+    /// Stops a process and every process it started.
     /// </summary>
     public static void KillTree(int pid)
     {

@@ -32,7 +32,7 @@ public static partial class Cleanup
         foreach (var p in projects)
         {
             var label = p.Label;
-            if (Dependencies.WrapperVersion(p.Path) is { } v) Add(gradleUsers, v, label);
+            if (Gradle.WrapperVersion(p.Path) is { } v) Add(gradleUsers, v, label);
             Add(mcUsers, p.McVersion, label);
             if (p.GradleMcVersion is { } mc) Add(mcUsers, mc, label);
         }

@@ -11,99 +11,33 @@ public static class ProjectView
 {
     public static Control View(Store s, ModProject p)
     {
-        // main branch and whether there are dependencies; both decide which tabs exist (null while loading)
-        var extras = new Var<(bool Loaded, string? Branch, bool HasDeps)>((false, null, false));
         var selected = new Var<string>(s.Tab.Value);
-        List<(string Key, string Title)> Tabs()
+        var tabs = new List<(string Key, string Title)> { ("Overview", "Overview") };
+        if (p.Readme is not null) tabs.Add(("README", "README"));
+        if (p.Git)
         {
-            var t = new List<(string, string)> { ("Overview", "Overview") };
-            if (p.Readme is not null) t.Add(("README", "README"));
-            if (p.Git)
-            {
-                var title = "Git";
-                if (p.Changes > 0) title += $"  ●{p.Changes}";
-                if (p.Ahead > 0) title += $"  ↑{p.Ahead}";
-                if (p.Behind > 0) title += $"  ↓{p.Behind}";
-                t.Add(("Git", title));
-            }
-            if (p.GradleWrapper)
-            {
-                var running = s.Running(p.Path).Count;
-                t.Add(("Gradle", running switch
-                {
-                    0 => "Gradle",
-                    1 => "Gradle ▶",
-                    var n => $"Gradle ▶{n}",
-                }));
-            }
-            if (p.Git)
-            {
-                t.Add(("Changelog", "Changelog"));
-                var main = extras.Value.Branch;
-                if (main is not null && main != p.Branch && s.Siblings(p).Count > 0) t.Add(("Backport", "Backport"));
-            }
-            if (extras.Value.HasDeps) t.Add(("Dependencies", "Dependencies"));
-            return t;
+            var title = "Git";
+            if (p.Changes > 0) title += $"  ●{p.Changes}";
+            if (p.Ahead > 0) title += $"  ↑{p.Ahead}";
+            if (p.Behind > 0) title += $"  ↓{p.Behind}";
+            tabs.Add(("Git", title));
+            tabs.Add(("Changelog", "Changelog"));
         }
-        IVar[] tabDeps = [s.Gradle, extras];
-        var content = new ContentControl();
-        var root = W.Rows(0, (Header(s, p), false), (W.TabBar(Tabs, tabDeps, selected), false), (content, true));
-        root.Watch(() =>
-        {
-            var path = p.Path;
-            React.Spawn(async () =>
-            {
-                string? branch = null;
-                try
-                {
-                    branch = await s.Api.MainBranch(path);
-                }
-                catch (Exception)
-                {
-                }
-                var deps = false;
-                try
-                {
-                    var d = await s.Api.DependenciesOf(path);
-                    deps = d.Rows.Count > 0 || d.ModFiles.Any(f => f.Dependencies.Count > 0);
-                }
-                catch (Exception)
-                {
-                }
-                extras.Value = (true, branch, deps);
-            });
-        }, s.Tick);
         // the remembered tab, or Overview if this project does not have it
-        root.Watch(() =>
-        {
-            var available = Tabs();
-            if (available.Count > 0 && available.All(t => t.Key != selected.Value) && extras.Value.Loaded) selected.Value = "Overview";
-        }, selected, s.Gradle, extras);
-        root.Watch(() =>
-        {
-            if (Tabs().Any(t => t.Key == selected.Value)) s.Tab.Value = selected.Value;
-        }, selected);
-        // the tab itself; Changelog and Backport depend on the main branch
-        string? shown = null;
+        if (tabs.All(t => t.Key != selected.Value)) selected.Value = "Overview";
+        var content = new ContentControl();
+        var root = W.Rows(0, (Header(s, p), false), (W.TabBar(() => tabs, [], selected), false), (content, true));
         content.Watch(() =>
         {
-            var tab = selected.Value;
-            var main = extras.Value.Branch;
-            var key = tab is "Changelog" or "Backport" ? $"{tab}:{main}" : tab;
-            if (key == shown) return;
-            shown = key;
-            content.Content = tab switch
+            s.Tab.Value = selected.Value;
+            content.Content = selected.Value switch
             {
                 "README" => ReadmeTab.View(s, p),
                 "Git" => GitTab.View(s, p),
-                "Gradle" => GradleTab.View(s, p),
-                "Changelog" when main is not null && main != p.Branch => ChangelogTab.Elsewhere(s, p, main),
                 "Changelog" => ChangelogTab.View(s, p),
-                "Backport" => BackportTab.View(s, p, main),
-                "Dependencies" => DependenciesTab.View(s, p),
                 _ => OverviewTab(s, p),
             };
-        }, selected, extras);
+        }, selected);
         return root;
     }
 

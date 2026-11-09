@@ -1,4 +1,4 @@
-// Environment variables in <master>/.env, passed to the publish tasks (tokens for Modrinth, CurseForge …).
+// Environment variables in <master>/.env: the Claude tokens (CLAUDE_API) and the GitHub token (GITHUB_TOKEN).
 // Supports KEY=value, export KEY=value, comments and single/double quoted values.
 
 using System.Text;
@@ -9,9 +9,6 @@ namespace ProjectManager.Core;
 public static partial class EnvFile
 {
     public const string FileName = ".env";
-
-    /// <summary>Variables the publish setup of the mods expects (Maven repository, CurseForge, Modrinth).</summary>
-    public static readonly string[] Expected = ["MAVEN_URL", "MAVEN_USER", "MAVEN_PASSWORD", "CURSEFORGE_API", "MODRINTH_API"];
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex Name();
@@ -97,7 +94,7 @@ public static partial class EnvFile
         var lines = File.Exists(file) ? Util.Lines(Util.Decode(File.ReadAllBytes(file))) : [];
         if (lines.Count == 0)
         {
-            lines.Add("# Environment variables for the publish tasks of MC Mod Project Manager.");
+            lines.Add("# Environment variables of MC Mod Project Manager.");
             lines.Add("# Keep this file private - it usually contains API tokens.");
         }
         var written = new List<string>();

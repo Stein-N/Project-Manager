@@ -1,5 +1,4 @@
-// Commit messages: Conventional Commits with backport markers, git log parsing and the branch that fits a Minecraft
-// version.
+// Commit messages: Conventional Commits, git log parsing and the branch that fits a Minecraft version.
 
 using System.Text.RegularExpressions;
 
@@ -10,6 +9,7 @@ public static partial class Commits
     [GeneratedRegex(@"^([A-Za-z]+)(?:\(([^)]*)\))?(!)?:\s*(.*)$")]
     private static partial Regex HeaderRegex();
 
+    /// <summary><c>[no-backport]</c> markers of older commits are left out of the subject.</summary>
     [GeneratedRegex(@"\[no-backport(?::\s*([^\]]*))?]", RegexOptions.IgnoreCase)]
     private static partial Regex Marker();
 
@@ -40,13 +40,6 @@ public static partial class Commits
         var nl = text.IndexOf('\n');
         var (header, body) = nl >= 0 ? (text[..nl].Trim(), text[(nl + 1)..].Trim()) : (text, "");
         var c = new ConventionalCommit { Subject = header, Body = body };
-        foreach (Match m in Marker().Matches(text))
-        {
-            var versions = m.Groups[1].Success ? m.Groups[1].Value.Trim() : "";
-            if (versions.Length == 0) c.NoBackportAll = true;
-            else
-                c.NoBackportTo.AddRange(versions.Split(ch => ch == ',' || char.IsWhiteSpace(ch)));
-        }
         c.CherryPickedFrom = Cherry().Matches(body).Select(m => m.Groups[1].Value.ToLowerInvariant()).ToList();
         c.Breaking = BreakingFooter().IsMatch(body);
         var h = HeaderRegex().Match(header);
@@ -59,17 +52,6 @@ public static partial class Commits
         }
         c.Subject = Spaces().Replace(Marker().Replace(c.Subject, ""), " ").Trim();
         return c;
-    }
-
-    private static IEnumerable<string> Split(this string s, Func<char, bool> separator)
-    {
-        var start = 0;
-        for (var i = 0; i <= s.Length; i++)
-        {
-            if (i < s.Length && !separator(s[i])) continue;
-            if (i > start) yield return s[start..i];
-            start = i + 1;
-        }
     }
 
     /// <summary>The body without <c>(cherry picked from commit …)</c> lines.</summary>

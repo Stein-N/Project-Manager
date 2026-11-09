@@ -1,4 +1,4 @@
-// The small dialogs: import, move, tag and the backport types.
+// The small dialogs: import, move and tag.
 
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -87,20 +87,5 @@ public static class SimpleForms
                 W.Stack(6, W.Muted(() => latest.Value, latest), W.Text("Tag name", "label"), W.Input(name),
                     W.Text("Message (optional, makes it an annotated tag)", "label"), W.Input(message), pushCheck),
                 Dialogs.Footer(W.Btn("Cancel", done.Cancel), create));
-        });
-
-    /// <summary>Commit types ported into a version; empty = all types.</summary>
-    public static Task<Maybe<List<string>>> Types(Store s, string title, List<string> current) =>
-        s.Dialogs.Open<List<string>>("Backport types", 480, null, done =>
-        {
-            var all = new Var<bool>(current.Count == 0);
-            var boxes = Presets.BackportTypes.Select(t => (Type: t, On: new Var<bool>(current.Contains(t)))).ToList();
-            var grid = W.Columns(4, 12, boxes.Select(b => (Control)W.Check(b.Type, b.On).EnabledWhen(() => !all.Value, all)));
-            grid.Margin = new Avalonia.Thickness(0, 8, 0, 0);
-            void Submit() => done.Resolve(all.Value ? [] : boxes.Where(b => b.On.Value).Select(b => b.Type).ToList());
-            return Dialogs.Layout(
-                W.Stack(6, Rich.Text($"Commit types ported from the other versions into <b>{Html(title)}</b>.<br>Commits without a type are always offered."),
-                    W.Check("All types", all), grid),
-                Dialogs.Footer(W.Btn("Cancel", done.Cancel), W.Btn("OK", Submit, primary: true)));
         });
 }

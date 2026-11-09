@@ -59,9 +59,6 @@ public static partial class Metadata
         var authors = json["authors"] is JsonArray a
             ? a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var s) ? s : Str(x?["name"])).OfType<string>().ToList()
             : [];
-        var deps = new List<ModDependency>();
-        FabricDeps(json["depends"], true, deps);
-        FabricDeps(json["recommends"], false, deps);
         return new ModMetadata
         {
             Id = Str(json["id"]),
@@ -70,21 +67,8 @@ public static partial class Metadata
             Description = Str(json["description"]),
             Authors = authors,
             Icon = Icon(project, resources, IconPath(json["icon"])),
-            Dependencies = deps,
             File = Relative(project, file),
         };
-    }
-
-    private static void FabricDeps(JsonNode? value, bool required, List<ModDependency> o)
-    {
-        if (value is not JsonObject map) return;
-        foreach (var (id, v) in map)
-        {
-            var version = v is JsonArray arr
-                ? string.Join(" || ", arr.Select(x => x is JsonValue jv && jv.TryGetValue<string>(out var s) ? s : null).OfType<string>())
-                : v is JsonValue sv && sv.TryGetValue<string>(out var str) ? str : "*";
-            o.Add(new ModDependency(id, version, required));
-        }
     }
 
     private static ModMetadata? Quilt(string project, string resources, string file, IDictionary<string, string> gradle)
@@ -92,24 +76,6 @@ public static partial class Metadata
         if (ParseJson(Expand(Util.ReadOrEmpty(file), gradle)) is not JsonObject root) return null;
         if (root["quilt_loader"] is not { } loader) return null;
         var meta = loader["metadata"];
-        var deps = new List<ModDependency>();
-        if (loader["depends"] is JsonArray depends)
-        {
-            foreach (var d in depends)
-            {
-                if (d is JsonObject o)
-                {
-                    deps.Add(new ModDependency(
-                        Str(o["id"]),
-                        o["versions"] is { } v ? v.ToJsonString().Replace("\"", "") : "*",
-                        !(o["optional"] is JsonValue opt && opt.TryGetValue<bool>(out var b) && b)));
-                }
-                else
-                {
-                    deps.Add(new ModDependency(Str(d), "*", true));
-                }
-            }
-        }
         var authors = meta?["contributors"] is JsonObject c ? c.Select(kv => kv.Key).ToList() : [];
         return new ModMetadata
         {
@@ -119,7 +85,6 @@ public static partial class Metadata
             Description = Str(meta?["description"]),
             Authors = authors,
             Icon = Icon(project, resources, IconPath(meta?["icon"])),
-            Dependencies = deps,
             File = Relative(project, file),
         };
     }
@@ -138,14 +103,11 @@ public static partial class Metadata
 
     // ---------------------------------------------------------------- (Neo)Forge TOML
 
-    private enum Current { Ignored, Mod, Dependency }
-
     private static ModMetadata? Toml(string project, string resources, string file, IDictionary<string, string> gradle)
     {
         var mods = new List<Dictionary<string, string>>();
-        var deps = new List<(string Owner, Dictionary<string, string> Table)>();
-        // which table the following keys belong to
-        var current = Current.Ignored;
+        // the [[mods]] table the following keys belong to, null for other tables
+        Dictionary<string, string>? current = null;
         if (!File.Exists(file)) return null;
         var lines = Util.Lines(Expand(Util.ReadOrEmpty(file), gradle));
         var i = 0;
@@ -156,23 +118,13 @@ public static partial class Metadata
             if (line.Length == 0) continue;
             if (line.StartsWith("[[") && line.EndsWith("]]"))
             {
-                var table = line[2..^2].Trim();
-                if (table == "mods")
-                {
-                    mods.Add([]);
-                    current = Current.Mod;
-                }
-                else if (table.StartsWith("dependencies."))
-                {
-                    deps.Add((table["dependencies.".Length..].Replace("\"", ""), []));
-                    current = Current.Dependency;
-                }
-                else current = Current.Ignored;
+                current = null;
+                if (line[2..^2].Trim() == "mods") mods.Add(current = []);
                 continue;
             }
             if (line.StartsWith('['))
             {
-                current = Current.Ignored;
+                current = null;
                 continue;
             }
             var eq = line.IndexOf('=');
@@ -195,25 +147,10 @@ public static partial class Metadata
             {
                 value = Unquote(value);
             }
-            var target = current switch
-            {
-                Current.Mod => mods.LastOrDefault(),
-                Current.Dependency => deps.Count > 0 ? deps[^1].Table : null,
-                _ => null,
-            };
-            if (target is not null) target[key] = value.Trim();
+            if (current is not null) current[key] = value.Trim();
         }
         var m = mods.FirstOrDefault() ?? [];
         var id = m.GetValueOrDefault("modId");
-        var dependencies = deps
-            .Where(d => d.Owner == id)
-            .Select(d => new ModDependency(
-                d.Table.GetValueOrDefault("modId"),
-                d.Table.GetValueOrDefault("versionRange") ?? "*",
-                d.Table.TryGetValue("type", out var t)
-                    ? t.Equals("required", StringComparison.OrdinalIgnoreCase)
-                    : !d.Table.TryGetValue("mandatory", out var mand) || mand.Equals("true", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
         return new ModMetadata
         {
             Id = id,
@@ -222,7 +159,6 @@ public static partial class Metadata
             Description = m.GetValueOrDefault("description"),
             Authors = m.TryGetValue("authors", out var authors) ? [authors] : [],
             Icon = Icon(project, resources, m.GetValueOrDefault("logoFile")),
-            Dependencies = dependencies,
             File = Relative(project, file),
         };
     }

@@ -25,7 +25,6 @@ public partial class App : Application
     public MainWindow? Main { get; private set; }
     public WindowIcon? WindowIcon { get; private set; }
     private LogWindow? _log;
-    private PrimerWindow? _primer;
     private TrayIcon? _tray;
     private bool _exiting;
 
@@ -55,8 +54,6 @@ public partial class App : Application
                 Main.Show();
                 if (StartMinimized) Main.WindowState = WindowState.Minimized;
             }
-            // the available dependency versions are asked for once per start
-            new Thread(Api.LoadVersions) { IsBackground = true }.Start();
             StartAutoFetch();
             if (Instance is { } instance)
             {
@@ -86,7 +83,7 @@ public partial class App : Application
 
     /// <summary>
     /// Close button of the main window: into the tray while "minimize to tray" is on (the tray icon is there),
-    /// otherwise exit – after asking when Gradle tasks are running.
+    /// otherwise exit.
     /// </summary>
     public void CloseRequested()
     {
@@ -96,25 +93,23 @@ public partial class App : Application
             Main.Hide();
             return;
         }
-        React.Spawn(() => Actions.Exit(Store));
+        Exit();
     }
 
     public bool Exiting => _exiting;
 
-    /// <summary>Stops running tasks and ends the app.</summary>
+    /// <summary>Ends the app.</summary>
     public void Exit()
     {
         Release();
         (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
-    /// <summary>Stops running tasks and gives up tray icon and single instance; the main window may close from then on.</summary>
+    /// <summary>Gives up tray icon and single instance; the main window may close from then on.</summary>
     public void Release()
     {
         if (_exiting) return;
         _exiting = true;
-        Api.Gradle.StopAll();
-        Api.PrimerCancel();
         _tray?.Dispose();
         Instance?.Dispose();
     }
@@ -142,20 +137,6 @@ public partial class App : Application
             else _log.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
         _log.Show();
-    }
-
-    /// <summary>Opens the version primer window (or brings it to the front), prepared for the step to <paramref name="to"/>.</summary>
-    public void OpenPrimer(string? to)
-    {
-        if (_primer is { IsVisible: true })
-        {
-            if (to is not null) _primer.Prepare(to);
-            if (_primer.WindowState == WindowState.Minimized) _primer.WindowState = WindowState.Normal;
-            _primer.Activate();
-            return;
-        }
-        _primer = new PrimerWindow(Store, to) { Icon = WindowIcon, WindowStartupLocation = WindowStartupLocation.CenterScreen };
-        _primer.Show();
     }
 
     // ---------------------------------------------------------------- tray
@@ -218,7 +199,7 @@ public partial class App : Application
         exit.Click += (_, _) =>
         {
             ShowMain();
-            React.Spawn(() => Actions.Exit(Store));
+            Exit();
         };
         menu.Add(exit);
         _tray.Menu = menu;

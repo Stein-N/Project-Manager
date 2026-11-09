@@ -1,5 +1,5 @@
-// Runs the Claude Code CLI headless (claude -p) with a prompt on stdin and stream-json output. Which tools Claude may
-// use is decided per call; MCP servers of the account are always switched off.
+// Runs the Claude Code CLI headless (claude -p) with a prompt on stdin and stream-json output, without tools; MCP
+// servers of the account are always switched off.
 //
 // Credentials come from the variable CLAUDE_API: several tokens separated by ";". When a token cannot be used (invalid,
 // expired, usage limit reached …) the call is repeated with the next one. Without tokens Claude runs with the login of
@@ -12,29 +12,10 @@ using System.Text.Json.Nodes;
 
 namespace ProjectManager.Core;
 
-/// <summary>Tool permissions of a run.</summary>
-public sealed record ClaudeTools
-{
-    /// <summary>Built-in tools Claude can see at all (<c>--tools</c>); empty = none.</summary>
-    public List<string> Available { get; init; } = [];
-    /// <summary>Rules that run without asking (<c>--allowedTools</c>, e.g. <c>Bash(git diff:*)</c>).</summary>
-    public List<string> Allowed { get; init; } = [];
-    /// <summary>Rules that are always denied (<c>--disallowedTools</c>).</summary>
-    public List<string> Disallowed { get; init; } = [];
-    /// <summary><c>--permission-mode</c>; with <c>dontAsk</c> nobody is asked: what is not allowed is denied.</summary>
-    public string? PermissionMode { get; init; }
-    /// <summary>
-    /// <c>--restricted</c>: no user/project settings (hooks), file tools confined to the working folder, no writes to git
-    /// and settings files.
-    /// </summary>
-    public bool Restricted { get; init; }
-}
-
 public sealed record ClaudeRequest
 {
     public string WorkDir { get; init; } = ".";
     public string Prompt { get; init; } = "";
-    public ClaudeTools Tools { get; init; } = new();
     /// <summary><c>--model</c>; null for the CLI default.</summary>
     public string? Model { get; init; }
     /// <summary><c>--max-budget-usd</c>; 0 = no limit.</summary>
@@ -137,16 +118,8 @@ public static class Claude
         c.AddRange(["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"]);
         if (bare) c.Add("--bare");
         c.AddRange(["--strict-mcp-config", "--mcp-config", mcpConfig]);
-        var t = request.Tools;
-        if (t.Restricted) c.Add("--restricted");
-        c.AddRange(["--tools", string.Join(",", t.Available)]);
-        if (t.Allowed.Count > 0) c.AddRange(["--allowedTools", string.Join(",", t.Allowed)]);
-        if (t.Disallowed.Count > 0) c.AddRange(["--disallowedTools", string.Join(",", t.Disallowed)]);
-        if (t.PermissionMode is { } mode)
-        {
-            c.AddRange(["--permission-mode", mode]);
-            if (mode == "dontAsk") c.AddRange(["--permission-prompts", "none"]);
-        }
+        // Claude only writes text: no built-in tools at all
+        c.AddRange(["--tools", ""]);
         if (request.Model?.Trim() is { Length: > 0 } model) c.AddRange(["--model", model]);
         if (request.MaxBudgetUsd > 0) c.AddRange(["--max-budget-usd", request.MaxBudgetUsd.ToString("0.00", CultureInfo.InvariantCulture)]);
         return c;
@@ -352,19 +325,8 @@ public static class Claude
             InputTokens = (long)(U64(usage?["input_tokens"]) + U64(usage?["cache_creation_input_tokens"]) + U64(usage?["cache_read_input_tokens"])),
             OutputTokens = (long)U64(usage?["output_tokens"]),
             ApiErrorStatus = (int)U64(ev["api_error_status"]),
-            Denials = Denials(ev),
         };
     }
-
-    /// <summary><c>permission_denials</c> of a result event as "Tool: command or path".</summary>
-    public static List<string> Denials(JsonObject ev) =>
-        ev["permission_denials"] is JsonArray list
-            ? list.OfType<JsonObject>().Select(d =>
-            {
-                var summary = ToolSummary(d["tool_input"]);
-                return $"{Str(d["tool_name"]) ?? "?"}{(summary.StartsWith(' ') ? $": {summary[1..]}" : summary)}";
-            }).ToList()
-            : [];
 
     private static List<JsonNode?> Content(JsonObject ev) => ev["message"]?["content"] is JsonArray a ? a.ToList() : [];
 

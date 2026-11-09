@@ -72,7 +72,7 @@ public static class Tree
             menu.Open(item);
             e.Handled = true;
         };
-        list.Watch(Build, s.ScanResult, s.Filter, s.Settings, s.Gradle);
+        list.Watch(Build, s.ScanResult, s.Filter, s.Settings);
         list.Watch(Select, s.Selected);
         return list;
     }
@@ -137,9 +137,8 @@ public static class Tree
         Counter(p.Git && p.Changes > 0, $"●{p.Changes}", "Orange");
         Counter(p.Git && p.Ahead > 0, $"↑{p.Ahead}", "Green");
         Counter(p.Git && p.Behind > 0, $"↓{p.Behind}", "Red");
-        var running = s.Running(p.Path).Count > 0 ? Icons.Icon("run") : null;
         var mismatch = p.VersionMismatch ? Icons.Icon("warning").Tip("Minecraft version in gradle.properties does not match the folder") : null;
-        return RowPanel(34, iconView, name, branch, counters, running, mismatch, W.Spacer());
+        return RowPanel(34, iconView, name, branch, counters, mismatch, W.Spacer());
     }
 
     /// <summary>The mod icon, loaded once per file.</summary>

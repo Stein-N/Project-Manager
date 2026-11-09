@@ -11,34 +11,6 @@ namespace ProjectManager.Ui.Details;
 
 public static class ChangelogTab
 {
-    /// <summary>Changelogs are only written on the main branch; the backport takes them over into the other versions.</summary>
-    public static Control Elsewhere(Store s, ModProject p, string main)
-    {
-        var mainProject = s.Siblings(p).FirstOrDefault(o => o.Branch == main);
-        var here = new Var<string>("…");
-        React.Spawn(async () =>
-        {
-            try
-            {
-                var i = await s.Api.ChangelogInfo(p.Path);
-                here.Value = i.Existing.Trim().Length == 0 ? "none" : i.ExistingVersion is { } v ? $"v{v}" : "no version heading";
-            }
-            catch (Exception)
-            {
-                here.Value = "could not be read";
-            }
-        });
-        var target = mainProject?.Path;
-        return W.Page(
-            Rich.Text($"The changelog is only written on the main branch <b>{Html(main)}</b>{(mainProject is null ? "" : $" ({Html(mainProject.McVersion)})")}. " +
-                      "The backport takes it over into this version together with the changes."),
-            DetailsView.Gap(new W.Form().Row("CHANGELOG.md here", W.Copyable(() => here.Value, here)).Grid),
-            mainProject is null
-                ? null
-                : W.Btn($"Go to {mainProject.Label}", () => s.Selected.Value = new Selection.Project(target!), icon: "branch")
-                    .Also(b => b.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left));
-    }
-
     private sealed class Row(Commit commit, bool on)
     {
         public Commit Commit { get; } = commit;

@@ -1,4 +1,4 @@
-// Dependencies tab, the cleanup dialog and the GitHub repository list.
+// The cleanup dialog, the .env editor and the GitHub repository list.
 
 using ProjectManager.Core;
 
@@ -6,86 +6,6 @@ namespace ProjectManager.Services;
 
 public sealed partial class Backend
 {
-    public Task<DependenciesInfo> DependenciesOf(string project) => Run(() =>
-    {
-        var p = Project(project);
-        var catalog = _versions;
-        var parchment = Dependencies.ParchmentMinecraft(project);
-        var rows = Dependencies.Read(project).Select(entry =>
-        {
-            var options = catalog is null ? [] : VersionLists.Options(catalog, entry.Kind, p.EffectiveMc, parchment, entry.Value);
-            return new DependencyRow(entry, options, VersionLists.Latest(options));
-        }).ToList();
-        return new DependenciesInfo
-        {
-            Rows = rows,
-            VersionsLoadedAt = catalog?.FetchedAt,
-            VersionsErrors = catalog?.Errors.Select(e => $"{e.Key}: {e.Value}").ToList() ?? [],
-            ModFiles = ModFiles.Read(project),
-        };
-    });
-
-    /// <summary>Sets one version (gradle.properties or the Gradle wrapper); the change stays uncommitted.</summary>
-    public Task SetDependency(string project, DependencyEntry entry, string version) => Run(() =>
-    {
-        Dependencies.Set(project, entry, version);
-        Log($"[{LabelOf(project)}] {entry.Label}: {entry.Value} → {version}");
-    });
-
-    private string LabelOf(string project)
-    {
-        try
-        {
-            return Project(project).Label;
-        }
-        catch (PmException)
-        {
-            return "";
-        }
-    }
-
-    /// <summary>Sets how a dependency declared in a mod file is evaluated; returns the previous declaration.</summary>
-    public Task<string> SetDeclaredDependency(string project, string file, string rawId, VersionConstraint constraint) => Run(() =>
-    {
-        var old = ModFiles.Set(project, file, rawId, constraint);
-        Log($"[{LabelOf(project)}] {rawId} in {file}: {old} → {constraint.Describe()}");
-        return old;
-    });
-
-    /// <summary>Loads the available versions again (they are loaded once at start otherwise).</summary>
-    public Task RefreshVersions() => Run(LoadVersions);
-
-    /// <summary>Loads the version lists from the official repositories, caches them on disk and tells the UI.</summary>
-    public void LoadVersions()
-    {
-        if (Interlocked.Exchange(ref _versionsLoading, 1) == 1) return;
-        try
-        {
-            var parchment = Scan.Projects
-                .Where(p => Dependencies.Read(p.Path).Any(e => e.Kind == DependencyKind.Parchment))
-                .Select(p => Dependencies.ParchmentMinecraft(p.Path) ?? p.EffectiveMc)
-                .Distinct().OrderBy(m => m, StringComparer.Ordinal).ToList();
-            var catalog = VersionLists.Fetch(_versions, parchment);
-            try
-            {
-                VersionLists.Save(catalog);
-            }
-            catch (Exception e)
-            {
-                Log($"✖ {Message(e)}");
-            }
-            _versions = catalog;
-            Log(catalog.Errors.Count == 0
-                ? $"✔ Available versions loaded ({catalog.Lists.Count} lists)"
-                : $"⚠ Available versions loaded, {catalog.Errors.Count} list(s) failed – the cached ones are used");
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _versionsLoading, 0);
-        }
-        VersionsLoaded?.Invoke();
-    }
-
     // ---------------------------------------------------------------- cleanup
 
     public Task<(string Home, List<CacheItem> Items)> CleanupScan() => Run(() =>
@@ -95,6 +15,31 @@ public sealed partial class Backend
     });
 
     public Task<long> DirSize(string path) => Run(() => Util.DirSize(path));
+
+    /// <summary><c>gradlew --stop</c> once per Gradle version used by the projects; returns the versions.</summary>
+    public Task<List<string>> StopDaemons() => Run(() =>
+    {
+        var byVersion = new List<(string Version, string Path)>();
+        foreach (var p in Scan.Projects.Where(p => Core.Gradle.Wrapper(p.Path) is not null))
+        {
+            if (Core.Gradle.WrapperVersion(p.Path) is { } v && byVersion.All(x => x.Version != v)) byVersion.Add((v, p.Path));
+        }
+        if (byVersion.Count == 0) throw new PmException("No project with a Gradle wrapper found.");
+        var log = SubLogger();
+        foreach (var (v, path) in byVersion)
+        {
+            Log($"> gradlew --stop  (Gradle {v})");
+            try
+            {
+                Core.Gradle.Run(path, "--stop", log);
+            }
+            catch (Exception e)
+            {
+                log($"✖ {e.Message}");
+            }
+        }
+        return byVersion.Select(x => x.Version).ToList();
+    });
 
     /// <summary>Deletes the items; returns the ones that could not be deleted.</summary>
     public Task<List<string>> CleanupDelete(List<string> paths) => Run(() =>
@@ -114,6 +59,25 @@ public sealed partial class Backend
             }
         }
         return failed;
+    });
+
+    // ---------------------------------------------------------------- .env
+
+    public Task<List<(string Key, string Value)>> EnvLoad() => Run(() => EnvFile.Load(Master()));
+
+    public Task EnvSave(List<(string Key, string Value)> vars) => Run(() =>
+    {
+        var seen = new List<string>();
+        foreach (var (name, _) in vars)
+        {
+            if (!EnvFile.ValidName(name))
+                throw new PmException($"“{name}” is not a valid variable name.\nUse letters, digits and underscores (not starting with a digit).");
+            if (seen.Contains(name)) throw new PmException($"“{name}” is defined twice.");
+            seen.Add(name);
+        }
+        var master = Master();
+        EnvFile.Save(master, vars);
+        Log($"Saved {vars.Count} environment variable(s) to {EnvFile.PathOf(master)}");
     });
 
     // ---------------------------------------------------------------- GitHub
